@@ -1,0 +1,17 @@
+{
+  "name": "@agentic-mesh/e2e-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint src vitest.config.ts",
+    "test": "vitest",
+    "clean": "rimraf dist .vitest"
+  },
+  "dependencies": {
+    "@mysten/sui": "^1.21.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.0.9"
+  }
+}

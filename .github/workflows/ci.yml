@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  lint-and-build:
+    name: lint-and-build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        run: pnpm exec turbo lint
+      - name: Build
+        run: pnpm exec turbo build
+
+  unit-tests:
+    name: unit-tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Run unit tests
+        run: pnpm exec turbo test -- --run --passWithNoTests
+
+  smoke-e2e:
+    name: smoke-e2e (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Setup Sui CLI
+        uses: CommandOSSLabs/setup-sui-cli@v1
+      - name: Detect Move package
+        id: move-package
+        shell: pwsh
+        run: |
+          if (Test-Path 'contracts\agentic_mesh\Move.toml') {
+            "present=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "present=false" >> $env:GITHUB_OUTPUT
+          }
+      - name: Start local Sui
+        if: steps.move-package.outputs.present == 'true'
+        shell: pwsh
+        run: |
+          $tmpDir = Join-Path $PWD 'sui_tmp\ci'
+          New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+          $env:TMPDIR = $tmpDir
+          $env:TMP = $tmpDir
+          $env:TEMP = $tmpDir
+          $logPath = Join-Path $tmpDir 'sui.log'
+          $process = Start-Process -FilePath 'sui' -ArgumentList @('start', '--with-faucet', '--force-regenesis') -WorkingDirectory $PWD -RedirectStandardOutput $logPath -RedirectStandardError $logPath -PassThru
+          "SUI_PID=$($process.Id)" >> $env:GITHUB_ENV
+      - name: Wait for local Sui RPC
+        if: steps.move-package.outputs.present == 'true'
+        shell: pwsh
+        run: |
+          $payload = '{"jsonrpc":"2.0","id":1,"method":"sui_getLatestCheckpointSequenceNumber","params":[]}'
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Get-Date) -lt $deadline) {
+            try {
+              Invoke-RestMethod -Uri 'http://127.0.0.1:9000' -Method Post -ContentType 'application/json' -Body $payload | Out-Null
+              exit 0
+            } catch {
+              Start-Sleep -Seconds 1
+            }
+          }
+          throw 'Timed out waiting for local Sui RPC.'
+      - name: Deploy contracts
+        if: steps.move-package.outputs.present == 'true'
+        shell: pwsh
+        run: |
+          $publish = sui client publish contracts/agentic_mesh --gas-budget 100000000 --json | ConvertFrom-Json
+          $packageId = ($publish.objectChanges | Where-Object { $_.type -eq 'published' } | Select-Object -First 1).packageId
+          $registryId = ($publish.objectChanges | Where-Object { $_.objectType -match '::registry::Registry$' } | Select-Object -First 1).objectId
+          if (-not $packageId -or -not $registryId) {
+            throw 'Failed to extract packageId and registryId from publish output.'
+          }
+          "PACKAGE_ID=$packageId" >> $env:GITHUB_ENV
+          "REGISTRY_ID=$registryId" >> $env:GITHUB_ENV
+      - name: Run lifecycle smoke test
+        run: pnpm --filter @agentic-mesh/e2e-tests test -- --run src/smoke/lifecycle.test.ts
+      - name: Note bootstrap smoke mode
+        if: steps.move-package.outputs.present == 'false'
+        run: echo "contracts/agentic_mesh is not bootstrapped yet, so the workflow currently validates the e2e harness scaffold only."
+      - name: Stop local Sui
+        if: always() && steps.move-package.outputs.present == 'true'
+        shell: pwsh
+        run: |
+          if ($env:SUI_PID) {
+            Stop-Process -Id ([int]$env:SUI_PID) -Force -ErrorAction SilentlyContinue
+          }

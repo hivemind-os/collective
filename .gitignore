@@ -8,6 +8,7 @@ dist/
 
 # Sui local network data
 sui_tmp/
+contracts/*/build/
 
 # IDE
 .vscode/

@@ -1,0 +1,7 @@
+export const SUI_STARTUP_TIMEOUT = 30000;
+export const CONTRACT_DEPLOY_TIMEOUT = 15000;
+export const FAUCET_TIMEOUT = 10000;
+export const TX_TIMEOUT = 10000;
+export const EVENT_TIMEOUT = 15000;
+export const DAEMON_STARTUP_TIMEOUT = 10000;
+export const DAEMON_SHUTDOWN_TIMEOUT = 5000;
