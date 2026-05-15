@@ -34,6 +34,11 @@ describe('config', () => {
   it('returns the correct platform default ipc path', () => {
     const config = getDefaultConfig();
 
+    expect(config.payment).toMatchObject({
+      preferredRail: 'auto',
+      evm: { enabled: false, network: 'base' },
+    });
+
     if (process.platform === 'win32') {
       expect(config.daemon.ipcPath).toBe('\\\\.\\pipe\\agentic-mesh');
     } else {
@@ -65,11 +70,18 @@ describe('config', () => {
         '  limits:',
         '    - amount: "42"',
         '      interval: transaction',
+        '      currency: usdc',
         '  perApp:',
         '    claude-desktop:',
         '      limits:',
         '        - amount: "7"',
         '          interval: day',
+        'payment:',
+        '  preferredRail: x402',
+        '  evm:',
+        '    enabled: true',
+        '    network: base-sepolia',
+        '    rpcUrl: https://example.com/base-sepolia',
         'daemon:',
         `  ipcPath: ${resolve(dir, 'daemon.sock')}`,
         `  dataDir: ${resolve(dir, 'daemon')}`,
@@ -92,7 +104,16 @@ describe('config', () => {
     expect(config.auth.google?.clientId).toBe('test-google-client');
     expect(config.auth.portal?.port).toBe(0);
     expect(config.spending.limits[0]?.amount).toBe(42n);
+    expect(config.spending.limits[0]?.currency).toBe('USDC');
     expect(config.spending.perApp?.['claude-desktop']?.limits[0]?.amount).toBe(7n);
+    expect(config.payment).toMatchObject({
+      preferredRail: 'x402',
+      evm: {
+        enabled: true,
+        network: 'base-sepolia',
+        rpcUrl: 'https://example.com/base-sepolia',
+      },
+    });
     expect(config.daemon.logLevel).toBe('debug');
     expect(config.blobstore.mode).toBe('filesystem');
     expect(config.blobstore.filesystem?.dataDir).toBe(resolve(dir, 'blobs'));

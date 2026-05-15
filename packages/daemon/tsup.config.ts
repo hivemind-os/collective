@@ -8,6 +8,7 @@ export default defineConfig({
     'src/provider/index.ts',
     'src/ipc/server.ts',
     'src/portal/server.ts',
+    'src/relay/index.ts',
   ],
   format: ['esm'],
   dts: true,

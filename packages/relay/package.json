@@ -1,0 +1,44 @@
+{
+  "name": "@agentic-mesh/relay",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "mesh-relay": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest",
+    "lint": "eslint src/ tests/ vitest.config.ts tsup.config.ts",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@agentic-mesh/core": "workspace:*",
+    "@agentic-mesh/types": "workspace:*",
+    "@x402/core": "^2.12.0",
+    "@x402/evm": "^2.12.0",
+    "@fastify/cors": "^10.0.0",
+    "@fastify/rate-limit": "^10.0.0",
+    "@fastify/websocket": "^11.0.0",
+    "fastify": "^5.0.0",
+    "pino": "^9.0.0",
+    "viem": "^2.48.11",
+    "ws": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

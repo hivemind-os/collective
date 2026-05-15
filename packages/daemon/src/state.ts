@@ -8,8 +8,10 @@ import {
   type BlobStore,
   type OAuthConfig,
   createDID,
+  deriveEvmKey,
   Ed25519AuthProvider,
   EventSubscription,
+  EvmWallet,
   FilesystemBlobStore,
   HybridBlobStore,
   loadOrCreateKeypair,
@@ -19,6 +21,7 @@ import {
   SpendingPolicyEngine,
   TaskClient,
   WalrusBlobStore,
+  X402Client,
   ZkLoginProvider,
   ZkLoginSessionStore,
 } from '@agentic-mesh/core';
@@ -31,6 +34,7 @@ import type { DaemonFullConfig } from './config.js';
 export interface DaemonStatusBase {
   did: DID;
   address: string;
+  evmAddress?: string;
   uptime: number;
   spendingToday: string;
   providerRunning: boolean;
@@ -42,12 +46,14 @@ export interface DaemonIdentityContext {
   authProvider: AuthProvider;
   did: DID;
   identityKeypair: Ed25519Keypair;
+  identitySecretKey: Uint8Array;
 }
 
 export class DaemonState {
   readonly keypair: Signer;
   readonly identityKeypair: Ed25519Keypair;
   readonly authProvider: AuthProvider;
+  readonly relayAuthProvider: AuthProvider;
   readonly did: DID;
   readonly suiClient: MeshSuiClient;
   readonly registryClient: RegistryClient;
@@ -55,6 +61,8 @@ export class DaemonState {
   readonly agentCache: AgentCache;
   readonly blobStore: BlobStore;
   readonly spendingPolicy: SpendingPolicyEngine;
+  readonly evmWallet?: EvmWallet;
+  readonly x402Client?: X402Client;
   readonly network: DaemonFullConfig['network'];
   readonly startedAt: number;
   readonly address: string;
@@ -67,6 +75,7 @@ export class DaemonState {
     keypair: Signer;
     identityKeypair: Ed25519Keypair;
     authProvider: AuthProvider;
+    relayAuthProvider: AuthProvider;
     did: DID;
     suiClient: MeshSuiClient;
     registryClient: RegistryClient;
@@ -74,6 +83,8 @@ export class DaemonState {
     agentCache: AgentCache;
     blobStore: BlobStore;
     spendingPolicy: SpendingPolicyEngine;
+    evmWallet?: EvmWallet;
+    x402Client?: X402Client;
     cursorStore: SqliteCursorStore;
     network: DaemonFullConfig['network'];
     address: string;
@@ -81,6 +92,7 @@ export class DaemonState {
     this.keypair = params.keypair;
     this.identityKeypair = params.identityKeypair;
     this.authProvider = params.authProvider;
+    this.relayAuthProvider = params.relayAuthProvider;
     this.did = params.did;
     this.suiClient = params.suiClient;
     this.registryClient = params.registryClient;
@@ -88,6 +100,8 @@ export class DaemonState {
     this.agentCache = params.agentCache;
     this.blobStore = params.blobStore;
     this.spendingPolicy = params.spendingPolicy;
+    this.evmWallet = params.evmWallet;
+    this.x402Client = params.x402Client;
     this.cursorStore = params.cursorStore;
     this.network = params.network;
     this.subscriptions = [];
@@ -115,11 +129,13 @@ export class DaemonState {
     });
     const cursorStore = new SqliteCursorStore(join(config.daemon.dataDir, 'event-cursors.sqlite'));
     const address = await context.authProvider.getAddress();
+    const paymentContext = createPaymentContext(config, context);
 
     return new DaemonState({
       keypair: context.authProvider.toSuiSigner(),
       identityKeypair: context.identityKeypair,
       authProvider: context.authProvider,
+      relayAuthProvider: new Ed25519AuthProvider(context.identityKeypair),
       did: context.did,
       suiClient,
       registryClient,
@@ -127,6 +143,8 @@ export class DaemonState {
       agentCache,
       blobStore,
       spendingPolicy,
+      evmWallet: paymentContext.evmWallet,
+      x402Client: paymentContext.x402Client,
       cursorStore,
       network: config.network,
       address,
@@ -141,6 +159,7 @@ export class DaemonState {
     return {
       did: this.did,
       address: this.address,
+      evmAddress: this.evmWallet?.address,
       uptime: Date.now() - this.startedAt,
       spendingToday: formatMistAsSui(this.spendingPolicy.getSpent('day', PaymentRail.SUI_ESCROW)),
       providerRunning: this.providerRunning,
@@ -175,6 +194,7 @@ export async function createDaemonIdentityContext(config: DaemonFullConfig): Pro
       authProvider: new Ed25519AuthProvider(identityKeypair),
       did,
       identityKeypair,
+      identitySecretKey: identity.secretKey,
     };
   }
 
@@ -194,6 +214,7 @@ export async function createDaemonIdentityContext(config: DaemonFullConfig): Pro
     authProvider,
     did,
     identityKeypair,
+    identitySecretKey: identity.secretKey,
   };
 }
 
@@ -215,6 +236,31 @@ export function buildOAuthConfig(config: DaemonFullConfig, redirectUri = ''): OA
   }
 
   throw new Error('OAuth provider configuration is incomplete.');
+}
+
+function createPaymentContext(
+  config: DaemonFullConfig,
+  identityContext: DaemonIdentityContext,
+): { evmWallet?: EvmWallet; x402Client?: X402Client } {
+  if (!config.payment.evm?.enabled || !(identityContext.authProvider instanceof ZkLoginProvider)) {
+    return {};
+  }
+
+  const session = identityContext.authProvider.getSession();
+  if (!session) {
+    return {};
+  }
+
+  const privateKey = deriveEvmKey(identityContext.identitySecretKey, session.salt, session.sub);
+  const evmWallet = new EvmWallet(privateKey, {
+    network: config.payment.evm.network,
+    rpcUrl: config.payment.evm.rpcUrl,
+  });
+
+  return {
+    evmWallet,
+    x402Client: new X402Client(evmWallet),
+  };
 }
 
 async function createBlobStore(config: DaemonFullConfig): Promise<BlobStore> {

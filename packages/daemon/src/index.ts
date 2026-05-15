@@ -85,6 +85,7 @@ export async function main(): Promise<void> {
         state,
         providerConfig,
         cursorDbPath: join(config.daemon.dataDir, 'provider-cursors.db'),
+        relayConfig: config.relay,
       });
       await providerRuntime.start();
       state.setProviderRunning(true);

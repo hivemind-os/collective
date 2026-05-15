@@ -7,6 +7,7 @@ import {
   type AuthConfig,
   type BlobStoreConfig,
   type NetworkConfig,
+  type PaymentConfig,
   type SpendingLimit,
   type SpendingPolicy,
 } from '@agentic-mesh/types';
@@ -27,12 +28,24 @@ export interface DaemonFullConfig {
   };
   auth: AuthConfig;
   spending: DaemonSpendingPolicy;
+  payment: PaymentConfig;
   daemon: {
     ipcPath: string;
     dataDir: string;
     pidFile: string;
     logLevel: 'debug' | 'info' | 'warn' | 'error';
     logFile?: string;
+  };
+  relay: {
+    enabled: boolean;
+    endpoints: Array<{
+      url: string;
+      relayDid?: string;
+    }>;
+    autoConnect: boolean;
+    providerMode: boolean;
+    reconnectIntervalMs?: number;
+    heartbeatIntervalMs?: number;
   };
   blobstore: BlobStoreConfig;
   provider?: {
@@ -44,6 +57,7 @@ export interface DaemonFullConfig {
       priceMist: number;
       currency?: string;
       adapter: string;
+      adapterConfig?: Record<string, unknown>;
     }>;
     maxConcurrency?: number;
     autoRegister?: boolean;
@@ -120,7 +134,14 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
     },
     spending: {
       defaultRail: PaymentRail.SUI_ESCROW,
-      limits: [{ amount: 1_000_000_000n, interval: 'day' }],
+      limits: [{ amount: 1_000_000_000n, interval: 'day', currency: 'MIST' }],
+    },
+    payment: {
+      preferredRail: 'auto',
+      evm: {
+        enabled: false,
+        network: 'base',
+      },
     },
     daemon: {
       ipcPath:
@@ -128,6 +149,14 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
       dataDir: resolvedDataDir,
       pidFile: join(resolvedDataDir, 'daemon.pid'),
       logLevel: 'info',
+    },
+    relay: {
+      enabled: false,
+      endpoints: [],
+      autoConnect: true,
+      providerMode: false,
+      reconnectIntervalMs: 5_000,
+      heartbeatIntervalMs: 30_000,
     },
     blobstore: {
       mode: 'filesystem',
@@ -142,7 +171,9 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
   const network = isRecord(parsed.network) ? parsed.network : {};
   const identity = isRecord(parsed.identity) ? parsed.identity : {};
   const auth = isRecord(parsed.auth) ? parsed.auth : {};
+  const payment = isRecord(parsed.payment) ? parsed.payment : {};
   const daemon = isRecord(parsed.daemon) ? parsed.daemon : {};
+  const relay = isRecord(parsed.relay) ? parsed.relay : {};
   const blobstore = isRecord(parsed.blobstore) ? parsed.blobstore : {};
   const provider = isRecord(parsed.provider) ? parsed.provider : undefined;
 
@@ -158,6 +189,7 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
     },
     auth: normalizeAuthConfig(auth, defaults.auth),
     spending: normalizeSpendingPolicy(parsed.spending, defaults.spending),
+    payment: normalizePaymentConfig(payment, defaults.payment),
     daemon: {
       ipcPath: readString(daemon.ipcPath) ?? defaults.daemon.ipcPath,
       dataDir: normalizePath(readString(daemon.dataDir) ?? defaults.daemon.dataDir),
@@ -165,6 +197,7 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
       logLevel: normalizeLogLevel(daemon.logLevel, defaults.daemon.logLevel),
       logFile: readString(daemon.logFile) ? normalizePath(readString(daemon.logFile) as string) : undefined,
     },
+    relay: normalizeRelayConfig(relay, defaults.relay),
     blobstore: normalizeBlobStoreConfig(blobstore, defaults.blobstore),
     provider: normalizeProviderConfig(provider),
   };
@@ -221,6 +254,59 @@ function normalizeAuthConfig(value: LooseRecord, defaults: AuthConfig): AuthConf
     portal: {
       port: readPositiveInteger(portal.port, 'auth.portal.port') ?? defaults.portal?.port ?? 19876,
     },
+  };
+}
+
+function normalizePaymentConfig(value: LooseRecord, defaults: PaymentConfig): PaymentConfig {
+  const evm = isRecord(value.evm) ? value.evm : {};
+  const preferredRail = readString(value.preferredRail);
+  const network = readString(evm.network);
+
+  return {
+    preferredRail:
+      preferredRail === 'sui' || preferredRail === 'x402' || preferredRail === 'auto'
+        ? preferredRail
+        : defaults.preferredRail,
+    evm: {
+      enabled: readBoolean(evm.enabled) ?? defaults.evm?.enabled ?? false,
+      network:
+        network === 'base' || network === 'base-sepolia' || network === 'localhost'
+          ? network
+          : (defaults.evm?.network ?? 'base'),
+      rpcUrl: readString(evm.rpcUrl) ?? defaults.evm?.rpcUrl,
+    },
+  };
+}
+
+function normalizeRelayConfig(
+  value: LooseRecord,
+  defaults: DaemonFullConfig['relay'],
+): DaemonFullConfig['relay'] {
+  const endpoints = Array.isArray(value.endpoints)
+    ? value.endpoints
+        .map((entry) => {
+          if (!isRecord(entry)) {
+            return null;
+          }
+
+          const url = readString(entry.url);
+          if (!url) {
+            return null;
+          }
+
+          const relayDid = readString(entry.relayDid);
+          return relayDid ? { url, relayDid } : { url };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+    : defaults.endpoints;
+
+  return {
+    enabled: readBoolean(value.enabled) ?? defaults.enabled,
+    endpoints,
+    autoConnect: readBoolean(value.autoConnect) ?? defaults.autoConnect,
+    providerMode: readBoolean(value.providerMode) ?? defaults.providerMode,
+    reconnectIntervalMs: readPositiveInteger(value.reconnectIntervalMs, 'relay.reconnectIntervalMs') ?? defaults.reconnectIntervalMs,
+    heartbeatIntervalMs: readPositiveInteger(value.heartbeatIntervalMs, 'relay.heartbeatIntervalMs') ?? defaults.heartbeatIntervalMs,
   };
 }
 
@@ -359,6 +445,7 @@ function normalizeSpendingLimit(
     amount: parseBigInt(value.amount, `${path}[${index}].amount`),
     interval: normalizedInterval,
     rail: normalizeRail(value.rail),
+    currency: readString(value.currency)?.toUpperCase(),
     scope: readString(value.scope) ?? undefined,
   };
 }
@@ -405,6 +492,7 @@ function normalizeProviderCapability(
     priceMist,
     currency: readString(value.currency),
     adapter,
+    adapterConfig: isRecord(value.adapterConfig) ? value.adapterConfig : undefined,
   };
 }
 
@@ -425,8 +513,22 @@ function validateConfig(config: DaemonFullConfig): void {
     throw new Error('auth.google.clientId is required when auth.mode is zklogin.');
   }
 
+  if (!config.payment.evm) {
+    throw new Error('payment.evm configuration is required.');
+  }
+
   if (!config.daemon.ipcPath || !config.daemon.dataDir || !config.daemon.pidFile) {
     throw new Error('daemon configuration is incomplete.');
+  }
+
+  if (config.relay.enabled && config.relay.endpoints.length === 0) {
+    throw new Error('relay.endpoints must contain at least one entry when relay is enabled.');
+  }
+
+  for (const endpoint of config.relay.endpoints) {
+    if (!/^wss?:\/\//i.test(endpoint.url)) {
+      throw new Error(`Invalid relay endpoint URL: ${endpoint.url}`);
+    }
   }
 
   if (config.blobstore.mode === 'filesystem' || config.blobstore.mode === 'hybrid') {
@@ -482,7 +584,11 @@ function normalizeLogLevel(value: unknown, fallback: DaemonFullConfig['daemon'][
 }
 
 function normalizeRail(value: unknown): PaymentRail | undefined {
-  if (value === PaymentRail.SUI_ESCROW || value === PaymentRail.X402_BASE) {
+  if (
+    value === PaymentRail.SUI_ESCROW ||
+    value === PaymentRail.SUI_TRANSFER ||
+    value === PaymentRail.X402_BASE
+  ) {
     return value;
   }
 

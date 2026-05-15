@@ -1,4 +1,4 @@
-import type { PricingInfo } from './payment.js';
+import type { PaymentRail, PricingInfo } from './payment.js';
 
 declare const didBrand: unique symbol;
 
@@ -6,11 +6,19 @@ export type DID = `did:mesh:${string}` & {
   readonly [didBrand]: 'DID';
 };
 
+export interface RelayEndpoint {
+  relayDid?: DID;
+  endpoint: string;
+  modes?: Array<'sync' | 'streaming' | 'fallback' | 'negotiation'>;
+}
+
 export interface Capability {
   name: string;
   description: string;
   version: string;
   pricing: PricingInfo;
+  executionMode?: 'sync' | 'async';
+  paymentRails?: PaymentRail[];
 }
 
 export enum AgentStatus {
@@ -26,6 +34,7 @@ export interface AgentCard {
   description: string;
   capabilities: Capability[];
   endpoint?: string;
+  relayEndpoints?: RelayEndpoint[];
   active: boolean;
   version: number;
   registeredAt: number;

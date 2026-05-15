@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto';
+
 import pino from 'pino';
 
 import { EventSubscription, SqliteCursorStore, parseRawEvent } from '@agentic-mesh/core';
-import { PaymentRail, type Capability, type TaskPostedEvent } from '@agentic-mesh/types';
+import { PaymentRail, type Capability, type RelayEndpoint, type TaskPostedEvent } from '@agentic-mesh/types';
 import type { SuiEvent } from '@mysten/sui/client';
 
+import type { DaemonFullConfig } from '../config.js';
+import { RelayClient, type RelayClientConfig } from '../relay/relay-client.js';
 import type { DaemonState } from '../state.js';
 import { EchoAdapter } from './adapters/echo.js';
 import type { ExecutionAdapter } from './adapters/interface.js';
@@ -12,6 +16,8 @@ import type { ProviderCapabilityConfig, ProviderConfig } from './capabilities.js
 import { TaskQueue } from './task-queue.js';
 
 const logger = pino({ name: '@agentic-mesh/daemon:provider' });
+const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 
 export class ProviderRuntime {
   private subscription?: EventSubscription;
@@ -19,6 +25,7 @@ export class ProviderRuntime {
   private readonly taskQueue: TaskQueue;
   private readonly adapters = new Map<string, ExecutionAdapter>();
   private readonly capabilityConfigs = new Map<string, ProviderCapabilityConfig>();
+  private readonly relayClients: RelayClient[] = [];
   private registeredCapabilities: string[] = [];
   private chainOperations: Promise<void> = Promise.resolve();
 
@@ -27,6 +34,8 @@ export class ProviderRuntime {
       state: DaemonState;
       providerConfig: ProviderConfig;
       cursorDbPath: string;
+      relayConfig?: DaemonFullConfig['relay'];
+      relayClientFactory?: (config: RelayClientConfig, identity: DaemonState['relayAuthProvider']) => RelayClient;
     },
   ) {
     this.taskQueue = new TaskQueue(params.providerConfig.maxConcurrency);
@@ -38,6 +47,7 @@ export class ProviderRuntime {
     }
 
     this.initializeAdapters();
+    await this.connectRelays();
 
     if (this.params.providerConfig.autoRegister) {
       await this.registerAgentCard();
@@ -63,9 +73,50 @@ export class ProviderRuntime {
   async stop(): Promise<void> {
     this.subscription?.stop();
     this.subscription = undefined;
+    await Promise.all(this.relayClients.splice(0).map((client) => client.disconnect()));
     await this.taskQueue.drain();
     this.cursorStore?.close();
     this.cursorStore = undefined;
+  }
+
+  private async connectRelays(): Promise<void> {
+    const relayConfig = this.params.relayConfig;
+    if (!relayConfig?.enabled || !relayConfig.providerMode || !relayConfig.autoConnect) {
+      return;
+    }
+
+    const factory = this.params.relayClientFactory ?? ((config, identity) => new RelayClient(config, identity));
+    for (const endpoint of relayConfig.endpoints) {
+      const client = factory(
+        {
+          relayUrl: endpoint.url,
+          relayDid: endpoint.relayDid,
+          reconnectIntervalMs: relayConfig.reconnectIntervalMs,
+          heartbeatIntervalMs: relayConfig.heartbeatIntervalMs,
+        },
+        this.params.state.relayAuthProvider,
+      );
+
+      client.onTaskRequest(async (request) => {
+        await client.sendProgress(request.taskId ?? 'relay-task', 0.1, 'Task accepted by provider runtime');
+        const resultData = await this.executeLocalTask(
+          request.taskId ?? randomUUID(),
+          request.capability,
+          encodeRelayInput(request.input),
+        );
+        await client.sendProgress(request.taskId ?? 'relay-task', 1, 'Task completed');
+
+        return {
+          taskId: request.taskId ?? randomUUID(),
+          providerDid: this.params.state.did,
+          sequence: 0,
+          result: parseExecutionResult(resultData),
+        };
+      });
+
+      await client.connect(this.registeredCapabilities);
+      this.relayClients.push(client);
+    }
   }
 
   private async handleRawEvent(event: SuiEvent): Promise<void> {
@@ -102,11 +153,6 @@ export class ProviderRuntime {
   }
 
   private async processTask(taskId: string, capability: string, inputBlobId: string): Promise<void> {
-    const adapter = this.adapters.get(normalizeCapability(capability));
-    if (!adapter) {
-      throw new Error(`No adapter configured for capability ${capability}.`);
-    }
-
     await this.runChainOperation(async () => {
       await this.params.state.taskClient.acceptTask({
         taskId,
@@ -119,12 +165,8 @@ export class ProviderRuntime {
       throw new Error(`Input blob ${inputBlobId} was not found.`);
     }
 
-    const result = await adapter.execute({
-      taskId,
-      capability,
-      inputData,
-    });
-    const storedResult = await this.params.state.blobStore.store(result.resultData);
+    const result = await this.executeLocalTask(taskId, capability, inputData);
+    const storedResult = await this.params.state.blobStore.store(result);
 
     await this.runChainOperation(async () => {
       await this.params.state.taskClient.completeTask({
@@ -133,6 +175,21 @@ export class ProviderRuntime {
         keypair: this.params.state.keypair,
       });
     });
+  }
+
+  private async executeLocalTask(taskId: string, capability: string, inputData: Uint8Array): Promise<Uint8Array> {
+    const adapter = this.adapters.get(normalizeCapability(capability));
+    if (!adapter) {
+      throw new Error(`No adapter configured for capability ${capability}.`);
+    }
+
+    const result = await adapter.execute({
+      taskId,
+      capability,
+      inputData,
+    });
+
+    return result.resultData;
   }
 
   private async runChainOperation<T>(operation: () => Promise<T>): Promise<T> {
@@ -165,7 +222,7 @@ export class ProviderRuntime {
   private async registerAgentCard(): Promise<void> {
     const capabilities = this.params.providerConfig.capabilities
       .filter((capability) => this.capabilityConfigs.has(normalizeCapability(capability.name)))
-      .map(toCapability);
+      .map((capability) => toCapability(capability, this.hasRelaySupport));
 
     if (capabilities.length === 0) {
       logger.warn('Skipping auto-registration because no provider capabilities are available');
@@ -178,17 +235,50 @@ export class ProviderRuntime {
         description: `Auto-registered provider for ${this.params.state.did}`,
         did: this.params.state.did,
         capabilities,
-        endpoint: `mesh://agent/${this.params.state.did}`,
+        endpoint: this.registrationEndpoint,
         keypair: this.params.state.keypair,
       });
       const card = await this.params.state.registryClient.getAgentCard(registration.agentCardId);
       if (card) {
-        this.params.state.agentCache.upsertAgent(card);
+        this.params.state.agentCache.upsertAgent({
+          ...card,
+          endpoint: this.registrationEndpoint,
+          relayEndpoints: this.relayMetadata,
+          capabilities,
+        });
       }
       logger.info({ agentCardId: registration.agentCardId }, 'Provider agent card registered');
     } catch (error) {
       logger.error({ err: error }, 'Provider auto-registration failed');
     }
+  }
+
+  private get hasRelaySupport(): boolean {
+    return this.relayClients.length > 0 && this.relayMetadata.length > 0;
+  }
+
+  private get relayMetadata(): RelayEndpoint[] {
+    const relayConfig = this.params.relayConfig;
+    if (!relayConfig?.enabled || !relayConfig.providerMode) {
+      return [];
+    }
+
+    return relayConfig.endpoints.map(
+      (endpoint): RelayEndpoint => ({
+        relayDid: endpoint.relayDid as DaemonState['did'] | undefined,
+        endpoint: endpoint.url,
+        modes: ['sync', 'streaming', 'fallback'],
+      }),
+    );
+  }
+
+  private get registrationEndpoint(): string {
+    const relay = this.relayMetadata[0];
+    if (!relay) {
+      return `mesh://agent/${this.params.state.did}`;
+    }
+
+    return relay.endpoint.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:').replace(/\/v1\/ws$/i, '');
   }
 }
 
@@ -208,7 +298,7 @@ function createAdapter(capability: ProviderCapabilityConfig): ExecutionAdapter {
   }
 }
 
-function toCapability(capability: ProviderCapabilityConfig): Capability {
+function toCapability(capability: ProviderCapabilityConfig, hasRelaySupport: boolean): Capability {
   return {
     name: capability.name,
     description: capability.description,
@@ -218,9 +308,26 @@ function toCapability(capability: ProviderCapabilityConfig): Capability {
       amount: BigInt(capability.priceMist),
       currency: capability.currency ?? 'MIST',
     },
+    executionMode: hasRelaySupport ? 'sync' : 'async',
+    paymentRails: hasRelaySupport
+      ? [PaymentRail.SUI_TRANSFER, PaymentRail.X402_BASE, PaymentRail.SUI_ESCROW]
+      : [PaymentRail.SUI_ESCROW],
   };
 }
 
 function normalizeCapability(capability: string): string {
   return capability.trim().toLowerCase();
+}
+
+function encodeRelayInput(input: unknown): Uint8Array {
+  return encoder.encode(typeof input === 'string' ? input : JSON.stringify(input));
+}
+
+function parseExecutionResult(resultData: Uint8Array): unknown {
+  const text = decoder.decode(resultData);
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return text;
+  }
 }

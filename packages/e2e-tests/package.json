@@ -11,10 +11,13 @@
   "dependencies": {
     "@agentic-mesh/core": "workspace:*",
     "@agentic-mesh/daemon": "workspace:*",
+    "@agentic-mesh/relay": "workspace:*",
     "@agentic-mesh/types": "workspace:*",
-    "@mysten/sui": "^1.30.0"
+    "@mysten/sui": "^1.30.0",
+    "ws": "^8.0.0"
   },
   "devDependencies": {
+    "@types/ws": "^8.5.13",
     "fastify": "^5.8.5",
     "vitest": "^3.0.9"
   }

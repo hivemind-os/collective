@@ -122,6 +122,10 @@ function asBoolean(value: unknown, fallback = false): boolean {
 function normalizeCapability(raw: unknown): Capability {
   const record = isRecord(raw) ? (normalizeMoveValue(raw) as Record<string, unknown>) : {};
   const amount = asBigInt(getValue(record, 'price_mist', 'priceMist', 'amount'));
+  const railsValue = getValue(record, 'paymentRails', 'payment_rails');
+  const paymentRails = Array.isArray(railsValue)
+    ? railsValue.filter((entry): entry is PaymentRail => typeof entry === 'string' && Object.values(PaymentRail).includes(entry as PaymentRail))
+    : undefined;
 
   return {
     name: asString(getValue(record, 'name')),
@@ -132,6 +136,8 @@ function normalizeCapability(raw: unknown): Capability {
       amount,
       currency: asString(getValue(record, 'currency'), 'MIST'),
     },
+    executionMode: asExecutionMode(getValue(record, 'executionMode', 'execution_mode')),
+    paymentRails,
   };
 }
 
@@ -150,6 +156,7 @@ export function parseAgentCardFields(raw: unknown, fallbackId?: string): AgentCa
     description: asString(getValue(record, 'description')),
     capabilities,
     endpoint: asString(getValue(record, 'endpoint')) || undefined,
+    relayEndpoints: normalizeRelayEndpoints(getValue(record, 'relayEndpoints', 'relay_endpoints')),
     active: asBoolean(getValue(record, 'active'), true),
     version: asNumber(getValue(record, 'version'), 1),
     registeredAt: asNumber(getValue(record, 'registered_at', 'registeredAt')),
@@ -165,6 +172,39 @@ function normalizeOptionalAddress(value: unknown): string | undefined {
 function normalizeOptionalString(value: unknown): string | undefined {
   const normalized = bytesToString(value);
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeRelayEndpoints(value: unknown): AgentCard['relayEndpoints'] {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const relayEndpoints = value
+    .map((entry) => {
+      const record = isRecord(entry) ? (normalizeMoveValue(entry) as Record<string, unknown>) : null;
+      const endpoint = record ? asString(getValue(record, 'endpoint', 'url', 'serviceEndpoint')) : '';
+      if (!endpoint) {
+        return null;
+      }
+
+      return {
+        relayDid: asString(getValue(record, 'relayDid', 'relay_did')) as AgentCard['did'] | undefined,
+        endpoint,
+        modes: Array.isArray(record?.modes)
+          ? record.modes.filter(
+              (mode): mode is NonNullable<NonNullable<AgentCard['relayEndpoints']>[number]['modes']>[number] =>
+                typeof mode === 'string',
+            )
+          : undefined,
+      };
+    })
+    .filter((entry): entry is NonNullable<AgentCard['relayEndpoints']>[number] => Boolean(entry));
+
+  return relayEndpoints.length > 0 ? relayEndpoints : undefined;
+}
+
+function asExecutionMode(value: unknown): Capability['executionMode'] {
+  return value === 'sync' || value === 'async' ? value : undefined;
 }
 
 export function parseTaskFields(raw: unknown, fallbackId?: string): Task {

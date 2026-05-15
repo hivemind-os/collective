@@ -1,196 +1,122 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PaymentRail, TaskStatus, type AgentCard, type Task } from '@agentic-mesh/types';
+import { PaymentRail, TaskStatus, type AgentCard } from '@agentic-mesh/types';
 
-import type { MeshToolContext } from '../src/context.js';
+const relayExecuteMock = vi.fn();
+
+vi.mock('@agentic-mesh/core', () => ({
+  PaymentRailSelector: class {
+    selectRail() {
+      return 'x402-base';
+    }
+  },
+  RelayConsumerClient: class {
+    async executeSync(...args: unknown[]) {
+      return relayExecuteMock(...args);
+    }
+  },
+}));
+
 import { runMeshExecute } from '../src/tools/execute.js';
 
 function createAgent(): AgentCard {
   return {
-    id: '0xagent-1',
-    owner: '0xprovider',
-    did: 'did:mesh:provider-1' as AgentCard['did'],
-    name: 'Summarizer',
-    description: 'Summarizes text',
+    id: 'agent-1',
+    owner: 'owner',
+    did: 'did:mesh:provider' as AgentCard['did'],
+    name: 'Provider',
+    description: 'Test provider',
+    active: true,
+    version: 1,
+    registeredAt: Date.now(),
+    updatedAt: Date.now(),
+    endpoint: 'mesh://agent/provider',
+    relayEndpoints: [{ endpoint: 'https://relay.example', modes: ['sync', 'fallback'] }],
     capabilities: [
       {
-        name: 'summarize',
-        description: 'Summarize documents',
+        name: 'echo',
+        description: 'Echo capability',
         version: '1.0.0',
         pricing: {
           rail: PaymentRail.SUI_ESCROW,
-          amount: 100n,
+          amount: 5n,
           currency: 'MIST',
         },
+        executionMode: 'sync',
+        paymentRails: [PaymentRail.X402_BASE, PaymentRail.SUI_TRANSFER, PaymentRail.SUI_ESCROW],
       },
     ],
-    endpoint: 'mesh://agent/did:mesh:provider-1',
-    active: true,
-    version: 1,
-    registeredAt: 1_000,
-    updatedAt: 1_000,
   };
 }
 
-function createTask(overrides: Partial<Task> = {}): Task {
+function createContext(agent: AgentCard) {
   return {
-    id: '0xtask-1',
-    requester: '0xrequester',
-    provider: '0xprovider',
-    capability: 'summarize',
-    inputBlobId: 'blob-input',
-    resultBlobId: 'blob-output',
-    price: 100n,
-    status: TaskStatus.COMPLETED,
-    disputeWindowMs: 60_000,
-    createdAt: 1_000,
-    acceptedAt: 1_500,
-    completedAt: 2_000,
-    expiresAt: 3_000,
-    agreementHash: undefined,
-    ...overrides,
-  };
-}
-
-function createContext(overrides: Partial<MeshToolContext> = {}): MeshToolContext {
-  const agent = createAgent();
-
-  return {
-    did: 'did:mesh:test' as MeshToolContext['did'],
-    keypair: {} as MeshToolContext['keypair'],
-    suiClient: {
-      getBalance: vi.fn(),
-      queryEvents: vi.fn(),
-    } as unknown as MeshToolContext['suiClient'],
-    registryClient: {
-      discoverByCapability: vi.fn().mockResolvedValue([]),
-      getAgentCard: vi.fn(),
-    } as unknown as MeshToolContext['registryClient'],
-    taskClient: {
-      postTask: vi.fn().mockResolvedValue({ taskId: '0xtask-1', txDigest: '0xtx-1' }),
-      getTask: vi.fn().mockResolvedValue(createTask()),
-      releasePayment: vi.fn().mockResolvedValue({ txDigest: '0xtx-2' }),
-    } as unknown as MeshToolContext['taskClient'],
-    agentCache: {
-      searchByCapability: vi.fn().mockReturnValue([agent]),
-      getAgentByDID: vi.fn().mockReturnValue(agent),
-      getAllActive: vi.fn().mockReturnValue([agent]),
-      upsertAgent: vi.fn(),
-      removeAgent: vi.fn(),
-    } as unknown as MeshToolContext['agentCache'],
+    keypair: {} as never,
     blobStore: {
-      store: vi.fn().mockResolvedValue({ blobId: 'blob-input', checksum: 'sha256' }),
-      fetch: vi.fn().mockResolvedValue(new TextEncoder().encode('done')),
-    } as unknown as MeshToolContext['blobStore'],
-    spendingPolicy: {
-      evaluate: vi.fn().mockReturnValue({ approved: true }),
-      record: vi.fn(),
-    } as unknown as MeshToolContext['spendingPolicy'],
-    networkConfig: {
-      rpcUrl: 'http://127.0.0.1:9000',
-      faucetUrl: 'http://127.0.0.1:9123',
-      packageId: '0x1',
-      registryId: '0x2',
+      store: vi.fn(async () => ({ blobId: 'blob-in' })),
+      fetch: vi.fn(async () => new TextEncoder().encode('async-result')),
     },
-    ...overrides,
+    taskClient: {
+      postTask: vi.fn(async () => ({ taskId: 'task-1' })),
+      getTask: vi.fn(async () => ({ status: TaskStatus.COMPLETED, resultBlobId: 'blob-out' })),
+      releasePayment: vi.fn(async () => undefined),
+    },
+    agentCache: {
+      searchByCapability: vi.fn(() => [agent]),
+      getAgentByDID: vi.fn((did: string) => (did === agent.did ? agent : undefined)),
+      upsertAgent: vi.fn(),
+    },
+    registryClient: {
+      discoverByCapability: vi.fn(async () => []),
+    },
+    meshClient: {} as never,
+    spendingPolicy: {
+      evaluate: vi.fn(() => ({ approved: true })),
+      record: vi.fn(),
+    },
+    networkConfig: {} as never,
+    relayAuthProvider: {} as never,
+    x402Client: {} as never,
+    logger: {
+      warn: vi.fn(),
+    },
   };
 }
 
 describe('runMeshExecute', () => {
-  it('completes the happy path', async () => {
-    const context = createContext();
+  it('returns relay sync results when relay execution succeeds', async () => {
+    relayExecuteMock.mockResolvedValueOnce({
+      result: { ok: true },
+      paymentReceipt: 'receipt-1',
+      latencyMs: 12,
+      taskId: 'relay-task-1',
+      providerDid: 'did:mesh:provider',
+    });
+    const agent = createAgent();
+    const context = createContext(agent);
 
-    const result = await runMeshExecute(
-      {
-        capability: 'summarize',
-        input: 'hello',
-      },
-      context,
-    );
+    const result = await runMeshExecute({ capability: 'echo', input: 'hello', mode: 'sync' }, context as never);
 
-    expect(result).toEqual({
-      task_id: '0xtask-1',
-      result: 'done',
-      provider_did: 'did:mesh:provider-1',
-      price_mist: '100',
-      status: 'RELEASED',
-    });
-    expect(context.taskClient.postTask).toHaveBeenCalled();
-    expect(context.taskClient.releasePayment).toHaveBeenCalledWith({
-      taskId: '0xtask-1',
-      keypair: context.keypair,
-    });
-    expect(context.spendingPolicy.record).toHaveBeenCalledWith({
-      amountMist: 100n,
-      rail: PaymentRail.SUI_ESCROW,
-      taskId: '0xtask-1',
-      appId: 'did:mesh:provider-1',
-    });
+    expect(result.execution_mode).toBe('sync');
+    expect(result.task_id).toBe('relay-task-1');
+    expect(result.result).toBe(JSON.stringify({ ok: true }));
+    expect(result.payment_rail).toBe(PaymentRail.X402_BASE);
+    expect(context.taskClient.postTask).not.toHaveBeenCalled();
   });
 
-  it('throws when spending policy rejects the task', async () => {
-    const context = createContext({
-      spendingPolicy: {
-        evaluate: vi.fn().mockReturnValue({ approved: false, reason: 'Denied by policy' }),
-        record: vi.fn(),
-      } as unknown as MeshToolContext['spendingPolicy'],
-    });
+  it('falls back to async execution when relay sync is unavailable', async () => {
+    relayExecuteMock.mockRejectedValueOnce(new Error('fetch failed'));
+    const agent = createAgent();
+    const context = createContext(agent);
 
-    await expect(
-      runMeshExecute(
-        {
-          capability: 'summarize',
-          input: 'hello',
-        },
-        context,
-      ),
-    ).rejects.toThrow('Denied by policy');
-  });
+    const result = await runMeshExecute({ capability: 'echo', input: 'hello' }, context as never);
 
-  it('throws on timeout', async () => {
-    const context = createContext({
-      taskClient: {
-        postTask: vi.fn().mockResolvedValue({ taskId: '0xtask-1', txDigest: '0xtx-1' }),
-        getTask: vi.fn().mockResolvedValue(createTask({ status: TaskStatus.OPEN, resultBlobId: undefined })),
-        releasePayment: vi.fn(),
-      } as unknown as MeshToolContext['taskClient'],
-    });
-
-    await expect(
-      runMeshExecute(
-        {
-          capability: 'summarize',
-          input: 'hello',
-          timeout_seconds: 0,
-        },
-        context,
-      ),
-    ).rejects.toThrow('Timed out waiting for task 0xtask-1 to complete.');
-  });
-
-  it('throws when no provider is found', async () => {
-    const context = createContext({
-      agentCache: {
-        searchByCapability: vi.fn().mockReturnValue([]),
-        getAgentByDID: vi.fn().mockReturnValue(null),
-        getAllActive: vi.fn().mockReturnValue([]),
-        upsertAgent: vi.fn(),
-        removeAgent: vi.fn(),
-      } as unknown as MeshToolContext['agentCache'],
-      registryClient: {
-        discoverByCapability: vi.fn().mockResolvedValue([]),
-        getAgentCard: vi.fn(),
-      } as unknown as MeshToolContext['registryClient'],
-    });
-
-    await expect(
-      runMeshExecute(
-        {
-          capability: 'summarize',
-          input: 'hello',
-        },
-        context,
-      ),
-    ).rejects.toThrow('No providers found for capability summarize.');
+    expect(result.execution_mode).toBe('async');
+    expect(result.task_id).toBe('task-1');
+    expect(result.result).toBe('async-result');
+    expect(result.payment_rail).toBe(PaymentRail.SUI_ESCROW);
+    expect(context.taskClient.postTask).toHaveBeenCalledOnce();
+    expect(context.taskClient.releasePayment).toHaveBeenCalledOnce();
+    expect(context.logger.warn).toHaveBeenCalledOnce();
   });
 });

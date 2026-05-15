@@ -31,6 +31,7 @@ export function loadProviderConfig(config: DaemonFullConfig): ProviderConfig | n
       priceMist: capability.priceMist,
       currency: capability.currency,
       adapter: capability.adapter,
+      adapterConfig: capability.adapterConfig,
     })),
     maxConcurrency: Math.max(1, config.provider.maxConcurrency ?? 1),
     autoRegister: config.provider.autoRegister ?? false,

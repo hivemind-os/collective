@@ -7,4 +7,8 @@ export * from './task/index.js';
 export * from './events/index.js';
 export * from './cache/index.js';
 export * from './blobstore/index.js';
+export * from './evm/index.js';
+export * from './payment/index.js';
+export * from './relay/index.js';
 export * from './spending/index.js';
+export * from './x402/index.js';

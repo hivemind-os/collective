@@ -83,6 +83,25 @@ describe('SpendingPolicyEngine', () => {
     engine.close();
   });
 
+  it('tracks x402 spending by currency without mixing units', async () => {
+    const engine = new SpendingPolicyEngine({
+      policy: {
+        limits: [{ amount: 100n, interval: 'day', rail: PaymentRail.X402_BASE, currency: 'USDC' }],
+      },
+      dbPath: await createDbPath(),
+    });
+
+    engine.record({ amount: 60n, currency: 'USDC', rail: PaymentRail.X402_BASE, taskId: 'task-usdc' });
+    engine.record({ amount: 2n, currency: 'ETH', rail: PaymentRail.X402_BASE, taskId: 'task-eth' });
+
+    expect(engine.getSpent('day', PaymentRail.X402_BASE, undefined, 'USDC')).toBe(60n);
+    expect(engine.getSpent('day', PaymentRail.X402_BASE, undefined, 'ETH')).toBe(2n);
+    expect(engine.evaluate({ amount: 50n, currency: 'USDC', rail: PaymentRail.X402_BASE }).approved).toBe(false);
+    expect(engine.evaluate({ amount: 1n, currency: 'ETH', rail: PaymentRail.X402_BASE }).approved).toBe(true);
+
+    engine.close();
+  });
+
   it('updates policy rules at runtime', async () => {
     const engine = new SpendingPolicyEngine({ policy: basePolicy, dbPath: await createDbPath() });
     expect(engine.evaluate({ amountMist: 200n, rail: PaymentRail.SUI_ESCROW }).approved).toBe(true);

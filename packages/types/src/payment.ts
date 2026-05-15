@@ -1,5 +1,6 @@
 export enum PaymentRail {
   SUI_ESCROW = 'SUI_ESCROW',
+  SUI_TRANSFER = 'SUI_TRANSFER',
   X402_BASE = 'X402_BASE',
 }
 
@@ -7,6 +8,7 @@ export interface SpendingLimit {
   amount: bigint;
   interval: 'transaction' | 'hour' | 'day' | 'month' | 'lifetime';
   rail?: PaymentRail;
+  currency?: string;
   scope?: string;
 }
 

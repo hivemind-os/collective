@@ -1,6 +1,20 @@
 import type { DID } from './agent.js';
 import type { SpendingPolicy } from './payment.js';
 
+export interface RelayEndpointConfig {
+  url: string;
+  relayDid?: DID;
+}
+
+export interface RelayClientConfig {
+  enabled: boolean;
+  endpoints: RelayEndpointConfig[];
+  autoConnect: boolean;
+  providerMode: boolean;
+  reconnectIntervalMs?: number;
+  heartbeatIntervalMs?: number;
+}
+
 export interface NetworkConfig {
   rpcUrl: string;
   faucetUrl: string;
@@ -47,6 +61,17 @@ export interface BlobStoreConfig {
   };
 }
 
+export interface EvmConfig {
+  enabled: boolean;
+  network: 'base' | 'base-sepolia' | 'localhost';
+  rpcUrl?: string;
+}
+
+export interface PaymentConfig {
+  preferredRail: 'auto' | 'sui' | 'x402';
+  evm?: EvmConfig;
+}
+
 export interface DaemonConfig {
   autoStart: boolean;
   ipcPath: string;
@@ -59,6 +84,8 @@ export interface MeshConfig {
   identity: IdentityConfig;
   auth?: AuthConfig;
   spending: SpendingPolicy;
+  payment?: PaymentConfig;
   daemon: DaemonConfig;
+  relay?: RelayClientConfig;
   blobstore?: BlobStoreConfig;
 }

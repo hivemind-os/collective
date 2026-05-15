@@ -81,7 +81,7 @@ export function buildDefaultConfig(dataDir = getMeshDataDir()): MeshCliConfig {
     },
     spending: {
       defaultRail: PaymentRail.SUI_ESCROW,
-      limits: [{ amount: 1_000_000_000n, interval: 'day' }],
+      limits: [{ amount: 1_000_000_000n, interval: 'day', currency: 'MIST' }],
     },
     daemon: {
       ipcPath: process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : join(resolvedDataDir, 'mesh.sock'),
@@ -266,6 +266,7 @@ function normalizeSpendingLimit(value: unknown, index: number): SpendingPolicy['
     amount: parseBigInt(value.amount, `spending.limits[${index}].amount`),
     interval,
     rail: normalizeRail(value.rail),
+    currency: readString(value.currency)?.toUpperCase(),
     scope: readString(value.scope) ?? undefined,
   };
 }
@@ -315,7 +316,11 @@ function normalizeLogLevel(value: unknown, fallback: MeshCliConfig['daemon']['lo
 }
 
 function normalizeRail(value: unknown): PaymentRail | undefined {
-  if (value === PaymentRail.SUI_ESCROW || value === PaymentRail.X402_BASE) {
+  if (
+    value === PaymentRail.SUI_ESCROW ||
+    value === PaymentRail.SUI_TRANSFER ||
+    value === PaymentRail.X402_BASE
+  ) {
     return value;
   }
 

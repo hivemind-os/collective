@@ -1,10 +1,13 @@
 import type {
   AgentCache,
+  AuthProvider,
   BlobStore,
   MeshSuiClient,
+  PaymentRailSelector,
   RegistryClient,
   SpendingPolicyEngine,
   TaskClient,
+  X402Client,
 } from '@agentic-mesh/core';
 import type { DID, NetworkConfig } from '@agentic-mesh/types';
 import type { Signer } from '@mysten/sui/cryptography';
@@ -19,5 +22,12 @@ export interface MeshToolContext {
   blobStore: BlobStore;
   spendingPolicy: SpendingPolicyEngine;
   networkConfig: NetworkConfig;
+  relayAuthProvider?: AuthProvider;
+  x402Client?: X402Client;
+  paymentRailSelector?: PaymentRailSelector;
+  logger?: {
+    info?: (payload: unknown, message?: string) => void;
+    warn?: (payload: unknown, message?: string) => void;
+  };
   taskHistoryDb?: unknown;
 }
