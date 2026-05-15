@@ -95,6 +95,17 @@ If the shim package is not installed yet, start with `mesh daemon start` and ins
    pnpm --filter @agentic-mesh/cli exec mesh task status <task-id>
    ```
 
+## Community relay quick start
+
+If you want to operate a routing relay, first deposit relay stake and then register the relay:
+
+```bash
+pnpm --filter @agentic-mesh/cli exec mesh stake deposit 100 --type relay
+pnpm --filter @agentic-mesh/cli exec mesh relay register --endpoint wss://relay.example.com/ws --stake-id 0x<stake-id> --region us-east --fee 50
+```
+
+See [relay-operator-guide.md](relay-operator-guide.md) for automatic heartbeat and fee-tracking setup.
+
 ## Troubleshooting
 
 ### `mesh connect` says the shim is unavailable

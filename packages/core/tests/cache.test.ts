@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentCache, PaymentRail, type AgentCard } from '../src/index.js';
 
@@ -105,6 +105,20 @@ describe('AgentCache', () => {
     );
 
     expect(cache.getAllActive().map((entry) => entry.id)).toEqual(['0xagent-1']);
+    cache.close();
+  });
+
+  it('supports advanced queries locally and via delegate', async () => {
+    const delegated = [createAgent({ id: '0xdelegate', did: 'did:mesh:delegate' as AgentCard['did'] })];
+    const delegate = vi.fn().mockResolvedValue(delegated);
+    const delegatedCache = new AgentCache(await createDbPath(), { queryDelegate: delegate });
+    await expect(delegatedCache.queryAgentsAdvanced({ capability: 'summarize' })).resolves.toEqual(delegated);
+    delegatedCache.close();
+
+    const cache = new AgentCache(await createDbPath());
+    cache.upsertAgent(createAgent({ totalTasksCompleted: 4, totalTasksFailed: 1 }));
+    const results = await cache.queryAgentsAdvanced({ capability: 'summarize', minReputation: 0.7, sortBy: 'reputation' });
+    expect(results).toHaveLength(1);
     cache.close();
   });
 });

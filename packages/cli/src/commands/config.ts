@@ -24,6 +24,10 @@ export interface MeshCliConfig {
     type: 'filesystem';
     baseDir: string;
   };
+  indexer: {
+    enabled: boolean;
+    url?: string;
+  };
 }
 
 type LooseRecord = Record<string, unknown>;
@@ -93,6 +97,10 @@ export function buildDefaultConfig(dataDir = getMeshDataDir()): MeshCliConfig {
     blobstore: {
       type: 'filesystem',
       baseDir: join(resolvedDataDir, 'blobs'),
+    },
+    indexer: {
+      enabled: Boolean(process.env.MESH_INDEXER_URL),
+      url: process.env.MESH_INDEXER_URL,
     },
   };
 }
@@ -167,6 +175,7 @@ function mergeConfig(defaults: MeshCliConfig, parsed: LooseRecord): MeshCliConfi
   const identity = isRecord(parsed.identity) ? parsed.identity : {};
   const daemon = isRecord(parsed.daemon) ? parsed.daemon : {};
   const blobstore = isRecord(parsed.blobstore) ? parsed.blobstore : {};
+  const indexer = isRecord(parsed.indexer) ? parsed.indexer : {};
 
   return {
     network: {
@@ -189,6 +198,10 @@ function mergeConfig(defaults: MeshCliConfig, parsed: LooseRecord): MeshCliConfi
     blobstore: {
       type: 'filesystem',
       baseDir: normalizePath(readString(blobstore.baseDir) ?? defaults.blobstore.baseDir),
+    },
+    indexer: {
+      enabled: readBoolean(indexer.enabled) ?? defaults.indexer.enabled,
+      url: readString(indexer.url) ?? defaults.indexer.url,
     },
   };
 }
@@ -224,6 +237,10 @@ function applyEnvironmentOverrides(config: MeshCliConfig): MeshCliConfig {
     daemon: {
       ...withDataDir.daemon,
       logLevel: normalizeLogLevel(process.env.MESH_LOG_LEVEL, withDataDir.daemon.logLevel),
+    },
+    indexer: {
+      enabled: process.env.MESH_INDEXER_URL ? true : withDataDir.indexer.enabled,
+      url: process.env.MESH_INDEXER_URL ?? withDataDir.indexer.url,
     },
   };
 }
@@ -291,6 +308,10 @@ function validateConfig(config: MeshCliConfig): void {
   if (!config.blobstore.baseDir) {
     throw new Error('blobstore.baseDir is required.');
   }
+
+  if (config.indexer.enabled && !config.indexer.url) {
+    throw new Error('indexer.url is required when indexer.enabled is true.');
+  }
 }
 
 function serializeValue(value: unknown): unknown {
@@ -345,6 +366,10 @@ function parseBigInt(value: unknown, field: string): bigint {
 
 function readString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function readBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function readHexString(value: unknown): string | undefined {

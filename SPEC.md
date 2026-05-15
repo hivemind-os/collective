@@ -1,10 +1,19 @@
 # Agentic Mesh Protocol Specification
 
-**Version:** 0.1.0-draft
-**Status:** Draft
-**Date:** 2026-05-14
+**Version:** 1.0.0
+**Spec Status:** Frozen
+**Date:** 2026-05-15
+
+## Protocol Version: 1.0.0
+
+This v1.0.0 specification is frozen for implementation and interoperability validation.
 
 ---
+
+## Changelog
+
+- **1.0.0** — Freeze protocol semantics for community relay registration, relay discovery, relay heartbeats, routing fee disclosure, and interoperability expectations.
+- **0.1.0-draft** — Initial draft covering identity, discovery, tasks, payments, reputation, and relay topology.
 
 ## Table of Contents
 
@@ -1461,7 +1470,9 @@ Network health is maintained through chain and relay observability rather than d
 
 Relays are discoverable infrastructure participants with explicit authorization and replay protection requirements.
 
-- **Relay Registration:** Relays register on Sui with stake, endpoint URL, supported capabilities, and fee schedule
+- **Relay Registration:** Relays register on Sui with stake, endpoint URL, supported capabilities, region, and fee schedule
+- **Relay Liveness:** Registered relays MUST publish periodic heartbeats so discovery clients can down-rank stale infrastructure
+- **Fee Accounting:** Relay operators SHOULD track routed volume and cumulative fees earned for observability and future settlement analytics
 - **Provider Authorization:** Providers sign a `RelayAuthorization` binding their DID to specific relay DIDs. The authorization MAY be stored on-chain or embedded in the AgentCard `relayEndpoints` metadata
 - **Session Binding:** When a provider connects to a relay via WebSocket, the provider and relay exchange signed nonces tied to the session ID. The relay verifies the provider identity before marking the channel authenticated
 - **Requester Verification:** Requesters MUST verify that the target provider's AgentCard lists the relay DID and endpoint they are about to use. Unauthorized relays MUST be rejected

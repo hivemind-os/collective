@@ -9,9 +9,12 @@ import {
   buildAcceptTaskTx,
   buildCancelTaskTx,
   buildClaimPaymentTx,
+  buildCompleteMeteredTaskTx,
   buildCompleteTaskTx,
+  buildPostMeteredTaskTx,
   buildPostTaskTx,
   buildRefundExpiredTaskTx,
+  buildReleaseMeteredPaymentTx,
   buildReleasePaymentTx,
 } from '../sui/tx-helpers.js';
 
@@ -44,15 +47,33 @@ export class TaskClient {
       expiryHours: params.expiryHours,
     });
 
-    const response = await this.suiClient.executeTransaction(tx, params.keypair);
-    const taskId = extractObjectId(response.objectChanges, /::task::Task$/);
+    return await this.submitTaskCreation(tx, params.keypair);
+  }
 
-    if (!taskId) {
-      logger.warn({ response }, 'Task posting succeeded without a Task object change.');
-      throw new Error('Unable to determine task id from transaction response.');
-    }
+  async postMeteredTask(params: {
+    capability: string;
+    category: string;
+    inputBlobId: string;
+    agreementHash?: string;
+    maxPriceMist: bigint;
+    unitPriceMist: bigint;
+    disputeWindowMs: number;
+    expiryHours: number;
+    keypair: Signer;
+  }): Promise<{ txDigest: string; taskId: string }> {
+    const tx = buildPostMeteredTaskTx({
+      packageId: this.config.packageId,
+      capability: params.capability,
+      category: params.category,
+      inputBlobId: params.inputBlobId,
+      agreementHash: params.agreementHash,
+      maxPriceMist: params.maxPriceMist,
+      unitPriceMist: params.unitPriceMist,
+      disputeWindowMs: params.disputeWindowMs,
+      expiryHours: params.expiryHours,
+    });
 
-    return { txDigest: response.digest, taskId };
+    return await this.submitTaskCreation(tx, params.keypair);
   }
 
   async acceptTask(params: {
@@ -80,11 +101,40 @@ export class TaskClient {
     return { txDigest: response.digest };
   }
 
+  async completeMeteredTask(params: {
+    taskId: string;
+    resultBlobId: string;
+    meteredUnits: number;
+    verificationHash: string;
+    keypair: Signer;
+    providerCardId?: string;
+  }): Promise<{ txDigest: string }> {
+    const tx = buildCompleteMeteredTaskTx({
+      packageId: this.config.packageId,
+      taskId: params.taskId,
+      resultBlobId: params.resultBlobId,
+      meteredUnits: params.meteredUnits,
+      verificationHash: params.verificationHash,
+      providerCardId: params.providerCardId,
+    });
+    const response = await this.suiClient.executeTransaction(tx, params.keypair);
+    return { txDigest: response.digest };
+  }
+
   async releasePayment(params: {
     taskId: string;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildReleasePaymentTx({ packageId: this.config.packageId, taskId: params.taskId });
+    const response = await this.suiClient.executeTransaction(tx, params.keypair);
+    return { txDigest: response.digest };
+  }
+
+  async releaseMeteredPayment(params: {
+    taskId: string;
+    keypair: Signer;
+  }): Promise<{ txDigest: string }> {
+    const tx = buildReleaseMeteredPaymentTx({ packageId: this.config.packageId, taskId: params.taskId });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
   }
@@ -132,6 +182,18 @@ export class TaskClient {
 
       throw error;
     }
+  }
+
+  private async submitTaskCreation(tx: ReturnType<typeof buildPostTaskTx>, keypair: Signer): Promise<{ txDigest: string; taskId: string }> {
+    const response = await this.suiClient.executeTransaction(tx, keypair);
+    const taskId = extractObjectId(response.objectChanges, /::task::Task$/);
+
+    if (!taskId) {
+      logger.warn({ response }, 'Task posting succeeded without a Task object change.');
+      throw new Error('Unable to determine task id from transaction response.');
+    }
+
+    return { txDigest: response.digest, taskId };
   }
 }
 

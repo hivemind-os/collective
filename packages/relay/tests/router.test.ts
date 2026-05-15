@@ -227,6 +227,55 @@ describe('relay router', () => {
     await expect(responsePromise).rejects.toMatchObject({ code: 'RELAY_SHUTDOWN' satisfies RelayRouteError['code'] });
   });
 
+  it('routes the same request to multiple providers concurrently', async () => {
+    const manager = new SessionManager({ maxConnections: 5, heartbeatTimeoutMs: 5_000 });
+    const firstSocket = new TestSocket();
+    const secondSocket = new TestSocket();
+    const firstProvider = createAuthMessage(['weather']);
+    const secondProvider = createAuthMessage(['weather']);
+    const firstSession = manager.registerSession(firstSocket as unknown as WebSocket, firstProvider.authMessage);
+    const secondSession = manager.registerSession(secondSocket as unknown as WebSocket, secondProvider.authMessage);
+    const router = new RelayRouter({ sessionManager: manager, taskTimeoutMs: 1_000 });
+
+    const responsePromise = router.routeMulti({
+      requesterDid: createAuthMessage([]).did,
+      capability: 'weather',
+      input: { location: 'Paris' },
+    }, [firstProvider.did, secondProvider.did]);
+
+    const firstOutbound = JSON.parse(firstSocket.sent[0] ?? '{}') as { taskId: string };
+    const secondOutbound = JSON.parse(secondSocket.sent[0] ?? '{}') as { taskId: string };
+    router.handleProviderMessage(firstSession.sessionId, {
+      type: 'task_result',
+      sessionId: firstSession.sessionId,
+      taskId: firstOutbound.taskId,
+      sequence: 1,
+      result: { provider: firstProvider.did },
+    });
+    router.handleProviderMessage(secondSession.sessionId, {
+      type: 'task_result',
+      sessionId: secondSession.sessionId,
+      taskId: secondOutbound.taskId,
+      sequence: 1,
+      result: { provider: secondProvider.did },
+    });
+
+    await expect(responsePromise).resolves.toEqual([
+      {
+        taskId: firstOutbound.taskId,
+        providerDid: firstProvider.did,
+        sequence: 1,
+        result: { provider: firstProvider.did },
+      },
+      {
+        taskId: secondOutbound.taskId,
+        providerDid: secondProvider.did,
+        sequence: 1,
+        result: { provider: secondProvider.did },
+      },
+    ]);
+  });
+
   it('does not disconnect the provider when a streaming consumer drops mid-task', async () => {
     const manager = new SessionManager({ maxConnections: 5, heartbeatTimeoutMs: 5_000 });
     const socket = new TestSocket();

@@ -1,3 +1,4 @@
+import type { PaymentScheme } from './metering.js';
 import type { TaskCategory } from './marketplace.js';
 
 export enum TaskStatus {
@@ -45,6 +46,11 @@ export interface Task {
   inputBlobId: string;
   resultBlobId?: string;
   price: bigint;
+  paymentScheme?: PaymentScheme;
+  maxPrice?: bigint;
+  meteredUnits?: number;
+  unitPrice?: bigint;
+  verificationHash?: string;
   status: TaskStatus;
   disputeWindowMs: number;
   createdAt: number;

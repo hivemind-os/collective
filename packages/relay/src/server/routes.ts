@@ -5,6 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RelayConfig } from '../config.js';
 import { HealthMonitor } from '../health/monitor.js';
 import { PaymentGate } from '../payment/payment-gate.js';
+import type { RelayRegistryRuntime } from '../registry/relay-registry-service.js';
 import { RelayRouteError, RelayRouter } from '../routing/router.js';
 import { SessionManager } from '../routing/session-manager.js';
 import { applyMeshResponseHeaders, getMeshRequestContext } from './middleware.js';
@@ -17,6 +18,7 @@ export interface RelayRouteDependencies {
   router: RelayRouter;
   paymentGate: PaymentGate;
   healthMonitor: HealthMonitor;
+  relayRegistry?: RelayRegistryRuntime;
 }
 
 const CONSUMER_SEQUENCE_TTL_MS = 60 * 60_000;
@@ -39,6 +41,7 @@ export async function registerRelayRoutes(app: FastifyInstance, deps: RelayRoute
       activeRequests: status.activeRequests,
       totalRequestsServed: status.totalRequestsServed,
       averageLatencyMs: status.averageLatencyMs,
+      relayRegistry: deps.relayRegistry?.getInfo() ?? { enabled: false, registered: false },
     };
   });
 
@@ -50,6 +53,7 @@ export async function registerRelayRoutes(app: FastifyInstance, deps: RelayRoute
       minimumMist: deps.config.fees.minimumMist.toString(),
     },
     capabilities: [...new Set(deps.sessionManager.getConnectedProviders().flatMap((provider) => provider.capabilities))].sort(),
+    relayRegistry: deps.relayRegistry?.getInfo() ?? { enabled: false, registered: false },
   }));
 
   app.post('/mesh/providers/:providerDid/capabilities/:capability/execute', async (request, reply) => {
@@ -149,11 +153,13 @@ export async function registerRelayRoutes(app: FastifyInstance, deps: RelayRoute
             },
           );
 
+          await deps.relayRegistry?.recordRouting(BigInt(challenge.relayFee));
           writeSse(reply.raw, 'result', {
             taskId: routed.taskId,
             providerDid: routed.providerDid,
             result: routed.result,
             paymentReceipt: verification.settlementReference,
+            relayFeeMist: challenge.relayFee,
           });
         } catch (error) {
           const routeError = error instanceof RelayRouteError ? error : new RelayRouteError('ROUTE_FAILED', 'Relay routing failed.', 502, true);
@@ -172,10 +178,12 @@ export async function registerRelayRoutes(app: FastifyInstance, deps: RelayRoute
         timeoutMs: deps.config.limits.taskTimeoutMs,
       });
 
+      await deps.relayRegistry?.recordRouting(BigInt(challenge.relayFee));
       reply
         .code(200)
         .header('X-Mesh-Provider', response.providerDid)
         .header('X-Mesh-Response-Id', response.taskId)
+        .header('X-Mesh-Relay-Fee', challenge.relayFee)
         .header(
           'PAYMENT-RESPONSE',
           verification.settlementReference ??

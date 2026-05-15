@@ -4,6 +4,18 @@ import type { AgentCard, Capability, ReputationScore } from '@agentic-mesh/types
 
 import { ReputationScoreCalculator } from '../reputation/score-calculator.js';
 
+export interface AdvancedAgentQueryFilters {
+  capability?: string;
+  minReputation?: number;
+  category?: string;
+  search?: string;
+  limit?: number;
+  offset?: number;
+  sortBy?: 'stake' | 'reputation';
+}
+
+export type AdvancedAgentQueryDelegate = (filters: AdvancedAgentQueryFilters) => Promise<AgentCard[]>;
+
 interface AgentRow {
   rowid: number;
   id: string;
@@ -31,8 +43,10 @@ interface AgentRow {
 export class AgentCache {
   private readonly db: Database.Database;
   private readonly scoreCalculator = new ReputationScoreCalculator();
+  private readonly queryDelegate?: AdvancedAgentQueryDelegate;
 
-  constructor(dbPath: string) {
+  constructor(dbPath: string, options: { queryDelegate?: AdvancedAgentQueryDelegate } = {}) {
+    this.queryDelegate = options.queryDelegate;
     this.db = new Database(dbPath);
     this.db.defaultSafeIntegers(true);
     this.db.exec(`
@@ -198,6 +212,58 @@ export class AgentCache {
     return rows.map(mapAgentRow);
   }
 
+  async queryAgentsAdvanced(filters: AdvancedAgentQueryFilters = {}): Promise<AgentCard[]> {
+    if (this.queryDelegate) {
+      try {
+        return await this.queryDelegate(filters);
+      } catch {
+        // Fall through to the local cache query.
+      }
+    }
+
+    const limit = normalizeLimit(filters.limit, 20);
+    const offset = normalizeOffset(filters.offset);
+    const search = filters.search?.trim();
+    const capability = filters.capability?.trim();
+
+    let agents = search || capability
+      ? this.searchByCapability(search ?? capability ?? '', Math.max(limit + offset, limit), {
+          sortByReputation: filters.sortBy === 'reputation',
+        })
+      : this.getAllActive(Math.max(limit + offset, 100));
+
+    if (capability) {
+      agents = agents.filter((agent) => agent.capabilities.some((entry) => equalsIgnoreCase(entry.name, capability)));
+    }
+    if (search) {
+      const searchLower = search.toLowerCase();
+      agents = agents.filter((agent) => matchesSearch(agent, searchLower));
+    }
+    if (filters.category) {
+      const categoryLower = filters.category.toLowerCase();
+      agents = agents.filter((agent) =>
+        agent.capabilities.some(
+          (entry) =>
+            entry.name.toLowerCase().includes(categoryLower) ||
+            entry.description.toLowerCase().includes(categoryLower),
+        ) || agent.description.toLowerCase().includes(categoryLower),
+      );
+    }
+
+    const scores = new Map(agents.map((agent) => [agent.did, this.scoreCalculator.computeScore(agent, [])]));
+    const minReputation = typeof filters.minReputation === 'number' ? filters.minReputation : undefined;
+    if (minReputation !== undefined) {
+      agents = agents.filter((agent) => (scores.get(agent.did)?.successRate ?? 0) >= minReputation);
+    }
+
+    const ranked = rankAgents(
+      agents,
+      { sortByReputation: filters.sortBy === 'reputation', scores },
+      this.scoreCalculator,
+    );
+    return ranked.slice(offset, offset + limit);
+  }
+
   close(): void {
     this.db.close();
   }
@@ -251,6 +317,37 @@ function ensureAgentsColumn(db: Database.Database, column: string, type: string)
   if (!columns.some((entry) => entry.name === column)) {
     db.exec(`ALTER TABLE agents ADD COLUMN ${column} ${type}`);
   }
+}
+
+function matchesSearch(agent: AgentCard, searchLower: string): boolean {
+  return (
+    agent.name.toLowerCase().includes(searchLower) ||
+    agent.description.toLowerCase().includes(searchLower) ||
+    agent.capabilities.some(
+      (entry) =>
+        entry.name.toLowerCase().includes(searchLower) ||
+        entry.description.toLowerCase().includes(searchLower) ||
+        entry.version.toLowerCase().includes(searchLower),
+    )
+  );
+}
+
+function equalsIgnoreCase(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase();
+}
+
+function normalizeLimit(limit: number | undefined, fallback: number): number {
+  if (typeof limit !== 'number' || Number.isNaN(limit)) {
+    return fallback;
+  }
+  return Math.max(1, Math.floor(limit));
+}
+
+function normalizeOffset(offset: number | undefined): number {
+  if (typeof offset !== 'number' || Number.isNaN(offset)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(offset));
 }
 
 function buildFtsQuery(query: string): string {

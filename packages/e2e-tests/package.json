@@ -11,6 +11,7 @@
   "dependencies": {
     "@agentic-mesh/core": "workspace:*",
     "@agentic-mesh/daemon": "workspace:*",
+    "@agentic-mesh/indexer": "workspace:*",
     "@agentic-mesh/relay": "workspace:*",
     "@agentic-mesh/types": "workspace:*",
     "@mysten/sui": "^1.30.0",

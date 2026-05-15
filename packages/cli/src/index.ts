@@ -2,6 +2,7 @@
 
         import { pathToFileURL } from 'node:url';
 
+        import { handleAnalytics } from './commands/analytics.js';
         import { handleConfig } from './commands/config.js';
         import { handleConnect } from './commands/connect.js';
         import { handleDaemon } from './commands/daemon.js';
@@ -10,8 +11,11 @@
         import { handleInit } from './commands/init.js';
         import { handleLogs } from './commands/logs.js';
         import { handleMarketplace } from './commands/marketplace.js';
+        import { handleMetering } from './commands/metering.js';
+        import { handleMultiExecute } from './commands/multi-execute.js';
         import { handlePolicy } from './commands/policy.js';
         import { handleRegister } from './commands/register.js';
+        import { handleRelayRegistry } from './commands/relay-registry.js';
         import { handleStake } from './commands/stake.js';
         import { handleTask } from './commands/task.js';
         import { handleWallet } from './commands/wallet.js';
@@ -34,6 +38,8 @@
               return await handleRegister(args.slice(1));
             case 'config':
               return await handleConfig(args.slice(1));
+            case 'analytics':
+              return await handleAnalytics(subcommand, args.slice(2));
             case 'policy':
               return await handlePolicy(subcommand, args.slice(2));
             case 'wallet':
@@ -44,12 +50,18 @@
               return await handleDispute(subcommand, args.slice(2));
             case 'stake':
               return await handleStake(subcommand, args.slice(2));
+            case 'relay':
+              return await handleRelayRegistry(subcommand, args.slice(2));
             case 'task':
               return await handleTask(subcommand, args.slice(2));
             case 'logs':
               return await handleLogs(args.slice(1));
             case 'marketplace':
               return await handleMarketplace(subcommand, args.slice(2));
+            case 'metering':
+              return await handleMetering(subcommand, args.slice(2));
+            case 'multi-execute':
+              return await handleMultiExecute(args.slice(1));
             case '--help':
             case '-h':
             case 'help':
@@ -77,12 +89,16 @@ Commands:
   daemon <cmd>         Manage the background daemon (start|stop|status)
   register             Register this node as a provider
   config [subcmd]      Show or update config values
+  analytics <cmd>      Query indexer analytics (summary|top-providers|task-volume)
   policy set           Update spending limits
   wallet <cmd>         Wallet tools (balance|fund|address)
   discover <cap>       Find providers for a capability
   dispute <cmd>        Manage disputes (open|respond|accept|status)
   marketplace <cmd>    Marketplace tools (post|browse|bid|accept-bid)
+  metering <cmd>       Metered task tools (execute|verify|status)
+  multi-execute        Execute across multiple providers
   stake <cmd>          Manage staking (deposit|status|withdraw)
+  relay <cmd>          Manage community relays (register|list|heartbeat|deactivate)
   task status <id>     Inspect a task on Sui
   logs [--follow]      Show daemon logs
   help                 Show this help text

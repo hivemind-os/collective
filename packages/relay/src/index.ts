@@ -14,6 +14,7 @@ export * from './payment/payment-gate.js';
 export * from './payment/fee-schedule.js';
 export * from './identity/relay-identity.js';
 export * from './health/monitor.js';
+export * from './registry/relay-registry-service.js';
 
 export async function startRelayServer() {
   const config = loadRelayConfig();

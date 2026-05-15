@@ -80,9 +80,64 @@ describe('runMeshDiscover', () => {
 
     const result = await runMeshDiscover({ capability: 'summarize' }, context);
 
+    expect(result.source).toBe('cache');
     expect(result.agents).toHaveLength(1);
     expect(result.agents[0]).toMatchObject({ name: 'Summarizer', did: 'did:mesh:agent-1' });
     expect(result.agents[0].reputation.total_tasks).toBe(0);
+    expect(context.registryClient.discoverByCapability).not.toHaveBeenCalled();
+  });
+
+  it('uses the indexer when configured', async () => {
+    const context = createContext({
+      indexer: {
+        graphqlUrl: 'http://localhost:4000/graphql',
+        fetch: vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            data: {
+              agents: {
+                nodes: [
+                  {
+                    id: '0xagent-1',
+                    owner: '0xowner-1',
+                    did: 'did:mesh:agent-1',
+                    name: 'Summarizer',
+                    description: 'Summarizes text',
+                    endpoint: 'mesh://agent/did:mesh:agent-1',
+                    active: true,
+                    version: 1,
+                    registeredAt: '1000',
+                    updatedAt: '1000',
+                    totalTasksCompleted: 5,
+                    totalTasksFailed: 1,
+                    totalTasksDisputed: 0,
+                    totalEarningsMist: '1000',
+                    hasStake: true,
+                    stakeMist: '100',
+                    stakeType: 'agent',
+                    capabilities: [
+                      {
+                        name: 'summarize',
+                        description: 'Summarize documents',
+                        version: '1.0.0',
+                        executionMode: 'sync',
+                        paymentRails: ['sui-escrow'],
+                        pricing: { rail: 'sui-escrow', amount: '100', currency: 'MIST' },
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          }),
+        }) as unknown as typeof fetch,
+      },
+    });
+
+    const result = await runMeshDiscover({ capability: 'summarize' }, context);
+
+    expect(result.source).toBe('indexer');
+    expect(result.agents[0]?.reputation.total_tasks).toBe(6);
     expect(context.registryClient.discoverByCapability).not.toHaveBeenCalled();
   });
 
@@ -97,6 +152,7 @@ describe('runMeshDiscover', () => {
 
     const result = await runMeshDiscover({ capability: 'summarize' }, context);
 
+    expect(result.source).toBe('registry');
     expect(result.agents).toHaveLength(1);
     expect(context.registryClient.discoverByCapability).toHaveBeenCalledWith('summarize', 10, { sortByReputation: false });
     expect(context.agentCache.upsertAgent).toHaveBeenCalledWith(agent);

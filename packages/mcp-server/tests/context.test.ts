@@ -63,7 +63,8 @@ describe('MeshToolContext and registration', () => {
     const listResources = await handlers.get(ListResourcesRequestSchema)?.();
     const listTemplates = await handlers.get(ListResourceTemplatesRequestSchema)?.();
 
-    expect(listTools.tools).toHaveLength(15);
+    expect(listTools.tools).toHaveLength(20);
+    expect(listTools.tools.map((tool: { name: string }) => tool.name)).toContain('mesh_relay_registry');
     expect(listResources.resources).toHaveLength(2);
     expect(listTemplates.resourceTemplates).toHaveLength(2);
   });

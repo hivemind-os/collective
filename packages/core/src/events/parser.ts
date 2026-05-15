@@ -1,7 +1,7 @@
-import { BidStatus, TaskStatus, type MeshEvent } from '@agentic-mesh/types';
+import { BidStatus, PaymentScheme, RelayNodeStatus, TaskStatus, type MeshEvent } from '@agentic-mesh/types';
 import type { SuiEvent } from '@mysten/sui/client';
 
-import { isRecord, parseAgentCardFields, parseBidFields, parseTaskFields } from '../internal/parsing.js';
+import { isRecord, parseAgentCardFields, parseBidFields, parseRelayNodeFields, parseTaskFields } from '../internal/parsing.js';
 
 export function parseRawEvent(rawEvent: SuiEvent, packageId: string): MeshEvent | null {
   if (!rawEvent.type.startsWith(`${packageId}::`)) {
@@ -63,6 +63,7 @@ export function parseRawEvent(rawEvent: SuiEvent, packageId: string): MeshEvent 
         taskId: asString(payload.task_id, payload.taskId),
         requester: asString(payload.requester),
         provider: asString(payload.provider),
+        price: asBigInt(payload.price),
         acceptedAt: asNumber(payload.accepted_at, timestampMs),
         status: TaskStatus.ACCEPTED,
       };
@@ -74,6 +75,10 @@ export function parseRawEvent(rawEvent: SuiEvent, packageId: string): MeshEvent 
         taskId: asString(payload.task_id, payload.taskId),
         provider: asString(payload.provider),
         resultBlobId: bytesToString(payload.result_blob_id ?? payload.resultBlobId),
+        price: asBigInt(payload.price),
+        paymentScheme: asOptionalPaymentScheme(payload.payment_scheme ?? payload.paymentScheme),
+        meteredUnits: asOptionalNumber(payload.metered_units ?? payload.meteredUnits),
+        verificationHash: bytesToHex(payload.verification_hash ?? payload.verificationHash),
         completedAt: asNumber(payload.completed_at, timestampMs),
         status: TaskStatus.COMPLETED,
       };
@@ -85,6 +90,8 @@ export function parseRawEvent(rawEvent: SuiEvent, packageId: string): MeshEvent 
         taskId: asString(payload.task_id, payload.taskId),
         requester: asString(payload.requester),
         provider: asString(payload.provider),
+        price: asBigInt(payload.price),
+        refundAmount: asOptionalBigInt(payload.refund_amount ?? payload.refundAmount),
         releasedAt: timestampMs,
         status: TaskStatus.RELEASED,
       };
@@ -155,6 +162,40 @@ export function parseRawEvent(rawEvent: SuiEvent, packageId: string): MeshEvent 
         status: BidStatus.REJECTED,
       };
     }
+    case `${packageId}::relay_registry::RelayRegistered`: {
+      return {
+        ...base,
+        type: 'relay.registered',
+        relay: parseRelayNodeFields(payload),
+      };
+    }
+    case `${packageId}::relay_registry::RelayHeartbeat`: {
+      return {
+        ...base,
+        type: 'relay.heartbeat',
+        relayId: asString(payload.relay_id, payload.relayId),
+        operator: asString(payload.operator),
+        lastHeartbeat: asNumber(payload.last_heartbeat ?? payload.lastHeartbeat, timestampMs),
+      };
+    }
+    case `${packageId}::relay_registry::RelayDeactivated`: {
+      return {
+        ...base,
+        type: 'relay.deactivated',
+        relayId: asString(payload.relay_id, payload.relayId),
+        operator: asString(payload.operator),
+        status: RelayNodeStatus.INACTIVE,
+      };
+    }
+    case `${packageId}::relay_registry::RelaySlashed`: {
+      return {
+        ...base,
+        type: 'relay.slashed',
+        relayId: asString(payload.relay_id, payload.relayId),
+        operator: asString(payload.operator),
+        status: RelayNodeStatus.SLASHED,
+      };
+    }
     default:
       return null;
   }
@@ -186,6 +227,13 @@ function asNumber(value: unknown, fallback = 0): number {
   return fallback;
 }
 
+function asOptionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return asNumber(value);
+}
+
 function asBigInt(value: unknown): bigint {
   if (typeof value === 'bigint') {
     return value;
@@ -199,6 +247,30 @@ function asBigInt(value: unknown): bigint {
   return 0n;
 }
 
+function asOptionalBigInt(value: unknown): bigint | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return asBigInt(value);
+}
+
+function asOptionalPaymentScheme(value: unknown): PaymentScheme | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const parsed = asNumber(value);
+  switch (parsed) {
+    case 0:
+      return PaymentScheme.EXACT;
+    case 1:
+      return PaymentScheme.UPTO;
+    case 2:
+      return PaymentScheme.STREAM;
+    default:
+      return undefined;
+  }
+}
+
 function bytesToString(value: unknown): string {
   if (typeof value === 'string') {
     return value;
@@ -209,4 +281,11 @@ function bytesToString(value: unknown): string {
   }
 
   return '';
+}
+
+function bytesToHex(value: unknown): string | undefined {
+  if (!Array.isArray(value) || !value.every((entry) => typeof entry === 'number')) {
+    return undefined;
+  }
+  return Buffer.from(value).toString('hex');
 }

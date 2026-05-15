@@ -5,6 +5,15 @@ import { registerResourceHandlers } from './resources/index.js';
 import { registerToolHandlers } from './tools/index.js';
 
 export type { MeshToolContext } from './context.js';
+export { meshMultiExecuteTool, runMeshMultiExecute, type MeshMultiExecuteParams, type MeshMultiExecuteResult } from './tools/multi-execute.js';
+export {
+  meshMeteredExecuteTool,
+  meshVerifyResultTool,
+  runMeshMeteredExecute,
+  runMeshVerifyResult,
+  type MeshMeteredExecuteParams,
+  type MeshVerifyResultParams,
+} from './tools/metering.js';
 
 export function registerMeshTools(server: Server, context: MeshToolContext): void {
   registerToolHandlers(server, context);

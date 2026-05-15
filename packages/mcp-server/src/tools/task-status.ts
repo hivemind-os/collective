@@ -1,3 +1,4 @@
+import { decodeMeteredResult, parseMeteredResultEnvelope } from '@agentic-mesh/core';
 import { TaskStatus } from '@agentic-mesh/types';
 
 import type { MeshToolContext } from '../context.js';
@@ -40,7 +41,10 @@ export async function runMeshTaskStatus(
   let result: string | undefined;
   if ((task.status === TaskStatus.COMPLETED || task.status === TaskStatus.RELEASED) && task.resultBlobId) {
     const resultBytes = await fetchMeshBlob(context.blobStore, task.resultBlobId);
-    result = resultBytes ? decoder.decode(resultBytes) : undefined;
+    if (resultBytes) {
+      const envelope = parseMeteredResultEnvelope(resultBytes);
+      result = decoder.decode(envelope ? decodeMeteredResult(envelope) : resultBytes);
+    }
   }
 
   return {

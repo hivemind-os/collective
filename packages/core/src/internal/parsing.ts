@@ -1,4 +1,4 @@
-import { BidStatus, PaymentRail, TaskStatus, type AgentCard, type Bid, type Capability, type Dispute, type StakePosition, type Task } from '@agentic-mesh/types';
+import { BidStatus, PaymentRail, PaymentScheme, RelayNodeStatus, TaskStatus, type AgentCard, type Bid, type Capability, type Dispute, type RelayNode, type StakePosition, type Task } from '@agentic-mesh/types';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -205,6 +205,19 @@ function normalizeOptionalBoolean(value: unknown): boolean | undefined {
   return typeof value === 'boolean' ? value : undefined;
 }
 
+function normalizePaymentScheme(value: unknown): PaymentScheme | undefined {
+  if (value === 0 || value === '0' || value === PaymentScheme.EXACT) {
+    return PaymentScheme.EXACT;
+  }
+  if (value === 1 || value === '1' || value === PaymentScheme.UPTO) {
+    return PaymentScheme.UPTO;
+  }
+  if (value === 2 || value === '2' || value === PaymentScheme.STREAM) {
+    return PaymentScheme.STREAM;
+  }
+  return undefined;
+}
+
 function normalizeRelayEndpoints(value: unknown): AgentCard['relayEndpoints'] {
   if (!Array.isArray(value)) {
     return undefined;
@@ -264,6 +277,19 @@ function normalizeStakeType(value: unknown): StakePosition['stakeType'] | AgentC
   return undefined;
 }
 
+function normalizeRelayStatus(value: unknown): RelayNodeStatus {
+  if (value === RelayNodeStatus.ACTIVE || value === '0' || value === 0 || value === 'ACTIVE') {
+    return RelayNodeStatus.ACTIVE;
+  }
+  if (value === RelayNodeStatus.INACTIVE || value === '1' || value === 1 || value === 'INACTIVE') {
+    return RelayNodeStatus.INACTIVE;
+  }
+  if (value === RelayNodeStatus.SLASHED || value === '2' || value === 2 || value === 'SLASHED') {
+    return RelayNodeStatus.SLASHED;
+  }
+  return RelayNodeStatus.ACTIVE;
+}
+
 function normalizeBalanceValue(value: unknown): bigint {
   if (isRecord(value)) {
     return asBigInt(getValue(value, 'value'));
@@ -294,11 +320,35 @@ export function parseStakePositionFields(raw: unknown, fallbackId?: string): Sta
   };
 }
 
+export function parseRelayNodeFields(raw: unknown, fallbackId?: string): RelayNode {
+  const record = isRecord(raw) ? (normalizeMoveValue(raw) as Record<string, unknown>) : {};
+  const capabilitiesValue = getValue(record, 'capabilities');
+  const capabilities = Array.isArray(capabilitiesValue)
+    ? capabilitiesValue.map((entry) => bytesToString(entry)).filter(Boolean)
+    : [];
+
+  return {
+    id: asString(getValue(record, 'id', 'relay_id', 'relayId', 'objectId'), fallbackId ?? ''),
+    operator: asString(getValue(record, 'operator', 'owner', 'objectOwner')),
+    endpoint: asString(getValue(record, 'endpoint')),
+    stakePositionId: asString(getValue(record, 'stake_position_id', 'stakePositionId')),
+    capabilities,
+    region: asString(getValue(record, 'region')),
+    status: normalizeRelayStatus(getValue(record, 'status')),
+    registeredAt: asNumber(getValue(record, 'registered_at', 'registeredAt')),
+    lastHeartbeat: asNumber(getValue(record, 'last_heartbeat', 'lastHeartbeat')),
+    routingFeeBps: asNumber(getValue(record, 'routing_fee_bps', 'routingFeeBps')),
+    totalRouted: asNumber(getValue(record, 'total_routed', 'totalRouted')),
+    totalFeesEarnedMist: asBigInt(getValue(record, 'total_fees_earned', 'totalFeesEarnedMist')),
+  };
+}
+
 export function parseTaskFields(raw: unknown, fallbackId?: string): Task {
   const record = isRecord(raw) ? (normalizeMoveValue(raw) as Record<string, unknown>) : {};
   const status = asNumber(getValue(record, 'status'), TaskStatus.OPEN) as TaskStatus;
   const acceptedAt = asNumber(getValue(record, 'accepted_at', 'acceptedAt'));
   const completedAt = asNumber(getValue(record, 'completed_at', 'completedAt'));
+  const paymentScheme = normalizePaymentScheme(getValue(record, 'payment_scheme', 'paymentScheme'));
 
   return {
     id: asString(getValue(record, 'id', 'task_id', 'taskId', 'objectId'), fallbackId ?? ''),
@@ -309,6 +359,11 @@ export function parseTaskFields(raw: unknown, fallbackId?: string): Task {
     inputBlobId: bytesToString(getValue(record, 'input_blob_id', 'inputBlobId')),
     resultBlobId: normalizeOptionalString(getValue(record, 'result_blob_id', 'resultBlobId')),
     price: asBigInt(getValue(record, 'price')),
+    paymentScheme,
+    maxPrice: normalizeOptionalBigInt(getValue(record, 'max_price', 'maxPrice')),
+    meteredUnits: normalizeOptionalNumber(getValue(record, 'metered_units', 'meteredUnits')),
+    unitPrice: normalizeOptionalBigInt(getValue(record, 'unit_price', 'unitPrice')),
+    verificationHash: normalizeOptionalHex(getValue(record, 'verification_hash', 'verificationHash')),
     status,
     disputeWindowMs: asNumber(getValue(record, 'dispute_window_ms', 'disputeWindowMs')),
     createdAt: asNumber(getValue(record, 'created_at', 'createdAt')),

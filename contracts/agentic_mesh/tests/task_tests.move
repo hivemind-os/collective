@@ -108,6 +108,63 @@ module agentic_mesh::task_tests {
         }
     }
 
+    fun post_metered_task_with_values(
+        scenario: &mut ts::Scenario,
+        requester: address,
+        clock: &Clock,
+        capability: String,
+        input_blob_id: vector<u8>,
+        agreement_hash: vector<u8>,
+        max_price: u64,
+        unit_price: u64,
+        dispute_window_ms: u64,
+        expiry_hours: u64,
+    ): ID {
+        scenario.next_tx(requester);
+        {
+            let payment = coin::mint_for_testing<SUI>(max_price, scenario.ctx());
+            task::post_metered_task(
+                capability,
+                input_blob_id,
+                agreement_hash,
+                payment,
+                unit_price,
+                dispute_window_ms,
+                expiry_hours,
+                string::utf8(DEFAULT_CATEGORY),
+                clock,
+                scenario.ctx(),
+            );
+            let events = event::events_by_type<TaskPosted>();
+            assert!(events.length() == 1);
+            task::posted_event_task_id(events.borrow(0))
+        }
+    }
+
+    fun complete_metered_task_by_id(
+        scenario: &mut ts::Scenario,
+        provider: address,
+        task_id: ID,
+        metered_units: u64,
+        result_blob_id: vector<u8>,
+        verification_hash: vector<u8>,
+        clock: &Clock,
+    ) {
+        scenario.next_tx(provider);
+        {
+            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            task::complete_metered_task(
+                &mut t,
+                metered_units,
+                result_blob_id,
+                verification_hash,
+                clock,
+                scenario.ctx(),
+            );
+            ts::return_shared(t);
+        }
+    }
+
     #[test]
     fun test_post_task_with_escrow() {
         let mut scenario = ts::begin(REQUESTER);
@@ -915,6 +972,202 @@ module agentic_mesh::task_tests {
         {
             let mut t = scenario.take_shared_by_id<Task>(task_id);
             task::refund_expired_task(&mut t, &clock, scenario.ctx());
+            ts::return_shared(t);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_post_metered_task_sets_metering_fields() {
+        let mut scenario = ts::begin(REQUESTER);
+        let clock = create_clock(&mut scenario);
+        let task_id = post_metered_task_with_values(
+            &mut scenario,
+            REQUESTER,
+            &clock,
+            string::utf8(b"metered-capability"),
+            b"metered-input",
+            b"metered-agreement",
+            TWO_SUI,
+            250_000_000,
+            DISPUTE_WINDOW_MS,
+            EXPIRY_HOURS,
+        );
+
+        scenario.next_tx(OUTSIDER);
+        {
+            let t = scenario.take_shared_by_id<Task>(task_id);
+            assert!(task::task_payment_scheme(&t) == task::scheme_upto());
+            assert!(task::task_price(&t) == TWO_SUI);
+            assert!(task::task_max_price(&t) == TWO_SUI);
+            assert!(task::task_unit_price(&t) == 250_000_000);
+            assert!(task::task_metered_units(&t) == 0);
+            assert!(task::task_verification_hash(&t) == vector[]);
+            ts::return_shared(t);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = 110)]
+    fun test_post_metered_task_rejects_zero_unit_price() {
+        let mut scenario = ts::begin(REQUESTER);
+        let clock = create_clock(&mut scenario);
+
+        let _task_id = post_metered_task_with_values(
+            &mut scenario,
+            REQUESTER,
+            &clock,
+            string::utf8(b"metered-capability"),
+            b"metered-input",
+            b"metered-agreement",
+            TWO_SUI,
+            0,
+            DISPUTE_WINDOW_MS,
+            EXPIRY_HOURS,
+        );
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_complete_metered_task_caps_cost_and_stores_hash() {
+        let mut scenario = ts::begin(REQUESTER);
+        let clock = create_clock(&mut scenario);
+        let task_id = post_metered_task_with_values(
+            &mut scenario,
+            REQUESTER,
+            &clock,
+            string::utf8(b"metered-capability"),
+            b"metered-input",
+            b"metered-agreement",
+            ONE_SUI,
+            400_000_000,
+            DISPUTE_WINDOW_MS,
+            EXPIRY_HOURS,
+        );
+
+        accept_task_by_id(&mut scenario, PROVIDER, task_id, &clock);
+        complete_metered_task_by_id(
+            &mut scenario,
+            PROVIDER,
+            task_id,
+            5,
+            b"metered-result",
+            b"hash-root",
+            &clock,
+        );
+
+        scenario.next_tx(OUTSIDER);
+        {
+            let t = scenario.take_shared_by_id<Task>(task_id);
+            assert!(task::task_status(&t) == task::status_completed());
+            assert!(task::task_metered_units(&t) == 5);
+            assert!(task::task_verification_hash(&t) == b"hash-root");
+            assert!(task::task_price(&t) == ONE_SUI);
+            assert!(task::verify_result_hash(&t, b"hash-root"));
+            ts::return_shared(t);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_release_metered_payment_refunds_requester() {
+        let mut scenario = ts::begin(REQUESTER);
+        let clock = create_clock(&mut scenario);
+        let task_id = post_metered_task_with_values(
+            &mut scenario,
+            REQUESTER,
+            &clock,
+            string::utf8(b"metered-capability"),
+            b"metered-input",
+            b"metered-agreement",
+            TWO_SUI,
+            300_000_000,
+            DISPUTE_WINDOW_MS,
+            EXPIRY_HOURS,
+        );
+
+        accept_task_by_id(&mut scenario, PROVIDER, task_id, &clock);
+        complete_metered_task_by_id(
+            &mut scenario,
+            PROVIDER,
+            task_id,
+            3,
+            b"metered-result",
+            b"metered-hash",
+            &clock,
+        );
+
+        scenario.next_tx(REQUESTER);
+        {
+            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            task::release_metered_payment(&mut t, scenario.ctx());
+            assert!(task::task_status(&t) == task::status_released());
+            assert!(task::task_escrow_value(&t) == 0);
+            let released = event::events_by_type<TaskPaymentReleased>();
+            assert!(released.length() == 1);
+            assert!(task::payment_released_event_refund_amount(released.borrow(0)) == 1_100_000_000);
+            ts::return_shared(t);
+        };
+
+        scenario.next_tx(PROVIDER);
+        {
+            let payment = scenario.take_from_sender<coin::Coin<SUI>>();
+            assert!(coin::value(&payment) == 900_000_000);
+            scenario.return_to_sender(payment);
+        };
+
+        scenario.next_tx(REQUESTER);
+        {
+            let refund = scenario.take_from_sender<coin::Coin<SUI>>();
+            assert!(coin::value(&refund) == 1_100_000_000);
+            scenario.return_to_sender(refund);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_verify_result_hash_returns_false_for_mismatch() {
+        let mut scenario = ts::begin(REQUESTER);
+        let clock = create_clock(&mut scenario);
+        let task_id = post_metered_task_with_values(
+            &mut scenario,
+            REQUESTER,
+            &clock,
+            string::utf8(b"metered-capability"),
+            b"metered-input",
+            b"metered-agreement",
+            ONE_SUI,
+            100_000_000,
+            DISPUTE_WINDOW_MS,
+            EXPIRY_HOURS,
+        );
+
+        accept_task_by_id(&mut scenario, PROVIDER, task_id, &clock);
+        complete_metered_task_by_id(
+            &mut scenario,
+            PROVIDER,
+            task_id,
+            1,
+            b"metered-result",
+            b"stored-hash",
+            &clock,
+        );
+
+        scenario.next_tx(OUTSIDER);
+        {
+            let t = scenario.take_shared_by_id<Task>(task_id);
+            assert!(!task::verify_result_hash(&t, b"other-hash"));
             ts::return_shared(t);
         };
 

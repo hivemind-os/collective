@@ -84,7 +84,8 @@ vi.mock('@agentic-mesh/core', async () => {
   };
 });
 
-import type { DID } from '@agentic-mesh/types';
+import { parseMeteredResultEnvelope } from '@agentic-mesh/core';
+import { PaymentScheme, type DID } from '@agentic-mesh/types';
 
 import type { DaemonFullConfig } from '../src/config.js';
 import { getDefaultConfig } from '../src/config.js';
@@ -355,6 +356,56 @@ describe('ProviderRuntime', () => {
     });
   });
 
+  it('completes metered tasks with verification data', async () => {
+    const state = createRuntimeState();
+    const runtime = new ProviderRuntime({
+      state,
+      providerConfig: {
+        enabled: true,
+        maxConcurrency: 1,
+        autoRegister: false,
+        capabilities: [
+          {
+            name: 'echo-capability',
+            description: 'Echo input',
+            version: '1.0.0',
+            priceMist: 1,
+            adapter: 'echo',
+          },
+        ],
+      },
+      cursorDbPath: 'provider-cursors.db',
+    });
+
+    await runtime.start();
+
+    const subscription = providerMocks.subscriptions[0];
+    await subscription.emit(createTaskPostedEvent({
+      taskId: 'task-metered',
+      capability: 'echo-capability',
+      blobId: 'blob-metered',
+      paymentScheme: PaymentScheme.UPTO,
+      maxPrice: '10',
+      unitPrice: '1',
+    }));
+    await runtime.stop();
+
+    expect(state.taskClient.completeMeteredTask).toHaveBeenCalledTimes(1);
+    expect(state.taskClient.completeTask).not.toHaveBeenCalled();
+    expect(state.taskClient.completeMeteredTask).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'task-metered',
+      resultBlobId: 'result-blob',
+      meteredUnits: expect.any(Number),
+      verificationHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      keypair: state.keypair,
+      providerCardId: '0xprovider-card',
+    }));
+    const storedPayload = await (state.blobStore.store as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    const envelope = parseMeteredResultEnvelope(storedPayload as Uint8Array);
+    expect(envelope).not.toBeNull();
+    expect(envelope?.proof.root).toBe((state.taskClient.completeMeteredTask as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.verificationHash);
+  });
+
   it('ignores non-matching capabilities', async () => {
     const state = createRuntimeState();
     const runtime = new ProviderRuntime({
@@ -385,6 +436,7 @@ describe('ProviderRuntime', () => {
     expect(state.taskClient.acceptTask).not.toHaveBeenCalled();
     expect(state.blobStore.fetch).not.toHaveBeenCalled();
     expect(state.taskClient.completeTask).not.toHaveBeenCalled();
+    expect(state.taskClient.completeMeteredTask).not.toHaveBeenCalled();
   });
 });
 
@@ -407,6 +459,7 @@ function createRuntimeState(): DaemonState {
     taskClient: {
       acceptTask: vi.fn().mockResolvedValue({ txDigest: '0xaccept' }),
       completeTask: vi.fn().mockResolvedValue({ txDigest: '0xcomplete' }),
+      completeMeteredTask: vi.fn().mockResolvedValue({ txDigest: '0xcomplete-metered' }),
     },
     blobStore: {
       fetch: vi.fn().mockResolvedValue(encoder.encode('payload')),
@@ -419,7 +472,16 @@ function createRuntimeState(): DaemonState {
   } as unknown as DaemonState;
 }
 
-function createTaskPostedEvent(params: { taskId: string; capability: string; blobId: string }): SuiEvent {
+function createTaskPostedEvent(params: {
+  taskId: string;
+  capability: string;
+  blobId: string;
+  paymentScheme?: PaymentScheme;
+  maxPrice?: string;
+  meteredUnits?: number;
+  unitPrice?: string;
+  verificationHash?: string;
+}): SuiEvent {
   return {
     id: {
       txDigest: `0x${params.taskId}`,
@@ -435,6 +497,11 @@ function createTaskPostedEvent(params: { taskId: string; capability: string; blo
       capability: params.capability,
       input_blob_id: params.blobId,
       price: '1',
+      payment_scheme: params.paymentScheme,
+      max_price: params.maxPrice,
+      metered_units: params.meteredUnits,
+      unit_price: params.unitPrice,
+      verification_hash: params.verificationHash ? Array.from(Buffer.from(params.verificationHash, 'hex')) : undefined,
       status: 0,
       dispute_window_ms: 0,
       created_at: 100,

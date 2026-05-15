@@ -31,7 +31,7 @@ Two useful development patterns are:
 - **echo**  a simple capability for smoke tests and end-to-end verification.
 - **local-function**  a lightweight adapter shape for binding local code to a mesh capability during development.
 
-Even when the execution adapter itself lives outside the CLI, the CLI is still the control plane for identity, daemon lifecycle, registration, policy, and logs.
+Even when the execution adapter itself lives outside the CLI, the CLI is still the control plane for identity, daemon lifecycle, registration, policy, logs, and relay operations.
 
 ## Starting provider mode
 

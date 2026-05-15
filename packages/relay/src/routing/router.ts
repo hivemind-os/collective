@@ -50,6 +50,16 @@ export class RelayRouter {
     return this.dispatch(request, onChunk);
   }
 
+  async routeMulti(request: TaskRequest, providerDids: DID[]): Promise<TaskResponse[]> {
+    return await Promise.all(
+      providerDids.map((providerDid, index) => this.dispatch({
+        ...request,
+        providerDid,
+        taskId: request.taskId ? `${request.taskId}-${index + 1}` : undefined,
+      })),
+    );
+  }
+
   close(): void {
     for (const taskId of [...this.pendingTasks.keys()]) {
       this.completeTask(

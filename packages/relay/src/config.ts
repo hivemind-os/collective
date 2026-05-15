@@ -26,6 +26,16 @@ export interface RelayConfig {
     rpcUrl: string;
     packageId: string;
   };
+  relayRegistry?: {
+    enabled: boolean;
+    relayId?: string;
+    stakePositionId?: string;
+    endpoint?: string;
+    capabilities: string[];
+    region?: string;
+    routingFeeBps?: number;
+    heartbeatIntervalMs: number;
+  };
 }
 
 export function getDefaultRelayConfig(baseDir = resolve(homedir(), '.agentic-mesh', 'relay')): RelayConfig {
@@ -109,6 +119,27 @@ export function loadRelayConfig(overrides: Partial<RelayConfig> = {}): RelayConf
             packageId: overrides.sui?.packageId ?? process.env.MESH_RELAY_SUI_PACKAGE_ID ?? '',
           }
         : undefined,
+    relayRegistry:
+      overrides.relayRegistry ||
+      process.env.MESH_RELAY_REGISTRY_ENABLED ||
+      process.env.MESH_RELAY_REGISTRY_STAKE_ID ||
+      process.env.MESH_RELAY_REGISTRY_RELAY_ID
+        ? {
+            enabled: readBoolean(process.env.MESH_RELAY_REGISTRY_ENABLED) ?? overrides.relayRegistry?.enabled ?? true,
+            relayId: overrides.relayRegistry?.relayId ?? process.env.MESH_RELAY_REGISTRY_RELAY_ID,
+            stakePositionId: overrides.relayRegistry?.stakePositionId ?? process.env.MESH_RELAY_REGISTRY_STAKE_ID,
+            endpoint: overrides.relayRegistry?.endpoint ?? process.env.MESH_RELAY_REGISTRY_ENDPOINT,
+            capabilities:
+              overrides.relayRegistry?.capabilities ?? readStringList(process.env.MESH_RELAY_REGISTRY_CAPABILITIES) ?? [],
+            region: overrides.relayRegistry?.region ?? process.env.MESH_RELAY_REGISTRY_REGION,
+            routingFeeBps:
+              readNumber(process.env.MESH_RELAY_REGISTRY_FEE_BPS) ?? overrides.relayRegistry?.routingFeeBps,
+            heartbeatIntervalMs:
+              readNumber(process.env.MESH_RELAY_REGISTRY_HEARTBEAT_INTERVAL_MS) ??
+              overrides.relayRegistry?.heartbeatIntervalMs ??
+              defaults.limits.heartbeatIntervalMs,
+          }
+        : undefined,
   };
 
   validateRelayConfig(config);
@@ -145,6 +176,32 @@ export function validateRelayConfig(config: RelayConfig): void {
   if (config.cors && config.cors.allowedOrigins.some((origin) => origin.trim().length === 0)) {
     throw new Error('Relay CORS allowed origins must be non-empty strings.');
   }
+
+  if (!config.relayRegistry || config.relayRegistry.enabled === false) {
+    return;
+  }
+
+  if (!config.sui?.rpcUrl || !config.sui.packageId) {
+    throw new Error('Relay registry integration requires sui.rpcUrl and sui.packageId.');
+  }
+
+  if (config.relayRegistry.stakePositionId && !/^0x[0-9a-f]+$/i.test(config.relayRegistry.stakePositionId)) {
+    throw new Error('Relay registry stakePositionId must be a 0x-prefixed object id.');
+  }
+
+  if (config.relayRegistry.relayId && !/^0x[0-9a-f]+$/i.test(config.relayRegistry.relayId)) {
+    throw new Error('Relay registry relayId must be a 0x-prefixed object id.');
+  }
+
+  if (config.relayRegistry.routingFeeBps !== undefined) {
+    if (!Number.isInteger(config.relayRegistry.routingFeeBps) || config.relayRegistry.routingFeeBps < 0 || config.relayRegistry.routingFeeBps > 10_000) {
+      throw new Error('Relay registry routingFeeBps must be an integer between 0 and 10000.');
+    }
+  }
+
+  if (!Number.isInteger(config.relayRegistry.heartbeatIntervalMs) || config.relayRegistry.heartbeatIntervalMs <= 0) {
+    throw new Error('Relay registry heartbeat interval must be a positive integer.');
+  }
 }
 
 function readNumber(value: string | undefined): number | undefined {
@@ -162,6 +219,20 @@ function readBigInt(value: string | undefined): bigint | undefined {
   }
 
   return /^\d+$/.test(value.trim()) ? BigInt(value.trim()) : undefined;
+}
+
+function readBoolean(value: string | undefined): boolean | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+    return false;
+  }
+  return undefined;
 }
 
 function readStringList(value: string | undefined): string[] | undefined {

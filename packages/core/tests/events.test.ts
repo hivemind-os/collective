@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { SqliteCursorStore, TaskStatus, parseRawEvent } from '../src/index.js';
+import { PaymentScheme, SqliteCursorStore, TaskStatus, parseRawEvent } from '../src/index.js';
 
 const createdPaths: string[] = [];
 const packageId = '0xpackage';
@@ -104,6 +104,64 @@ describe('event parsing', () => {
     expect(event.task.category).toBe('analysis');
     expect(event.task.inputBlobId).toBe('input');
     expect(event.task.status).toBe(TaskStatus.OPEN);
+  });
+
+  it('parses metered completion and release events', () => {
+    const completed = parseRawEvent(
+      {
+        id: { txDigest: '0xcomplete', eventSeq: '2' },
+        packageId,
+        transactionModule: 'task',
+        type: `${packageId}::task::TaskCompleted`,
+        sender: '0xprovider',
+        timestampMs: '3000',
+        parsedJson: {
+          task_id: '0xtask-id',
+          provider: '0xprovider',
+          result_blob_id: [114, 101, 115, 117, 108, 116],
+          payment_scheme: 1,
+          metered_units: 2,
+          verification_hash: Array.from(Buffer.from('aa'.repeat(32), 'hex')),
+          completed_at: 3000,
+        },
+        bcs: '',
+        bcsEncoding: 'base64',
+      },
+      packageId,
+    );
+    const released = parseRawEvent(
+      {
+        id: { txDigest: '0xrelease', eventSeq: '3' },
+        packageId,
+        transactionModule: 'task',
+        type: `${packageId}::task::TaskPaymentReleased`,
+        sender: '0xrequester',
+        timestampMs: '4000',
+        parsedJson: {
+          task_id: '0xtask-id',
+          requester: '0xrequester',
+          provider: '0xprovider',
+          refund_amount: '7',
+        },
+        bcs: '',
+        bcsEncoding: 'base64',
+      },
+      packageId,
+    );
+
+    expect(completed?.type).toBe('task.completed');
+    if (completed?.type !== 'task.completed') {
+      throw new Error('Unexpected event type');
+    }
+    expect(completed.paymentScheme).toBe(PaymentScheme.UPTO);
+    expect(completed.meteredUnits).toBe(2);
+    expect(completed.verificationHash).toBe('aa'.repeat(32));
+
+    expect(released?.type).toBe('task.released');
+    if (released?.type !== 'task.released') {
+      throw new Error('Unexpected event type');
+    }
+    expect(released.refundAmount).toBe(7n);
   });
 
   it('returns null for unknown event types', () => {

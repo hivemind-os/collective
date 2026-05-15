@@ -8,6 +8,7 @@ import type { RelayConfig } from '../config.js';
 import { HealthMonitor } from '../health/monitor.js';
 import { RelayIdentity } from '../identity/relay-identity.js';
 import { PaymentGate } from '../payment/payment-gate.js';
+import { RelayRegistryService, type RelayRegistryRuntime } from '../registry/relay-registry-service.js';
 import { parseProviderMessage, serializeRelayMessage } from '../routing/message-types.js';
 import { RelayRouter } from '../routing/router.js';
 import { SessionManager } from '../routing/session-manager.js';
@@ -24,10 +25,15 @@ export interface RelayServer {
   router: RelayRouter;
   paymentGate: PaymentGate;
   healthMonitor: HealthMonitor;
+  relayRegistry?: RelayRegistryRuntime;
   start: () => Promise<string>;
 }
 
-export async function createRelayServer(config: RelayConfig): Promise<RelayServer> {
+export interface RelayServerOptions {
+  relayRegistry?: RelayRegistryRuntime;
+}
+
+export async function createRelayServer(config: RelayConfig, options: RelayServerOptions = {}): Promise<RelayServer> {
   const app = Fastify({
     logger: {
       level: 'info',
@@ -50,6 +56,7 @@ export async function createRelayServer(config: RelayConfig): Promise<RelayServe
   const healthMonitor = new HealthMonitor({
     getConnectedProviders: () => sessionManager.getConnectedProviders().length,
   });
+  const relayRegistry = options.relayRegistry ?? new RelayRegistryService(config, identity);
 
   await app.register(cors, {
     origin: (origin, callback) => {
@@ -76,6 +83,7 @@ export async function createRelayServer(config: RelayConfig): Promise<RelayServe
     router,
     paymentGate,
     healthMonitor,
+    relayRegistry,
   });
 
   app.get('/v1/ws', { websocket: true }, (socket) => {
@@ -94,6 +102,7 @@ export async function createRelayServer(config: RelayConfig): Promise<RelayServe
 
   app.addHook('onClose', async () => {
     clearInterval(heartbeatSweep);
+    await relayRegistry.stop();
     router.close();
     sessionManager.disconnectAllSessions();
   });
@@ -108,9 +117,12 @@ export async function createRelayServer(config: RelayConfig): Promise<RelayServe
     router,
     paymentGate,
     healthMonitor,
+    relayRegistry,
     start: async () => {
       const address = await app.listen({ host: config.host, port: config.port });
-      return typeof address === 'string' ? address : `http://${config.host}:${config.port}`;
+      const resolvedAddress = typeof address === 'string' ? address : `http://${config.host}:${config.port}`;
+      await relayRegistry.start(resolvedAddress);
+      return resolvedAddress;
     },
   };
 }

@@ -63,6 +63,18 @@ export interface PostTaskParams {
   expiryHours: number;
 }
 
+export interface PostMeteredTaskParams {
+  packageId: string;
+  capability: string;
+  category: string;
+  inputBlobId: string;
+  agreementHash?: string;
+  maxPriceMist: bigint;
+  unitPriceMist: bigint;
+  disputeWindowMs: number;
+  expiryHours: number;
+}
+
 export interface AcceptTaskParams {
   packageId: string;
   taskId: string;
@@ -75,7 +87,21 @@ export interface CompleteTaskParams {
   providerCardId?: string;
 }
 
+export interface CompleteMeteredTaskParams {
+  packageId: string;
+  taskId: string;
+  resultBlobId: string;
+  meteredUnits: number;
+  verificationHash: string;
+  providerCardId?: string;
+}
+
 export interface ReleasePaymentParams {
+  packageId: string;
+  taskId: string;
+}
+
+export interface ReleaseMeteredPaymentParams {
   packageId: string;
   taskId: string;
 }
@@ -185,6 +211,24 @@ export interface SlashStakeParams {
   packageId: string;
   stakeId: string;
   taskId: string;
+}
+
+export interface RegisterRelayParams {
+  packageId: string;
+  endpoint: string;
+  stakeId: string;
+  capabilities: string[];
+  region: string;
+  routingFeeBps: number;
+}
+
+export interface RelayMutationParams {
+  packageId: string;
+  relayId: string;
+}
+
+export interface RecordRelayRoutingParams extends RelayMutationParams {
+  feeAmountMist: bigint;
 }
 
 export function buildRegisterAgentTx(params: RegisterAgentParams): Transaction {
@@ -317,6 +361,30 @@ export function buildPostTaskTx(params: PostTaskParams): Transaction {
   return tx;
 }
 
+export function buildPostMeteredTaskTx(params: PostMeteredTaskParams): Transaction {
+  validatePostMeteredTaskParams(params);
+
+  const tx = new Transaction();
+  const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(params.maxPriceMist)]);
+
+  tx.moveCall({
+    target: `${params.packageId}::task::post_metered_task`,
+    arguments: [
+      tx.pure.string(params.capability),
+      tx.pure.vector('u8', [...stringToBytes(params.inputBlobId)]),
+      tx.pure.vector('u8', [...stringToBytes(params.agreementHash ?? '')]),
+      paymentCoin,
+      tx.pure.u64(params.unitPriceMist),
+      tx.pure.u64(params.disputeWindowMs),
+      tx.pure.u64(params.expiryHours),
+      tx.pure.string(params.category),
+      tx.object(CLOCK_OBJECT_ID),
+    ],
+  });
+
+  return tx;
+}
+
 export function buildAcceptTaskTx(params: AcceptTaskParams): Transaction {
   validateTaskMutationParams(params);
 
@@ -352,12 +420,51 @@ export function buildCompleteTaskTx(params: CompleteTaskParams): Transaction {
   return tx;
 }
 
+export function buildCompleteMeteredTaskTx(params: CompleteMeteredTaskParams): Transaction {
+  validateMeteredTaskCompletionParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::task::${params.providerCardId ? 'complete_metered_task_with_card' : 'complete_metered_task'}`,
+    arguments: params.providerCardId
+      ? [
+          tx.object(params.taskId),
+          tx.object(params.providerCardId),
+          tx.pure.u64(params.meteredUnits),
+          tx.pure.vector('u8', [...stringToBytes(params.resultBlobId)]),
+          tx.pure.vector('u8', [...hexToBytes(params.verificationHash)]),
+          tx.object(CLOCK_OBJECT_ID),
+        ]
+      : [
+          tx.object(params.taskId),
+          tx.pure.u64(params.meteredUnits),
+          tx.pure.vector('u8', [...stringToBytes(params.resultBlobId)]),
+          tx.pure.vector('u8', [...hexToBytes(params.verificationHash)]),
+          tx.object(CLOCK_OBJECT_ID),
+        ],
+  });
+
+  return tx;
+}
+
 export function buildReleasePaymentTx(params: ReleasePaymentParams): Transaction {
   validateTaskMutationParams(params);
 
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::release_payment`,
+    arguments: [tx.object(params.taskId)],
+  });
+
+  return tx;
+}
+
+export function buildReleaseMeteredPaymentTx(params: ReleaseMeteredPaymentParams): Transaction {
+  validateTaskMutationParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::task::release_metered_payment`,
     arguments: [tx.object(params.taskId)],
   });
 
@@ -614,6 +721,57 @@ export function buildSlashNonDeliveryTx(params: SlashStakeParams): Transaction {
   return tx;
 }
 
+export function buildRegisterRelayTx(params: RegisterRelayParams): Transaction {
+  validateRegisterRelayParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::relay_registry::register_relay`,
+    arguments: [
+      tx.pure.string(params.endpoint),
+      tx.object(params.stakeId),
+      tx.pure.vector('string', params.capabilities),
+      tx.pure.string(params.region),
+      tx.pure.u64(params.routingFeeBps),
+      tx.object(CLOCK_OBJECT_ID),
+    ],
+  });
+  return tx;
+}
+
+export function buildHeartbeatRelayTx(params: RelayMutationParams): Transaction {
+  validateRelayMutationParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::relay_registry::heartbeat`,
+    arguments: [tx.object(params.relayId), tx.object(CLOCK_OBJECT_ID)],
+  });
+  return tx;
+}
+
+export function buildDeactivateRelayTx(params: RelayMutationParams): Transaction {
+  validateRelayMutationParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::relay_registry::deactivate_relay`,
+    arguments: [tx.object(params.relayId)],
+  });
+  return tx;
+}
+
+export function buildRecordRelayRoutingTx(params: RecordRelayRoutingParams): Transaction {
+  validateRecordRelayRoutingParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::relay_registry::record_routing`,
+    arguments: [tx.object(params.relayId), tx.pure.u64(params.feeAmountMist)],
+  });
+  return tx;
+}
+
 function validateRegisterAgentParams(params: RegisterAgentParams): void {
   assertObjectId(params.packageId, 'packageId');
   assertObjectId(params.registryId, 'registryId');
@@ -667,6 +825,18 @@ function validatePostTaskParams(params: PostTaskParams): void {
   assertSafeNonNegativeInteger(params.expiryHours, 'expiryHours');
 }
 
+function validatePostMeteredTaskParams(params: PostMeteredTaskParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertNonEmptyString(params.capability, 'capability');
+  assertNonEmptyString(params.category, 'category');
+  assertNonEmptyString(params.inputBlobId, 'inputBlobId');
+  assertOptionalString(params.agreementHash, 'agreementHash');
+  assertU64(params.maxPriceMist, 'maxPriceMist');
+  assertU64(params.unitPriceMist, 'unitPriceMist');
+  assertSafeNonNegativeInteger(params.disputeWindowMs, 'disputeWindowMs');
+  assertSafeNonNegativeInteger(params.expiryHours, 'expiryHours');
+}
+
 function validateTaskMutationParams(params: { packageId: string; taskId: string }): void {
   assertObjectId(params.packageId, 'packageId');
   assertObjectId(params.taskId, 'taskId');
@@ -699,6 +869,14 @@ function validateTaskCompletionParams(params: CompleteTaskParams): void {
   validateTaskMutationParams(params);
   assertOptionalObjectId(params.providerCardId, 'providerCardId');
   assertNonEmptyString(params.resultBlobId, 'resultBlobId');
+}
+
+function validateMeteredTaskCompletionParams(params: CompleteMeteredTaskParams): void {
+  validateTaskMutationParams(params);
+  assertOptionalObjectId(params.providerCardId, 'providerCardId');
+  assertNonEmptyString(params.resultBlobId, 'resultBlobId');
+  assertSafeNonNegativeInteger(params.meteredUnits, 'meteredUnits');
+  assertHexString(params.verificationHash, 'verificationHash');
 }
 
 function validateClaimPaymentParams(params: ClaimPaymentParams): void {
@@ -763,6 +941,28 @@ function validateSlashStakeParams(params: SlashStakeParams): void {
   assertObjectId(params.taskId, 'taskId');
 }
 
+function validateRegisterRelayParams(params: RegisterRelayParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertObjectId(params.stakeId, 'stakeId');
+  assertNonEmptyString(params.endpoint, 'endpoint');
+  assertNonEmptyString(params.region, 'region');
+  params.capabilities.forEach((capability, index) => assertNonEmptyString(capability, `capabilities[${index}]`));
+  assertSafeNonNegativeInteger(params.routingFeeBps, 'routingFeeBps');
+  if (params.routingFeeBps > 10_000) {
+    throw new Error('routingFeeBps must be less than or equal to 10000.');
+  }
+}
+
+function validateRelayMutationParams(params: RelayMutationParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertObjectId(params.relayId, 'relayId');
+}
+
+function validateRecordRelayRoutingParams(params: RecordRelayRoutingParams): void {
+  validateRelayMutationParams(params);
+  assertU64(params.feeAmountMist, 'feeAmountMist');
+}
+
 function toCapabilityVectors(capabilities: Capability[]): {
   names: string[];
   descriptions: string[];
@@ -821,6 +1021,16 @@ function assertOptionalString(value: string | undefined, field: string): void {
   if (value !== undefined) {
     assertNonEmptyString(value, field);
   }
+}
+
+function assertHexString(value: string, field: string): void {
+  if (!/^[a-f0-9]+$/i.test(value) || value.length % 2 !== 0) {
+    throw new Error(`${field} must be an even-length hex string.`);
+  }
+}
+
+function hexToBytes(value: string): Uint8Array {
+  return new Uint8Array(Buffer.from(value, 'hex'));
 }
 
 function assertDid(value: string, field: string): void {

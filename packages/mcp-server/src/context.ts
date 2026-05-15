@@ -5,6 +5,7 @@ import type {
   MeshSuiClient,
   PaymentRailSelector,
   RegistryClient,
+  RelayRegistryClient,
   StakingClient,
   DisputeClient,
   MarketplaceClient,
@@ -28,6 +29,7 @@ export interface MeshToolContext {
   spendingPolicy: SpendingPolicyEngine;
   networkConfig: NetworkConfig;
   stakingClient?: StakingClient;
+  relayRegistryClient?: RelayRegistryClient;
   disputeClient?: DisputeClient;
   marketplaceClient?: MarketplaceClient;
   encryption?: {
@@ -41,6 +43,11 @@ export interface MeshToolContext {
   logger?: {
     info?: (payload: unknown, message?: string) => void;
     warn?: (payload: unknown, message?: string) => void;
+  };
+  indexer?: {
+    enabled?: boolean;
+    graphqlUrl?: string;
+    fetch?: typeof fetch;
   };
   reputationPublisher?: ReputationEventPublisher;
   reputationStore?: ReputationStore;

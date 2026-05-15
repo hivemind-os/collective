@@ -18,6 +18,7 @@
   "dependencies": {
     "@agentic-mesh/core": "workspace:*",
     "@agentic-mesh/daemon": "workspace:*",
+    "@agentic-mesh/mcp-server": "workspace:*",
     "@agentic-mesh/types": "workspace:*",
     "@mysten/sui": "^1.30.0",
     "js-yaml": "^4.1.0",

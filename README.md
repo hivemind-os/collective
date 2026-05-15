@@ -35,7 +35,7 @@ The project is designed so an agent can connect through a familiar MCP interface
    pnpm --filter @agentic-mesh/cli exec mesh discover echo
    ```
 
-See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
+See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough, [docs/provider-guide.md](docs/provider-guide.md) for provider operations, [docs/relay-operator-guide.md](docs/relay-operator-guide.md) for community relays, and [docs/mcp-tool-reference.md](docs/mcp-tool-reference.md) for the MCP surface.
 
 ## Architecture overview
 
@@ -87,6 +87,7 @@ See [docs/provider-guide.md](docs/provider-guide.md) for provider workflows, mon
 - `mesh wallet address`  print the wallet address.
 - `mesh discover <capability>`  search for providers by capability.
 - `mesh task status <id>`  inspect a task object on Sui.
+- `mesh relay register|list|heartbeat|deactivate`  manage community relay registrations.
 - `mesh logs [--follow]`  print daemon logs and optionally follow updates.
 
 ## Development

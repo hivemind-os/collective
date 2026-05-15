@@ -2,6 +2,7 @@ import type { AgentCard, Capability } from '@agentic-mesh/types';
 import { ReputationScoreCalculator } from '@agentic-mesh/core';
 
 import type { MeshToolContext } from '../context.js';
+import { queryIndexerAgents, resolveIndexerUrl } from './indexer-client.js';
 
 const scoreCalculator = new ReputationScoreCalculator();
 
@@ -9,6 +10,7 @@ export interface MeshDiscoverParams {
   capability: string;
   limit?: number;
   sort_by?: 'price' | 'reputation';
+  useIndexer?: boolean;
 }
 
 export const meshDiscoverTool = {
@@ -20,6 +22,7 @@ export const meshDiscoverTool = {
       capability: { type: 'string', description: 'Capability name to search for' },
       limit: { type: 'number', description: 'Max results (default 10)' },
       sort_by: { type: 'string', enum: ['price', 'reputation'], description: 'Sort results by price or reputation' },
+      useIndexer: { type: 'boolean', description: 'Prefer the indexer GraphQL API when available' },
     },
     required: ['capability'],
   },
@@ -28,14 +31,15 @@ export const meshDiscoverTool = {
 export async function runMeshDiscover(
   params: MeshDiscoverParams,
   context: MeshToolContext,
-): Promise<{ capability: string; agents: ReturnType<typeof summarizeAgent>[] }> {
+): Promise<{ capability: string; source: 'indexer' | 'cache' | 'registry'; agents: ReturnType<typeof summarizeAgent>[] }> {
   const capability = params.capability.trim();
   const limit = normalizeLimit(params.limit);
   const sortBy = params.sort_by ?? 'price';
-  const agents = await discoverAgentsByCapability(capability, context, limit, sortBy);
+  const { agents, source } = await discoverAgentsByCapability(capability, context, limit, sortBy, params.useIndexer);
 
   return {
     capability,
+    source,
     agents: agents.map((agent) => summarizeAgent(agent, capability)),
   };
 }
@@ -45,19 +49,39 @@ export async function discoverAgentsByCapability(
   context: MeshToolContext,
   limit = 10,
   sortBy: 'price' | 'reputation' = 'price',
-): Promise<AgentCard[]> {
+  useIndexer?: boolean,
+): Promise<{ agents: AgentCard[]; source: 'indexer' | 'cache' | 'registry' }> {
   const normalizedCapability = capability.trim();
   if (!normalizedCapability) {
-    return [];
+    return { agents: [], source: 'cache' };
   }
 
-  const cached = context.agentCache
-    .searchByCapability(normalizedCapability, Math.max(limit * 2, limit), { sortByReputation: sortBy === 'reputation' })
+  if (shouldUseIndexer(context, useIndexer)) {
+    try {
+      const indexed = await queryIndexerAgents(context, {
+        capability: normalizedCapability,
+        limit,
+      });
+      if (indexed.length > 0) {
+        return {
+          agents: sortBy === 'reputation' ? indexed.slice(0, limit) : sortByPrice(indexed, normalizedCapability).slice(0, limit),
+          source: 'indexer',
+        };
+      }
+    } catch (error) {
+      context.logger?.warn?.({ err: error }, 'Indexer discovery failed; falling back to local cache.');
+    }
+  }
+
+  const cached = (await queryLocalCache(context, normalizedCapability, Math.max(limit * 2, limit), sortBy))
     .filter((agent) => hasCapability(agent, normalizedCapability))
     .slice(0, limit);
 
   if (cached.length > 0) {
-    return sortBy === 'reputation' ? cached : sortByPrice(cached, normalizedCapability).slice(0, limit);
+    return {
+      agents: sortBy === 'reputation' ? cached : sortByPrice(cached, normalizedCapability).slice(0, limit),
+      source: 'cache',
+    };
   }
 
   const discovered = await context.registryClient.discoverByCapability(normalizedCapability, limit, {
@@ -68,7 +92,7 @@ export async function discoverAgentsByCapability(
   }
 
   const ranked = sortBy === 'reputation' ? discovered : sortByPrice(discovered, normalizedCapability);
-  return ranked.slice(0, limit);
+  return { agents: ranked.slice(0, limit), source: 'registry' };
 }
 
 export async function resolveProviderCapability(
@@ -88,8 +112,8 @@ export async function resolveProviderCapability(
       return { agent: cachedAgent, capability: cachedCapability };
     }
 
-    const discovered = await discoverAgentsByCapability(normalizedCapability, context, 50);
-    const matched = discovered.find((entry) => entry.did === providerDid);
+    const { agents } = await discoverAgentsByCapability(normalizedCapability, context, 50);
+    const matched = agents.find((entry) => entry.did === providerDid);
     const matchedCapability = matched ? findCapability(matched, normalizedCapability) : undefined;
     if (!matched || !matchedCapability) {
       throw new Error(`Provider ${providerDid} was not found for capability ${normalizedCapability}.`);
@@ -98,8 +122,8 @@ export async function resolveProviderCapability(
     return { agent: matched, capability: matchedCapability };
   }
 
-  const discovered = await discoverAgentsByCapability(normalizedCapability, context, 20);
-  const ranked = discovered
+  const { agents } = await discoverAgentsByCapability(normalizedCapability, context, 20);
+  const ranked = agents
     .map((agent) => ({ agent, capability: findCapability(agent, normalizedCapability) }))
     .filter((entry): entry is { agent: AgentCard; capability: Capability } => Boolean(entry.capability))
     .sort((left, right) => compareBigInt(left.capability.pricing.amount, right.capability.pricing.amount));
@@ -152,6 +176,38 @@ export function summarizeAgent(agent: AgentCard, capability?: string): {
     },
     endpoint: agent.endpoint,
   };
+}
+
+async function queryLocalCache(
+  context: MeshToolContext,
+  capability: string,
+  limit: number,
+  sortBy: 'price' | 'reputation',
+): Promise<AgentCard[]> {
+  const cache = context.agentCache as MeshToolContext['agentCache'] & {
+    queryAgentsAdvanced?: (filters: {
+      capability?: string;
+      limit?: number;
+      sortBy?: 'stake' | 'reputation';
+    }) => Promise<AgentCard[]>;
+  };
+
+  if (typeof cache.queryAgentsAdvanced === 'function') {
+    return await cache.queryAgentsAdvanced({
+      capability,
+      limit,
+      sortBy: sortBy === 'reputation' ? 'reputation' : 'stake',
+    });
+  }
+
+  return context.agentCache.searchByCapability(capability, limit, { sortByReputation: sortBy === 'reputation' });
+}
+
+function shouldUseIndexer(context: MeshToolContext, useIndexer?: boolean): boolean {
+  if (useIndexer === false) {
+    return false;
+  }
+  return Boolean(resolveIndexerUrl(context));
 }
 
 function findCapability(agent: AgentCard, capability: string): Capability | undefined {

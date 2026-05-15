@@ -2,8 +2,17 @@ import { randomUUID } from 'node:crypto';
 
 import pino from 'pino';
 
-import { EventSubscription, SqliteCursorStore, parseEncryptedPayload, parseRawEvent } from '@agentic-mesh/core';
-import { PaymentRail, type Capability, type RelayEndpoint, type TaskPostedEvent } from '@agentic-mesh/types';
+import {
+  EventSubscription,
+  SqliteCursorStore,
+  UsageMeter,
+  createMeteredResultEnvelope,
+  parseEncryptedPayload,
+  parseRawEvent,
+  serializeMeteredResultEnvelope,
+  splitIntoMeteringUnits,
+} from '@agentic-mesh/core';
+import { PaymentRail, PaymentScheme, type Capability, type RelayEndpoint, type Task, type TaskPostedEvent } from '@agentic-mesh/types';
 import type { SuiEvent } from '@mysten/sui/client';
 
 import type { DaemonFullConfig } from '../config.js';
@@ -144,7 +153,7 @@ export class ProviderRuntime {
 
     const queued = await this.taskQueue.enqueue(event.task.id, async () => {
       try {
-        await this.processTask(event.task.id, event.task.capability, event.task.inputBlobId, event.task.requester);
+        await this.processTask(event.task);
       } catch (error) {
         logger.error({ err: error, taskId: event.task.id }, 'Task processing failed');
       }
@@ -155,44 +164,57 @@ export class ProviderRuntime {
     }
   }
 
-  private async processTask(taskId: string, capability: string, inputBlobId: string, requester: string): Promise<void> {
+  private async processTask(task: Task): Promise<void> {
     const encryption = this.params.state.encryption ?? { enabled: false, requireEncryption: false };
 
     await this.runChainOperation(async () => {
       await this.params.state.taskClient.acceptTask({
-        taskId,
+        taskId: task.id,
         keypair: this.params.state.keypair,
       });
     });
 
-    const rawInput = await this.params.state.blobStore.fetch(inputBlobId);
+    const rawInput = await this.params.state.blobStore.fetch(task.inputBlobId);
     if (!rawInput) {
-      throw new Error(`Input blob ${inputBlobId} was not found.`);
+      throw new Error(`Input blob ${task.inputBlobId} was not found.`);
     }
 
     const encryptedInput = parseEncryptedPayload(rawInput);
     if (encryption.requireEncryption && !encryptedInput) {
-      throw new Error(`Task ${taskId} is missing an encrypted input payload.`);
+      throw new Error(`Task ${task.id} is missing an encrypted input payload.`);
     }
 
     const inputData = encryptedInput
-      ? await fetchDecryptedPayload(this.params.state.blobStore, inputBlobId)
+      ? await fetchDecryptedPayload(this.params.state.blobStore, task.inputBlobId)
       : rawInput;
-    const result = await this.executeLocalTask(taskId, capability, inputData);
+    const result = await this.executeLocalTask(task.id, task.capability, inputData);
 
-    const requesterCard = await this.params.state.registryClient.getAgentCardByOwner(requester);
+    const requesterCard = await this.params.state.registryClient.getAgentCardByOwner(task.requester);
     const requesterEncryptionKey = decodeHexKey(requesterCard?.encryptionPublicKey);
     if (encryption.requireEncryption && !requesterEncryptionKey) {
-      throw new Error(`Task ${taskId} requester does not publish an encryption key.`);
+      throw new Error(`Task ${task.id} requester does not publish an encryption key.`);
     }
 
+    const completionPayload = prepareCompletionPayload(task, result);
     const storedResult = encryption.enabled && requesterEncryptionKey
-      ? await storeEncryptedPayload(this.params.state.blobStore, result, requesterEncryptionKey)
-      : await this.params.state.blobStore.store(result);
+      ? await storeEncryptedPayload(this.params.state.blobStore, completionPayload.resultData, requesterEncryptionKey)
+      : await this.params.state.blobStore.store(completionPayload.resultData);
 
     await this.runChainOperation(async () => {
+      if (completionPayload.metered) {
+        await this.params.state.taskClient.completeMeteredTask({
+          taskId: task.id,
+          resultBlobId: storedResult.blobId,
+          meteredUnits: completionPayload.metered.actualUnits,
+          verificationHash: completionPayload.metered.verificationHash,
+          keypair: this.params.state.keypair,
+          providerCardId: this.ownAgentCardId,
+        });
+        return;
+      }
+
       await this.params.state.taskClient.completeTask({
-        taskId,
+        taskId: task.id,
         resultBlobId: storedResult.blobId,
         keypair: this.params.state.keypair,
         providerCardId: this.ownAgentCardId,
@@ -359,6 +381,36 @@ function toCapability(capability: ProviderCapabilityConfig, hasRelaySupport: boo
 
 function normalizeCapability(capability: string): string {
   return capability.trim().toLowerCase();
+}
+
+function prepareCompletionPayload(task: Task, resultData: Uint8Array): {
+  resultData: Uint8Array;
+  metered?: {
+    actualUnits: number;
+    verificationHash: string;
+  };
+} {
+  if (task.paymentScheme !== PaymentScheme.UPTO && task.paymentScheme !== PaymentScheme.STREAM) {
+    return { resultData };
+  }
+
+  const meter = new UsageMeter({
+    taskId: task.id,
+    maxPrice: task.maxPrice ?? task.price,
+    unitPrice: task.unitPrice ?? 0n,
+  });
+  for (const unit of splitIntoMeteringUnits(resultData)) {
+    meter.recordUnit(unit);
+  }
+
+  const envelope = createMeteredResultEnvelope(resultData, meter.getProof());
+  return {
+    resultData: serializeMeteredResultEnvelope(envelope),
+    metered: {
+      actualUnits: meter.getActualUnits(),
+      verificationHash: meter.getVerificationHash(),
+    },
+  };
 }
 
 function encodeRelayInput(input: unknown): Uint8Array {

@@ -4,11 +4,12 @@ import { resolve } from 'node:path';
 
 import { createDID, generateKeypair, signString } from '@agentic-mesh/core';
 import type { DID } from '@agentic-mesh/types';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type WebSocket from 'ws';
 
 import { getDefaultRelayConfig } from '../src/config.js';
 import { HealthMonitor } from '../src/health/monitor.js';
+import type { RelayRegistryRuntime } from '../src/registry/relay-registry-service.js';
 import { createAuthPayload, type AuthMessage } from '../src/routing/message-types.js';
 import { createRelayServer } from '../src/server/http-server.js';
 
@@ -77,6 +78,56 @@ describe('health monitoring', () => {
     const response = await relay.app.inject({ method: 'GET', url: '/health' });
 
     expect(response.json()).toMatchObject({ connectedProviders: 1 });
+
+    await relay.app.close();
+  });
+
+  it('includes relay registry info in health output', async () => {
+    const dir = await createTestDir();
+    const config = getDefaultRelayConfig(dir);
+    config.host = '127.0.0.1';
+    config.port = 0;
+    config.identity.keyPath = resolve(dir, 'relay.key');
+    const relayRegistry: RelayRegistryRuntime = {
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      recordRouting: vi.fn(async () => undefined),
+      getInfo: vi.fn(() => ({ enabled: true, registered: true, relayId: '0xrelay', status: 'ACTIVE', totalRouted: 4 })),
+    };
+
+    const relay = await createRelayServer(config, { relayRegistry });
+    const response = await relay.app.inject({ method: 'GET', url: '/health' });
+
+    expect(response.json()).toMatchObject({
+      relayRegistry: {
+        enabled: true,
+        registered: true,
+        relayId: '0xrelay',
+        status: 'ACTIVE',
+        totalRouted: 4,
+      },
+    });
+
+    await relay.app.close();
+  });
+
+  it('starts the relay registry runtime after listening', async () => {
+    const dir = await createTestDir();
+    const config = getDefaultRelayConfig(dir);
+    config.host = '127.0.0.1';
+    config.port = 0;
+    config.identity.keyPath = resolve(dir, 'relay.key');
+    const relayRegistry: RelayRegistryRuntime = {
+      start: vi.fn(async () => undefined),
+      stop: vi.fn(async () => undefined),
+      recordRouting: vi.fn(async () => undefined),
+      getInfo: vi.fn(() => ({ enabled: true, registered: false })),
+    };
+
+    const relay = await createRelayServer(config, { relayRegistry });
+    const address = await relay.start();
+
+    expect(relayRegistry.start).toHaveBeenCalledWith(address);
 
     await relay.app.close();
   });

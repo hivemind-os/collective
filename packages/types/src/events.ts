@@ -1,6 +1,8 @@
 import type { AgentCard } from './agent.js';
 import type { Bid } from './marketplace.js';
 import { BidStatus } from './marketplace.js';
+import type { RelayNode } from './relay.js';
+import { RelayNodeStatus } from './relay.js';
 import type { Task } from './task.js';
 import { TaskStatus } from './task.js';
 
@@ -35,6 +37,7 @@ export interface TaskAcceptedEvent extends MeshEventBase<'task.accepted'> {
   taskId: string;
   requester: string;
   provider: string;
+  price: bigint;
   acceptedAt: number;
   status: TaskStatus.ACCEPTED;
 }
@@ -43,6 +46,10 @@ export interface TaskCompletedEvent extends MeshEventBase<'task.completed'> {
   taskId: string;
   provider: string;
   resultBlobId: string;
+  price: bigint;
+  paymentScheme?: Task['paymentScheme'];
+  meteredUnits?: number;
+  verificationHash?: string;
   completedAt: number;
   status: TaskStatus.COMPLETED;
 }
@@ -51,6 +58,8 @@ export interface TaskReleasedEvent extends MeshEventBase<'task.released'> {
   taskId: string;
   requester: string;
   provider: string;
+  price: bigint;
+  refundAmount?: bigint;
   releasedAt: number;
   status: TaskStatus.RELEASED;
 }
@@ -102,6 +111,28 @@ export interface BidRejectedEvent extends MeshEventBase<'bid.rejected'> {
   status: BidStatus.REJECTED;
 }
 
+export interface RelayRegisteredEvent extends MeshEventBase<'relay.registered'> {
+  relay: RelayNode;
+}
+
+export interface RelayHeartbeatEvent extends MeshEventBase<'relay.heartbeat'> {
+  relayId: string;
+  operator: string;
+  lastHeartbeat: number;
+}
+
+export interface RelayDeactivatedEvent extends MeshEventBase<'relay.deactivated'> {
+  relayId: string;
+  operator: string;
+  status: RelayNodeStatus.INACTIVE;
+}
+
+export interface RelaySlashedEvent extends MeshEventBase<'relay.slashed'> {
+  relayId: string;
+  operator: string;
+  status: RelayNodeStatus.SLASHED;
+}
+
 export type MeshEvent =
   | AgentRegisteredEvent
   | AgentUpdatedEvent
@@ -115,4 +146,8 @@ export type MeshEvent =
   | BidPlacedEvent
   | BidAcceptedEvent
   | BidWithdrawnEvent
-  | BidRejectedEvent;
+  | BidRejectedEvent
+  | RelayRegisteredEvent
+  | RelayHeartbeatEvent
+  | RelayDeactivatedEvent
+  | RelaySlashedEvent;
