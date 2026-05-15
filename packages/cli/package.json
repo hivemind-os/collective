@@ -1,0 +1,32 @@
+{
+  "name": "@agentic-mesh/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "bin": {
+    "mesh": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest",
+    "lint": "eslint src/ tests/ vitest.config.ts tsup.config.ts"
+  },
+  "dependencies": {
+    "@agentic-mesh/core": "workspace:*",
+    "@agentic-mesh/daemon": "workspace:*",
+    "@agentic-mesh/types": "workspace:*",
+    "@mysten/sui": "^1.30.0",
+    "js-yaml": "^4.1.0",
+    "pino": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

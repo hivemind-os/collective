@@ -14,7 +14,7 @@ describe('lifecycle smoke scaffold', () => {
       processTracker: new ProcessTracker(),
     });
 
-    expect(SUI_STARTUP_TIMEOUT).toBe(30000);
+    expect(SUI_STARTUP_TIMEOUT).toBe(60000);
     expect(network).toBeInstanceOf(SuiTestNetwork);
   });
 });

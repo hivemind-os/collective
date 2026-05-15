@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess, type SpawnOptionsWithoutStdio } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -18,7 +20,7 @@ import {
 
 const harnessDirectory = resolve(fileURLToPath(new URL('.', import.meta.url)));
 const packageDirectory = resolve(harnessDirectory, '..', '..');
-const repositoryRoot = resolve(packageDirectory, '..', '..', '..');
+const repositoryRoot = resolve(packageDirectory, '..', '..');
 
 export interface ContractAddresses {
   packageId: string;
@@ -45,6 +47,12 @@ interface PublishCommandOutput {
   objectChanges?: PublishObjectChange[];
 }
 
+interface PublishClientConfig {
+  clientConfigPath: string;
+  clientEnvAlias: string;
+  deployerAddress: string;
+}
+
 export class SuiTestNetwork {
   private readonly contractsPath: string;
   private readonly portAllocator: PortAllocator;
@@ -55,6 +63,7 @@ export class SuiTestNetwork {
 
   private reservedPorts: number[] = [];
   private suiProcess?: ChildProcess;
+  private suiProcessError?: Error;
   private tmpDir?: string;
   private suiEnvironment?: NodeJS.ProcessEnv;
   private _client?: SuiClient;
@@ -68,7 +77,7 @@ export class SuiTestNetwork {
       options.contractsPath ?? resolve(this.workingDirectory, 'contracts', 'agentic_mesh');
     this.processTracker = options.processTracker ?? new ProcessTracker();
     this.portAllocator = options.portAllocator ?? new PortAllocator();
-    this.suiBinary = options.suiBinary ?? 'sui';
+    this.suiBinary = options.suiBinary ?? resolveSuiBinary();
     this.tmpRoot = options.tmpRoot ?? resolve(this.workingDirectory, 'sui_tmp');
   }
 
@@ -124,16 +133,16 @@ export class SuiTestNetwork {
       TMPDIR: this.tmpDir,
       TMP: this.tmpDir,
       TEMP: this.tmpDir,
+      HOME: this.tmpDir,
+      USERPROFILE: this.tmpDir,
     };
 
     const startArgs = [
       'start',
-      '--with-faucet',
+      `--with-faucet=127.0.0.1:${faucetPort}`,
       '--force-regenesis',
-      '--rpc-port',
+      '--fullnode-rpc-port',
       String(rpcPort),
-      '--faucet-port',
-      String(faucetPort),
     ];
 
     const suiProcess = spawn(this.suiBinary, startArgs, {
@@ -141,20 +150,19 @@ export class SuiTestNetwork {
       env: this.suiEnvironment,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-
-    if (!suiProcess.pid) {
-      throw new Error('Failed to start local Sui process.');
-    }
+    suiProcess.once('error', (error) => {
+      this.suiProcessError = error instanceof Error ? error : new Error(String(error));
+    });
 
     this.suiProcess = suiProcess;
-    this.processTracker.track(suiProcess.pid, 'sui-localnet');
+    if (suiProcess.pid) {
+      this.processTracker.track(suiProcess.pid, 'sui-localnet');
+    }
 
     await this.waitForRpcReady();
 
-    const publishOutput = await this.runSuiCommand(
-      ['client', 'publish', this.contractsPath, '--gas-budget', '100000000', '--json'],
-      CONTRACT_DEPLOY_TIMEOUT,
-    );
+    const publishClient = await this.createPublishClient();
+    const publishOutput = await this.publishContracts(publishClient);
 
     this._contractAddresses = this.parsePublishOutput(publishOutput);
   }
@@ -184,10 +192,11 @@ export class SuiTestNetwork {
       this.reservedPorts = [];
 
       if (this.tmpDir) {
-        await rm(this.tmpDir, { recursive: true, force: true });
+        await removeDirectoryWithRetries(this.tmpDir);
       }
 
       this.suiProcess = undefined;
+      this.suiProcessError = undefined;
       this.suiEnvironment = undefined;
       this.tmpDir = undefined;
       this._client = undefined;
@@ -201,6 +210,10 @@ export class SuiTestNetwork {
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
+      if (this.suiProcessError) {
+        throw this.suiProcessError;
+      }
+
       if (this.suiProcess && this.suiProcess.exitCode !== null) {
         throw new Error(`Local Sui process exited early with code ${this.suiProcess.exitCode}.`);
       }
@@ -246,26 +259,31 @@ export class SuiTestNetwork {
         amount: amount.toString(),
       },
     ];
+    const deadline = Date.now() + Math.max(FAUCET_TIMEOUT * 3, 30_000);
 
-    for (const endpoint of endpoints) {
-      for (const body of bodies) {
-        try {
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(FAUCET_TIMEOUT),
-          });
+    while (Date.now() < deadline) {
+      for (const endpoint of endpoints) {
+        for (const body of bodies) {
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify(body),
+              signal: AbortSignal.timeout(FAUCET_TIMEOUT),
+            });
 
-          if (response.ok) {
-            return;
+            if (response.ok) {
+              return;
+            }
+          } catch {
+            // Try the next known faucet endpoint shape or wait for the faucet to finish booting.
           }
-        } catch {
-          // Try the next known faucet endpoint shape.
         }
       }
+
+      await delay(500);
     }
 
     throw new Error(`Failed to fund test wallet ${address} from faucet at ${this.faucetUrl}.`);
@@ -327,6 +345,71 @@ export class SuiTestNetwork {
     }
   }
 
+  private async createPublishClient(): Promise<PublishClientConfig> {
+    if (!this.tmpDir) {
+      throw new Error('Sui temp directory has not been initialized yet.');
+    }
+
+    const clientConfigPath = resolve(this.tmpDir, 'client.yaml');
+    const clientEnvAlias = `mesh-local-${Date.now()}`;
+    const deployerAlias = `deployer-${randomUUID().slice(0, 8)}`;
+    const addressOutput = await this.runSuiCommand(
+      ['client', '--client.config', clientConfigPath, '-y', 'new-address', 'ed25519', deployerAlias, '--json'],
+      CONTRACT_DEPLOY_TIMEOUT,
+    );
+    const deployerAddress = matchFirst(addressOutput, /"address"\s*:\s*"([^"]+)"/);
+    if (!deployerAddress) {
+      throw new Error('Unable to determine deployer address from Sui client output.');
+    }
+
+    await this.runSuiCommand(
+      ['client', '--client.config', clientConfigPath, 'new-env', '--alias', clientEnvAlias, '--rpc', this.rpcUrl, '--json'],
+      CONTRACT_DEPLOY_TIMEOUT,
+    );
+    await this.runSuiCommand(
+      ['client', '--client.config', clientConfigPath, 'switch', '--env', clientEnvAlias],
+      CONTRACT_DEPLOY_TIMEOUT,
+    );
+    await this.runSuiCommand(
+      ['client', '--client.config', clientConfigPath, 'switch', '--address', deployerAddress],
+      CONTRACT_DEPLOY_TIMEOUT,
+    );
+    await this.requestFromFaucet(deployerAddress, 1_000_000_000n);
+
+    return {
+      clientConfigPath,
+      clientEnvAlias,
+      deployerAddress,
+    };
+  }
+
+  private async publishContracts(publishClient: PublishClientConfig): Promise<string> {
+    const publishArgs = [
+      'client',
+      '--client.config',
+      publishClient.clientConfigPath,
+      '--client.env',
+      publishClient.clientEnvAlias,
+      'test-publish',
+      this.contractsPath,
+      '--sender',
+      publishClient.deployerAddress,
+      '--gas-budget',
+      '100000000',
+      '--json',
+    ];
+
+    try {
+      return await this.runSuiCommand([...publishArgs, '--build-env', 'testnet'], CONTRACT_DEPLOY_TIMEOUT);
+    } catch (error) {
+      if (!isUnsupportedBuildEnvError(error)) {
+        throw error;
+      }
+    }
+
+    return this.runSuiCommand(publishArgs, CONTRACT_DEPLOY_TIMEOUT);
+  }
+
   private async runSuiCommand(args: string[], timeoutMs: number): Promise<string> {
     const options: SpawnOptionsWithoutStdio = {
       cwd: this.workingDirectory,
@@ -385,12 +468,44 @@ function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+function resolveSuiBinary(): string {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA ?? resolve(homedir(), 'AppData', 'Local');
+    const localBinary = resolve(localAppData, 'bin', 'sui.exe');
+    if (existsSync(localBinary)) {
+      return localBinary;
+    }
+  }
+
+  return 'sui';
+}
+
+function isUnsupportedBuildEnvError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /--build-env|build-env/i.test(message) && /unexpected|unknown|unrecognized|wasn't expected|not allowed/i.test(message);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
 function matchFirst(value: string, expression: RegExp): string | undefined {
   return expression.exec(value)?.[1];
+}
+
+async function removeDirectoryWithRetries(path: string, attempts = 10): Promise<void> {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt >= attempts) {
+        throw error;
+      }
+
+      await delay(attempt * 250);
+    }
+  }
 }
 
 function delay(ms: number): Promise<void> {

@@ -1,8 +1,14 @@
-import { createServer, type Server } from 'node:net';
+import { createServer } from 'node:net';
 
 export class PortAllocator {
-  private readonly reservations = new Map<number, Server>();
+  private readonly allocated = new Set<number>();
 
+  /**
+   * Find `count` free ports by briefly binding a server to port 0,
+   * recording the OS-assigned port, then immediately closing the server.
+   * This leaves a small race window, but the ports are free for Sui/Anvil
+   * to bind immediately after.
+   */
   async allocate(count: number): Promise<number[]> {
     if (!Number.isInteger(count) || count <= 0) {
       throw new Error(`Port allocation count must be a positive integer. Received: ${count}`);
@@ -11,21 +17,8 @@ export class PortAllocator {
     const ports: number[] = [];
 
     for (let index = 0; index < count; index += 1) {
-      const server = createServer();
-      const port = await new Promise<number>((resolve, reject) => {
-        server.once('error', reject);
-        server.listen(0, '127.0.0.1', () => {
-          const address = server.address();
-          if (!address || typeof address === 'string') {
-            reject(new Error('Failed to determine allocated port.'));
-            return;
-          }
-
-          resolve(address.port);
-        });
-      });
-
-      this.reservations.set(port, server);
+      const port = await findFreePort();
+      this.allocated.add(port);
       ports.push(port);
     }
 
@@ -33,30 +26,36 @@ export class PortAllocator {
   }
 
   async release(ports: number[]): Promise<void> {
-    await Promise.all(
-      ports.map(async (port) => {
-        const server = this.reservations.get(port);
-        if (!server) {
-          return;
-        }
-
-        await new Promise<void>((resolve, reject) => {
-          server.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-
-            resolve();
-          });
-        });
-
-        this.reservations.delete(port);
-      }),
-    );
+    for (const port of ports) {
+      this.allocated.delete(port);
+    }
   }
 
   async cleanup(): Promise<void> {
-    await this.release([...this.reservations.keys()]);
+    this.allocated.clear();
   }
+}
+
+function findFreePort(): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Failed to determine allocated port.'));
+        return;
+      }
+
+      const port = address.port;
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
 }

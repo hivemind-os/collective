@@ -10,6 +10,7 @@ module agentic_mesh::registry {
     const ENotOwner: u64 = 2;
     const ENotActive: u64 = 3;
     const ECapabilityLengthMismatch: u64 = 4;
+    const EAlreadyActive: u64 = 5;
 
     public struct Registry has key {
         id: UID,
@@ -279,6 +280,40 @@ module agentic_mesh::registry {
         event::emit(AgentDeactivated {
             agent: sender,
             card_id: object::id(card),
+            did: card.did,
+            name: card.name,
+            description: card.description,
+            capabilities: card.capabilities,
+            endpoint: card.endpoint,
+            active: card.active,
+            version: card.version,
+            registered_at: card.registered_at,
+            updated_at: card.updated_at,
+        });
+    }
+
+    public fun reactivate_agent(
+        registry: &mut Registry,
+        card: &mut AgentCard,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        let sender = ctx.sender();
+        assert!(card.owner == sender, ENotOwner);
+        assert!(!card.active, EAlreadyActive);
+        assert!(!registry.agents.contains(sender), EAlreadyRegistered);
+
+        card.active = true;
+        card.version = card.version + 1;
+        card.updated_at = clock.timestamp_ms();
+
+        let card_id = object::id(card);
+        registry.agents.add(sender, card_id);
+        registry.active_count = registry.active_count + 1;
+
+        event::emit(AgentUpdated {
+            agent: sender,
+            card_id,
             did: card.did,
             name: card.name,
             description: card.description,

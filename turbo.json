@@ -5,6 +5,9 @@
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
     },
+    "@agentic-mesh/e2e-tests#build": {
+      "outputs": []
+    },
     "test": {
       "dependsOn": ["build"],
       "outputs": []

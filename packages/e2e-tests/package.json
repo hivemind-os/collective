@@ -9,7 +9,10 @@
     "clean": "rimraf dist .vitest"
   },
   "dependencies": {
-    "@mysten/sui": "^1.21.2"
+    "@agentic-mesh/core": "workspace:*",
+    "@agentic-mesh/daemon": "workspace:*",
+    "@agentic-mesh/types": "workspace:*",
+    "@mysten/sui": "^1.30.0"
   },
   "devDependencies": {
     "vitest": "^3.0.9"
