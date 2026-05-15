@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { FilesystemBlobStore } from '../src/index.js';
+import { BlobIntegrityError, FilesystemBlobStore } from '../src/index.js';
 
 const createdPaths: string[] = [];
 const encoder = new TextEncoder();
@@ -23,24 +23,38 @@ async function createBaseDir(): Promise<string> {
 }
 
 describe('FilesystemBlobStore', () => {
-  it('stores blobs with a SHA-256 checksum', async () => {
+  it('stores blobs with SHA-256 metadata', async () => {
     const store = new FilesystemBlobStore(await createBaseDir());
     const data = encoder.encode('hello world');
 
     const result = await store.store(data);
     const checksum = createHash('sha256').update(data).digest('hex');
 
-    expect(result.blobId).toBe(checksum);
-    expect(result.checksum).toBe(checksum);
+    expect(result).toMatchObject({
+      blobId: checksum,
+      hash: checksum,
+      checksum,
+      contentHash: checksum,
+      size: data.byteLength,
+    });
+    expect(result.storedAt).toBeGreaterThan(0);
   });
 
-  it('fetches stored blobs', async () => {
-    const store = new FilesystemBlobStore(await createBaseDir());
+  it('fetches stored blobs and returns metadata', async () => {
+    const baseDir = await createBaseDir();
+    const store = new FilesystemBlobStore(baseDir);
     const data = encoder.encode('fetch me');
     const { blobId } = await store.store(data);
 
     const fetched = await store.fetch(blobId);
+    const metadata = await store.getMetadata(blobId);
+
     expect(Buffer.from(fetched ?? [])).toEqual(Buffer.from(data));
+    expect(metadata).toMatchObject({
+      blobId,
+      contentHash: blobId,
+      size: data.byteLength,
+    });
   });
 
   it('returns null for missing blobs and after delete', async () => {
@@ -62,5 +76,16 @@ describe('FilesystemBlobStore', () => {
 
     expect(first.blobId).toBe(second.blobId);
     expect(await store.exists(first.blobId)).toBe(true);
+  });
+
+  it('throws on content corruption', async () => {
+    const baseDir = await createBaseDir();
+    const store = new FilesystemBlobStore(baseDir);
+    const data = encoder.encode('keep me safe');
+    const { blobId } = await store.store(data);
+
+    await writeFile(join(baseDir, blobId), encoder.encode('tampered'));
+
+    await expect(store.fetch(blobId)).rejects.toBeInstanceOf(BlobIntegrityError);
   });
 });

@@ -7,11 +7,11 @@ import type {
   TaskClient,
 } from '@agentic-mesh/core';
 import type { DID, NetworkConfig } from '@agentic-mesh/types';
-import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import type { Signer } from '@mysten/sui/cryptography';
 
 export interface MeshToolContext {
   did: DID;
-  keypair: Ed25519Keypair;
+  keypair: Signer;
   suiClient: MeshSuiClient;
   registryClient: RegistryClient;
   taskClient: TaskClient;

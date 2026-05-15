@@ -1,5 +1,6 @@
 export * from '@agentic-mesh/types';
 export * from './identity/index.js';
+export * from './auth/index.js';
 export * from './sui/index.js';
 export * from './registry/index.js';
 export * from './task/index.js';

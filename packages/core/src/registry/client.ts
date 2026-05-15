@@ -1,7 +1,7 @@
 import pino from 'pino';
 
 import type { AgentCard, Capability, NetworkConfig } from '@agentic-mesh/types';
-import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import type { Signer } from '@mysten/sui/cryptography';
 
 import { parseAgentCardFields } from '../internal/parsing.js';
 import { parseRawEvent } from '../events/parser.js';
@@ -28,7 +28,7 @@ export class RegistryClient {
     description: string;
     capabilities: Capability[];
     endpoint: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string; agentCardId: string }> {
     const tx = buildRegisterAgentTx({
       packageId: this.config.packageId,
@@ -56,7 +56,7 @@ export class RegistryClient {
     name: string;
     description: string;
     endpoint: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildUpdateAgentTx({
       packageId: this.config.packageId,
@@ -74,7 +74,7 @@ export class RegistryClient {
   async updateCapabilities(params: {
     cardId: string;
     capabilities: Capability[];
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildUpdateCapabilitiesTx({
       packageId: this.config.packageId,
@@ -89,7 +89,7 @@ export class RegistryClient {
 
   async deactivateAgent(params: {
     cardId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildDeactivateAgentTx({
       packageId: this.config.packageId,
@@ -103,7 +103,7 @@ export class RegistryClient {
 
   async reactivateAgent(params: {
     cardId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildReactivateAgentTx({
       packageId: this.config.packageId,

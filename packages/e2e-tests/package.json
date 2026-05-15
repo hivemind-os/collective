@@ -15,6 +15,7 @@
     "@mysten/sui": "^1.30.0"
   },
   "devDependencies": {
+    "fastify": "^5.8.5",
     "vitest": "^3.0.9"
   }
 }

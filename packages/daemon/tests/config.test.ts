@@ -55,6 +55,12 @@ describe('config', () => {
         '  registryId: 0xdef',
         'identity:',
         `  dataDir: ${resolve(dir, 'identity')}`,
+        'auth:',
+        '  mode: zklogin',
+        '  google:',
+        '    clientId: test-google-client',
+        '  portal:',
+        '    port: 0',
         'spending:',
         '  limits:',
         '    - amount: "42"',
@@ -82,10 +88,57 @@ describe('config', () => {
     expect(config.network.faucetUrl).toBe('http://127.0.0.1:4321');
     expect(config.network.packageId).toBe('0xabc');
     expect(config.network.registryId).toBe('0xdef');
+    expect(config.auth.mode).toBe('zklogin');
+    expect(config.auth.google?.clientId).toBe('test-google-client');
+    expect(config.auth.portal?.port).toBe(0);
     expect(config.spending.limits[0]?.amount).toBe(42n);
     expect(config.spending.perApp?.['claude-desktop']?.limits[0]?.amount).toBe(7n);
     expect(config.daemon.logLevel).toBe('debug');
-    expect(config.blobstore.baseDir).toBe(resolve(dir, 'blobs'));
+    expect(config.blobstore.mode).toBe('filesystem');
+    expect(config.blobstore.filesystem?.dataDir).toBe(resolve(dir, 'blobs'));
+  });
+
+  it('loads walrus blobstore settings from YAML', async () => {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+
+    await writeFile(
+      configPath,
+      [
+        'auth:',
+        '  mode: ed25519',
+        'blobstore:',
+        '  mode: hybrid',
+        '  filesystem:',
+        `    dataDir: ${resolve(dir, 'blob-cache')}`,
+        '  walrus:',
+        '    publisherUrl: https://publisher.example.com',
+        '    aggregatorUrl: https://aggregator.example.com',
+        '    epochs: 7',
+        '    maxBlobSize: 2048',
+        '  hybrid:',
+        '    cacheLocally: true',
+        '    preferWalrus: false',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = loadConfig(configPath);
+
+    expect(config.blobstore).toMatchObject({
+      mode: 'hybrid',
+      filesystem: { dataDir: resolve(dir, 'blob-cache') },
+      walrus: {
+        publisherUrl: 'https://publisher.example.com',
+        aggregatorUrl: 'https://aggregator.example.com',
+        epochs: 7,
+        maxBlobSize: 2048,
+      },
+      hybrid: {
+        cacheLocally: true,
+        preferWalrus: false,
+      },
+    });
   });
 
   it('applies environment variable overrides', async () => {
@@ -120,7 +173,7 @@ describe('config', () => {
     expect(config.daemon.logLevel).toBe('error');
     expect(config.daemon.dataDir).toBe(dataDir);
     expect(config.identity.dataDir).toBe(resolve(dataDir, 'identity'));
-    expect(config.blobstore.baseDir).toBe(resolve(dataDir, 'blobs'));
+    expect(config.blobstore.filesystem?.dataDir).toBe(resolve(dataDir, 'blobs'));
   });
 
   it('creates a default config file when one is missing', async () => {
@@ -133,6 +186,8 @@ describe('config', () => {
     const persisted = await readFile(configPath, 'utf8');
 
     expect(config.network.rpcUrl).toBe('http://127.0.0.1:9000');
+    expect(config.auth.mode).toBe('ed25519');
     expect(persisted).toContain('rpcUrl: http://127.0.0.1:9000');
+    expect(persisted).toContain('mode: ed25519');
   });
 });

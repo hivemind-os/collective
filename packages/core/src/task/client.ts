@@ -1,7 +1,7 @@
 import pino from 'pino';
 
 import type { NetworkConfig, Task } from '@agentic-mesh/types';
-import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import type { Signer } from '@mysten/sui/cryptography';
 
 import { parseTaskFields } from '../internal/parsing.js';
 import { MeshSuiClient } from '../sui/client.js';
@@ -30,7 +30,7 @@ export class TaskClient {
     priceMist: bigint;
     disputeWindowMs: number;
     expiryHours: number;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string; taskId: string }> {
     const tx = buildPostTaskTx({
       packageId: this.config.packageId,
@@ -55,7 +55,7 @@ export class TaskClient {
 
   async acceptTask(params: {
     taskId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildAcceptTaskTx({ packageId: this.config.packageId, taskId: params.taskId });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -65,7 +65,7 @@ export class TaskClient {
   async completeTask(params: {
     taskId: string;
     resultBlobId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildCompleteTaskTx({
       packageId: this.config.packageId,
@@ -78,7 +78,7 @@ export class TaskClient {
 
   async releasePayment(params: {
     taskId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildReleasePaymentTx({ packageId: this.config.packageId, taskId: params.taskId });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -87,7 +87,7 @@ export class TaskClient {
 
   async claimPayment(params: {
     taskId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildClaimPaymentTx({ packageId: this.config.packageId, taskId: params.taskId });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -96,7 +96,7 @@ export class TaskClient {
 
   async cancelTask(params: {
     taskId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildCancelTaskTx({ packageId: this.config.packageId, taskId: params.taskId });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -105,7 +105,7 @@ export class TaskClient {
 
   async refundExpiredTask(params: {
     taskId: string;
-    keypair: Ed25519Keypair;
+    keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildRefundExpiredTaskTx({ packageId: this.config.packageId, taskId: params.taskId });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);

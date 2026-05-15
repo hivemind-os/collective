@@ -118,6 +118,26 @@ export class SuiTestNetwork {
       return;
     }
 
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      try {
+        await this.startOnce();
+        return;
+      } catch (error) {
+        lastError = error;
+        await this.cleanupFailedStart();
+        if (attempt >= 3) {
+          throw error;
+        }
+
+        await delay(attempt * 500);
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  private async startOnce(): Promise<void> {
     this.reservedPorts = await this.portAllocator.allocate(2);
     const [rpcPort, faucetPort] = this.reservedPorts;
 
@@ -188,22 +208,27 @@ export class SuiTestNetwork {
     try {
       await this.processTracker.cleanup();
     } finally {
-      await this.portAllocator.release(this.reservedPorts);
-      this.reservedPorts = [];
-
-      if (this.tmpDir) {
-        await removeDirectoryWithRetries(this.tmpDir);
-      }
-
-      this.suiProcess = undefined;
-      this.suiProcessError = undefined;
-      this.suiEnvironment = undefined;
-      this.tmpDir = undefined;
-      this._client = undefined;
-      this._contractAddresses = undefined;
-      this._faucetUrl = undefined;
-      this._rpcUrl = undefined;
+      await this.cleanupFailedStart();
     }
+  }
+
+  private async cleanupFailedStart(): Promise<void> {
+    await this.processTracker.cleanup().catch(() => undefined);
+    await this.portAllocator.release(this.reservedPorts);
+    this.reservedPorts = [];
+
+    if (this.tmpDir) {
+      await removeDirectoryWithRetries(this.tmpDir).catch(() => undefined);
+    }
+
+    this.suiProcess = undefined;
+    this.suiProcessError = undefined;
+    this.suiEnvironment = undefined;
+    this.tmpDir = undefined;
+    this._client = undefined;
+    this._contractAddresses = undefined;
+    this._faucetUrl = undefined;
+    this._rpcUrl = undefined;
   }
 
   private async waitForRpcReady(timeoutMs = SUI_STARTUP_TIMEOUT): Promise<void> {

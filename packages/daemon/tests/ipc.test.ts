@@ -100,8 +100,10 @@ async function startServer(): Promise<{ server: IpcServer; state: DaemonState; i
       logLevel: 'error',
     },
     blobstore: {
-      type: 'filesystem',
-      baseDir: resolve(dir, 'blobs'),
+      mode: 'filesystem',
+      filesystem: {
+        dataDir: resolve(dir, 'blobs'),
+      },
     },
   };
 

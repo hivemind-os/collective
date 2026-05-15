@@ -2,7 +2,14 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { PaymentRail, type NetworkConfig, type SpendingLimit, type SpendingPolicy } from '@agentic-mesh/types';
+import {
+  PaymentRail,
+  type AuthConfig,
+  type BlobStoreConfig,
+  type NetworkConfig,
+  type SpendingLimit,
+  type SpendingPolicy,
+} from '@agentic-mesh/types';
 import yaml from 'js-yaml';
 
 export interface DaemonPerAppSpendingConfig {
@@ -18,6 +25,7 @@ export interface DaemonFullConfig {
   identity: {
     dataDir: string;
   };
+  auth: AuthConfig;
   spending: DaemonSpendingPolicy;
   daemon: {
     ipcPath: string;
@@ -26,10 +34,7 @@ export interface DaemonFullConfig {
     logLevel: 'debug' | 'info' | 'warn' | 'error';
     logFile?: string;
   };
-  blobstore: {
-    type: 'filesystem';
-    baseDir: string;
-  };
+  blobstore: BlobStoreConfig;
   provider?: {
     enabled: boolean;
     capabilities: Array<{
@@ -107,6 +112,12 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
     identity: {
       dataDir: join(resolvedDataDir, 'identity'),
     },
+    auth: {
+      mode: 'ed25519',
+      portal: {
+        port: 19876,
+      },
+    },
     spending: {
       defaultRail: PaymentRail.SUI_ESCROW,
       limits: [{ amount: 1_000_000_000n, interval: 'day' }],
@@ -119,8 +130,10 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
       logLevel: 'info',
     },
     blobstore: {
-      type: 'filesystem',
-      baseDir: join(resolvedDataDir, 'blobs'),
+      mode: 'filesystem',
+      filesystem: {
+        dataDir: join(resolvedDataDir, 'blobs'),
+      },
     },
   };
 }
@@ -128,6 +141,7 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
 function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFullConfig {
   const network = isRecord(parsed.network) ? parsed.network : {};
   const identity = isRecord(parsed.identity) ? parsed.identity : {};
+  const auth = isRecord(parsed.auth) ? parsed.auth : {};
   const daemon = isRecord(parsed.daemon) ? parsed.daemon : {};
   const blobstore = isRecord(parsed.blobstore) ? parsed.blobstore : {};
   const provider = isRecord(parsed.provider) ? parsed.provider : undefined;
@@ -142,6 +156,7 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
     identity: {
       dataDir: normalizePath(readString(identity.dataDir) ?? defaults.identity.dataDir),
     },
+    auth: normalizeAuthConfig(auth, defaults.auth),
     spending: normalizeSpendingPolicy(parsed.spending, defaults.spending),
     daemon: {
       ipcPath: readString(daemon.ipcPath) ?? defaults.daemon.ipcPath,
@@ -150,10 +165,7 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
       logLevel: normalizeLogLevel(daemon.logLevel, defaults.daemon.logLevel),
       logFile: readString(daemon.logFile) ? normalizePath(readString(daemon.logFile) as string) : undefined,
     },
-    blobstore: {
-      type: 'filesystem',
-      baseDir: normalizePath(readString(blobstore.baseDir) ?? defaults.blobstore.baseDir),
-    },
+    blobstore: normalizeBlobStoreConfig(blobstore, defaults.blobstore),
     provider: normalizeProviderConfig(provider),
   };
 }
@@ -170,10 +182,7 @@ function applyEnvironmentOverrides(config: DaemonFullConfig): DaemonFullConfig {
           pidFile: join(envDataDir, 'daemon.pid'),
           ipcPath: process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : join(envDataDir, 'mesh.sock'),
         },
-        blobstore: {
-          type: 'filesystem' as const,
-          baseDir: join(envDataDir, 'blobs'),
-        },
+        blobstore: applyBlobStoreDataDirOverride(config.blobstore, join(envDataDir, 'blobs')),
       }
     : config;
 
@@ -190,6 +199,89 @@ function applyEnvironmentOverrides(config: DaemonFullConfig): DaemonFullConfig {
       logLevel: normalizeLogLevel(process.env.MESH_LOG_LEVEL, withDataDir.daemon.logLevel),
     },
   };
+}
+
+function normalizeAuthConfig(value: LooseRecord, defaults: AuthConfig): AuthConfig {
+  const google = isRecord(value.google) ? value.google : {};
+  const apple = isRecord(value.apple) ? value.apple : {};
+  const portal = isRecord(value.portal) ? value.portal : {};
+
+  return {
+    mode: value.mode === 'zklogin' ? 'zklogin' : defaults.mode,
+    google: readString(google.clientId)
+      ? {
+          clientId: readString(google.clientId) as string,
+        }
+      : defaults.google,
+    apple: readString(apple.clientId)
+      ? {
+          clientId: readString(apple.clientId) as string,
+        }
+      : defaults.apple,
+    portal: {
+      port: readPositiveInteger(portal.port, 'auth.portal.port') ?? defaults.portal?.port ?? 19876,
+    },
+  };
+}
+
+function normalizeBlobStoreConfig(value: unknown, defaults: BlobStoreConfig): BlobStoreConfig {
+  const blobstore = isRecord(value) ? value : {};
+  const filesystem = isRecord(blobstore.filesystem) ? blobstore.filesystem : {};
+  const walrus = isRecord(blobstore.walrus) ? blobstore.walrus : {};
+  const hybrid = isRecord(blobstore.hybrid) ? blobstore.hybrid : {};
+  const mode = normalizeBlobStoreMode(readString(blobstore.mode) ?? readString(blobstore.type) ?? defaults.mode);
+  const filesystemDataDir = readString(filesystem.dataDir) ?? readString(blobstore.baseDir) ?? defaults.filesystem?.dataDir;
+  const publisherUrl = readString(walrus.publisherUrl) ?? readString(blobstore.publisherUrl) ?? defaults.walrus?.publisherUrl;
+  const aggregatorUrl = readString(walrus.aggregatorUrl) ?? readString(blobstore.aggregatorUrl) ?? defaults.walrus?.aggregatorUrl;
+
+  return {
+    mode,
+    filesystem: filesystemDataDir
+      ? {
+          dataDir: normalizePath(filesystemDataDir),
+        }
+      : defaults.filesystem,
+    walrus:
+      publisherUrl || aggregatorUrl || defaults.walrus
+        ? {
+            publisherUrl: publisherUrl ?? '',
+            aggregatorUrl: aggregatorUrl ?? '',
+            epochs: readPositiveInteger(walrus.epochs, 'blobstore.walrus.epochs') ?? defaults.walrus?.epochs,
+            maxBlobSize:
+              readPositiveInteger(walrus.maxBlobSize, 'blobstore.walrus.maxBlobSize') ?? defaults.walrus?.maxBlobSize,
+            retryAttempts:
+              readPositiveInteger(walrus.retryAttempts, 'blobstore.walrus.retryAttempts') ?? defaults.walrus?.retryAttempts,
+            retryDelayMs:
+              readPositiveInteger(walrus.retryDelayMs, 'blobstore.walrus.retryDelayMs') ?? defaults.walrus?.retryDelayMs,
+            timeoutMs: readPositiveInteger(walrus.timeoutMs, 'blobstore.walrus.timeoutMs') ?? defaults.walrus?.timeoutMs,
+          }
+        : defaults.walrus,
+    hybrid: {
+      cacheLocally: readBoolean(hybrid.cacheLocally) ?? defaults.hybrid?.cacheLocally ?? true,
+      preferWalrus: readBoolean(hybrid.preferWalrus) ?? defaults.hybrid?.preferWalrus ?? true,
+    },
+  };
+}
+
+function applyBlobStoreDataDirOverride(config: BlobStoreConfig, dataDir: string): BlobStoreConfig {
+  if (config.mode !== 'filesystem' && config.mode !== 'hybrid') {
+    return config;
+  }
+
+  return {
+    ...config,
+    filesystem: {
+      dataDir,
+    },
+  };
+}
+
+function normalizeBlobStoreMode(value: string): BlobStoreConfig['mode'] {
+  if (value === 'filesystem' || value === 'walrus' || value === 'hybrid') {
+    return value;
+  }
+
+  throw new Error(`Unsupported blobstore mode: ${value}`);
 }
 
 function normalizeSpendingPolicy(value: unknown, defaults: DaemonSpendingPolicy): DaemonSpendingPolicy {
@@ -325,16 +417,28 @@ function validateConfig(config: DaemonFullConfig): void {
     throw new Error('identity.dataDir is required.');
   }
 
+  if (!config.auth.mode) {
+    throw new Error('auth.mode is required.');
+  }
+
+  if (config.auth.mode === 'zklogin' && !config.auth.google?.clientId) {
+    throw new Error('auth.google.clientId is required when auth.mode is zklogin.');
+  }
+
   if (!config.daemon.ipcPath || !config.daemon.dataDir || !config.daemon.pidFile) {
     throw new Error('daemon configuration is incomplete.');
   }
 
-  if (config.blobstore.type !== 'filesystem') {
-    throw new Error('Only filesystem blobstore is supported.');
+  if (config.blobstore.mode === 'filesystem' || config.blobstore.mode === 'hybrid') {
+    if (!config.blobstore.filesystem?.dataDir) {
+      throw new Error('blobstore.filesystem.dataDir is required.');
+    }
   }
 
-  if (!config.blobstore.baseDir) {
-    throw new Error('blobstore.baseDir is required.');
+  if (config.blobstore.mode === 'walrus' || config.blobstore.mode === 'hybrid') {
+    if (!config.blobstore.walrus?.publisherUrl || !config.blobstore.walrus.aggregatorUrl) {
+      throw new Error('blobstore.walrus.publisherUrl and blobstore.walrus.aggregatorUrl are required.');
+    }
   }
 
   if (!LOG_LEVELS.has(config.daemon.logLevel)) {
@@ -345,6 +449,7 @@ function validateConfig(config: DaemonFullConfig): void {
 function serializeConfig(config: DaemonFullConfig): LooseRecord {
   return {
     ...config,
+    auth: config.auth,
     spending: {
       ...config.spending,
       requireConfirmationAbove: config.spending.requireConfirmationAbove?.toString(),

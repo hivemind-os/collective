@@ -154,8 +154,10 @@ async function startServer(
       logLevel: 'error',
     },
     blobstore: {
-      type: 'filesystem',
-      baseDir: resolve(dir, 'blobs'),
+      mode: 'filesystem',
+      filesystem: {
+        dataDir: resolve(dir, 'blobs'),
+      },
     },
   };
 

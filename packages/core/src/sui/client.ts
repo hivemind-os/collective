@@ -8,7 +8,7 @@ import {
   type SuiTransactionBlockResponse,
   type SuiTransactionBlockResponseOptions,
 } from '@mysten/sui/client';
-import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
+import type { Signer } from '@mysten/sui/cryptography';
 import { Transaction } from '@mysten/sui/transactions';
 
 import { isRecord, normalizeMoveValue, normalizeObjectOwner } from '../internal/parsing.js';
@@ -48,7 +48,7 @@ export class MeshSuiClient {
 
   async executeTransaction(
     tx: Transaction,
-    keypair: Ed25519Keypair,
+    keypair: Signer,
     options: ExecuteTransactionOptions = {},
   ): Promise<SuiTransactionBlockResponse> {
     const responseOptions: SuiTransactionBlockResponseOptions = {
