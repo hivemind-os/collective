@@ -4,18 +4,22 @@ import { PaymentRail, TaskStatus, type AgentCard } from '@agentic-mesh/types';
 
 const relayExecuteMock = vi.fn();
 
-vi.mock('@agentic-mesh/core', () => ({
-  PaymentRailSelector: class {
-    selectRail() {
-      return 'x402-base';
-    }
-  },
-  RelayConsumerClient: class {
-    async executeSync(...args: unknown[]) {
-      return relayExecuteMock(...args);
-    }
-  },
-}));
+vi.mock('@agentic-mesh/core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agentic-mesh/core')>();
+  return {
+    ...actual,
+    PaymentRailSelector: class {
+      selectRail() {
+        return 'x402-base';
+      }
+    },
+    RelayConsumerClient: class {
+      async executeSync(...args: unknown[]) {
+        return relayExecuteMock(...args);
+      }
+    },
+  };
+});
 
 import { runMeshExecute } from '../src/tools/execute.js';
 
@@ -68,6 +72,7 @@ function createContext(agent: AgentCard) {
     },
     registryClient: {
       discoverByCapability: vi.fn(async () => []),
+      getAgentCardByOwner: vi.fn(async () => null),
     },
     meshClient: {} as never,
     spendingPolicy: {
@@ -75,6 +80,7 @@ function createContext(agent: AgentCard) {
       record: vi.fn(),
     },
     networkConfig: {} as never,
+    encryption: undefined as { enabled: boolean; requireEncryption: boolean; publicKey?: string } | undefined,
     relayAuthProvider: {} as never,
     x402Client: {} as never,
     logger: {
@@ -118,5 +124,27 @@ describe('runMeshExecute', () => {
     expect(context.taskClient.postTask).toHaveBeenCalledOnce();
     expect(context.taskClient.releasePayment).toHaveBeenCalledOnce();
     expect(context.logger.warn).toHaveBeenCalledOnce();
+  });
+
+  it('stores encrypted input blobs when the provider publishes an encryption key', async () => {
+    relayExecuteMock.mockRejectedValueOnce(new Error('fetch failed'));
+    const agent = {
+      ...createAgent(),
+      encryptionPublicKey: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f',
+    };
+    const context = createContext(agent);
+    const storeEncrypted = vi.fn(async () => ({ blobId: 'encrypted-blob', hash: 'hash-1' }));
+    const fetchDecrypted = vi.fn(async () => new TextEncoder().encode('async-result'));
+    context.blobStore = {
+      ...context.blobStore,
+      storeEncrypted,
+      fetchDecrypted,
+    };
+    context.encryption = { enabled: true, requireEncryption: false };
+
+    await runMeshExecute({ capability: 'echo', input: 'hello' }, context as never);
+
+    expect(storeEncrypted).toHaveBeenCalledOnce();
+    expect(context.taskClient.postTask).toHaveBeenCalledWith(expect.objectContaining({ inputBlobId: 'encrypted-blob' }));
   });
 });

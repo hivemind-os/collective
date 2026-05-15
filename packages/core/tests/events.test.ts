@@ -81,6 +81,7 @@ describe('event parsing', () => {
           requester: '0xrequester',
           provider: '0x0',
           capability: 'summarize',
+          category: 'analysis',
           input_blob_id: [105, 110, 112, 117, 116],
           agreement_hash: [104, 97, 115, 104],
           price: '1000',
@@ -100,6 +101,7 @@ describe('event parsing', () => {
       throw new Error('Unexpected event type');
     }
     expect(event.task.id).toBe('0xtask-id');
+    expect(event.task.category).toBe('analysis');
     expect(event.task.inputBlobId).toBe('input');
     expect(event.task.status).toBe(TaskStatus.OPEN);
   });

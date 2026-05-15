@@ -1,15 +1,18 @@
 import pino from 'pino';
 
-import type { AgentCard, Capability, NetworkConfig } from '@agentic-mesh/types';
+import type { AgentCard, Capability, NetworkConfig, ReputationScore } from '@agentic-mesh/types';
 import type { Signer } from '@mysten/sui/cryptography';
 
 import { parseAgentCardFields } from '../internal/parsing.js';
 import { parseRawEvent } from '../events/parser.js';
+import { ReputationScoreCalculator } from '../reputation/score-calculator.js';
 import { MeshSuiClient } from '../sui/client.js';
+import { StakingClient } from '../staking/client.js';
 import {
   buildDeactivateAgentTx,
   buildReactivateAgentTx,
   buildRegisterAgentTx,
+  buildSetEncryptionKeyTx,
   buildUpdateAgentTx,
   buildUpdateCapabilitiesTx,
 } from '../sui/tx-helpers.js';
@@ -17,10 +20,15 @@ import {
 const logger = pino({ name: '@agentic-mesh/core:registry' });
 
 export class RegistryClient {
+  private readonly scoreCalculator = new ReputationScoreCalculator();
+  private readonly stakingClient: StakingClient;
+
   constructor(
     private readonly suiClient: MeshSuiClient,
     private readonly config: NetworkConfig,
-  ) {}
+  ) {
+    this.stakingClient = new StakingClient(suiClient, config);
+  }
 
   async registerAgent(params: {
     name: string;
@@ -28,6 +36,7 @@ export class RegistryClient {
     description: string;
     capabilities: Capability[];
     endpoint: string;
+    encryptionPublicKey?: Uint8Array;
     keypair: Signer;
   }): Promise<{ txDigest: string; agentCardId: string }> {
     const tx = buildRegisterAgentTx({
@@ -48,6 +57,14 @@ export class RegistryClient {
       throw new Error('Unable to determine AgentCard object id from transaction response.');
     }
 
+    if (params.encryptionPublicKey !== undefined) {
+      await this.setEncryptionKey({
+        cardId: agentCardId,
+        encryptionPublicKey: params.encryptionPublicKey,
+        keypair: params.keypair,
+      });
+    }
+
     return { txDigest: response.digest, agentCardId };
   }
 
@@ -56,6 +73,7 @@ export class RegistryClient {
     name: string;
     description: string;
     endpoint: string;
+    encryptionPublicKey?: Uint8Array;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildUpdateAgentTx({
@@ -65,6 +83,28 @@ export class RegistryClient {
       name: params.name,
       description: params.description,
       endpoint: params.endpoint,
+    });
+
+    const response = await this.suiClient.executeTransaction(tx, params.keypair);
+    if (params.encryptionPublicKey !== undefined) {
+      await this.setEncryptionKey({
+        cardId: params.cardId,
+        encryptionPublicKey: params.encryptionPublicKey,
+        keypair: params.keypair,
+      });
+    }
+    return { txDigest: response.digest };
+  }
+
+  async setEncryptionKey(params: {
+    cardId: string;
+    encryptionPublicKey: Uint8Array;
+    keypair: Signer;
+  }): Promise<{ txDigest: string }> {
+    const tx = buildSetEncryptionKeyTx({
+      packageId: this.config.packageId,
+      cardId: params.cardId,
+      encryptionPublicKey: params.encryptionPublicKey,
     });
 
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -118,7 +158,7 @@ export class RegistryClient {
   async getAgentCard(cardId: string): Promise<AgentCard | null> {
     try {
       const object = await this.suiClient.getObject<Record<string, unknown>>(cardId);
-      return parseAgentCardFields(object, cardId);
+      return await this.enrichAgentStake(parseAgentCardFields(object, cardId));
     } catch (error) {
       if (isObjectMissingError(error)) {
         return null;
@@ -128,9 +168,58 @@ export class RegistryClient {
     }
   }
 
-  async discoverByCapability(capability: string, limit = 20): Promise<AgentCard[]> {
+  async getAgentCardByOwner(owner: string): Promise<AgentCard | null> {
+    const page = await this.suiClient.client.getOwnedObjects({
+      owner,
+      filter: { StructType: `${this.config.packageId}::registry::AgentCard` },
+      limit: 20,
+    });
+
+    const cards = await Promise.all(
+      page.data
+        .map((entry) => entry.data?.objectId)
+        .filter((objectId): objectId is string => typeof objectId === 'string')
+        .map(async (objectId) => await this.getAgentCard(objectId)),
+    );
+
+    return cards
+      .filter((card): card is AgentCard => Boolean(card))
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .find((card) => card.active) ?? null;
+  }
+
+  async findAgentByDid(did: string): Promise<AgentCard | null> {
+    const eventType = `${this.config.packageId}::registry::AgentRegistered`;
+    let cursor = null;
+
+    do {
+      const page = await this.suiClient.queryEvents(eventType, cursor, 100);
+      for (const event of page.events) {
+        const parsed = parseRawEvent(event, this.config.packageId);
+        if (parsed?.type !== 'agent.registered' || parsed.agent.did !== did) {
+          continue;
+        }
+
+        return await this.getAgentCard(parsed.agent.id);
+      }
+
+      cursor = page.nextCursor;
+      if (!page.hasMore) {
+        break;
+      }
+    } while (cursor);
+
+    return null;
+  }
+
+  async discoverByCapability(
+    capability: string,
+    limit = 20,
+    options: { sortByReputation?: boolean; scores?: Map<string, ReputationScore> } = {},
+  ): Promise<AgentCard[]> {
     const eventType = `${this.config.packageId}::registry::AgentRegistered`;
     const matches: AgentCard[] = [];
+    const seen = new Set<string>();
     let cursor = null;
 
     do {
@@ -149,11 +238,12 @@ export class RegistryClient {
         }
 
         const current = await this.getAgentCard(parsed.agent.id);
-        if (current?.active) {
+        if (current?.active && !seen.has(current.id)) {
           matches.push(current);
+          seen.add(current.id);
         }
 
-        if (matches.length >= limit) {
+        if (!options.sortByReputation && matches.length >= limit) {
           return matches;
         }
       }
@@ -164,7 +254,30 @@ export class RegistryClient {
       }
     } while (cursor);
 
-    return matches;
+    if (!options.sortByReputation) {
+      return [...matches].sort(compareStakePreference).slice(0, limit);
+    }
+
+    const scores = options.scores ?? new Map(matches.map((agent) => [agent.did, this.scoreCalculator.computeScore(agent, [])]));
+    return this.scoreCalculator.rankByReputation(matches, scores).slice(0, limit);
+  }
+
+  private async enrichAgentStake(agent: AgentCard): Promise<AgentCard> {
+    try {
+      const stake = await this.stakingClient.getStakeByOwner(agent.owner);
+      if (!stake) {
+        return { ...agent, hasStake: false, stakeMist: undefined, stakeType: undefined };
+      }
+
+      return {
+        ...agent,
+        hasStake: Boolean(stake.isActive && stake.meetsMinium),
+        stakeMist: stake.balanceMist,
+        stakeType: stake.stakeType,
+      };
+    } catch {
+      return { ...agent, hasStake: false, stakeMist: undefined, stakeType: undefined };
+    }
   }
 }
 
@@ -183,4 +296,33 @@ function extractObjectId(
 
 function isObjectMissingError(error: unknown): boolean {
   return error instanceof Error && /not found|does not contain move object data/i.test(error.message);
+}
+
+function compareStakePreference(left: AgentCard, right: AgentCard): number {
+  return (
+    compareBoolean(left.hasStake ?? false, right.hasStake ?? false) ||
+    compareBigInt(left.stakeMist ?? 0n, right.stakeMist ?? 0n) ||
+    compareNumber(left.updatedAt, right.updatedAt)
+  );
+}
+
+function compareBoolean(left: boolean, right: boolean): number {
+  if (left === right) {
+    return 0;
+  }
+  return left ? -1 : 1;
+}
+
+function compareBigInt(left: bigint, right: bigint): number {
+  if (left === right) {
+    return 0;
+  }
+  return left > right ? -1 : 1;
+}
+
+function compareNumber(left: number, right: number): number {
+  if (left === right) {
+    return 0;
+  }
+  return left > right ? -1 : 1;
 }

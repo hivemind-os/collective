@@ -1,4 +1,6 @@
 import type { AgentCard } from './agent.js';
+import type { Bid } from './marketplace.js';
+import { BidStatus } from './marketplace.js';
 import type { Task } from './task.js';
 import { TaskStatus } from './task.js';
 
@@ -68,6 +70,38 @@ export interface TaskCancelledEvent extends MeshEventBase<'task.cancelled'> {
   status: TaskStatus.CANCELLED;
 }
 
+export interface BidPlacedEvent extends MeshEventBase<'bid.placed'> {
+  bid: Bid;
+}
+
+export interface BidAcceptedEvent extends MeshEventBase<'bid.accepted'> {
+  bidId: string;
+  taskId: string;
+  requester: string;
+  bidder: string;
+  bidPrice: bigint;
+  refundedAmount: bigint;
+  acceptedAt: number;
+  status: BidStatus.ACCEPTED;
+}
+
+export interface BidWithdrawnEvent extends MeshEventBase<'bid.withdrawn'> {
+  bidId: string;
+  taskId: string;
+  bidder: string;
+  withdrawnAt: number;
+  status: BidStatus.WITHDRAWN;
+}
+
+export interface BidRejectedEvent extends MeshEventBase<'bid.rejected'> {
+  bidId: string;
+  taskId: string;
+  requester: string;
+  bidder: string;
+  rejectedAt: number;
+  status: BidStatus.REJECTED;
+}
+
 export type MeshEvent =
   | AgentRegisteredEvent
   | AgentUpdatedEvent
@@ -77,4 +111,8 @@ export type MeshEvent =
   | TaskCompletedEvent
   | TaskReleasedEvent
   | TaskDisputedEvent
-  | TaskCancelledEvent;
+  | TaskCancelledEvent
+  | BidPlacedEvent
+  | BidAcceptedEvent
+  | BidWithdrawnEvent
+  | BidRejectedEvent;

@@ -1,5 +1,7 @@
 #[allow(unused_const)]
 module agentic_mesh::task {
+    use agentic_mesh::registry::{Self as registry, AgentCard};
+    use agentic_mesh::reputation;
     use std::string::String;
     use sui::balance::{Self, Balance};
     use sui::clock::Clock;
@@ -24,14 +26,20 @@ module agentic_mesh::task {
     const ETaskExpired: u64 = 108;
     const ETaskNotExpired: u64 = 109;
     const EZeroPayment: u64 = 110;
+    const EInvalidProviderCard: u64 = 111;
+    const EInvalidSplit: u64 = 112;
+    const EInvalidBidPrice: u64 = 113;
+    const EInvalidExpiryHours: u64 = 114;
 
     const MS_PER_HOUR: u64 = 3_600_000;
+    const MAX_U64: u64 = 18_446_744_073_709_551_615;
 
     public struct Task has key {
         id: UID,
         requester: address,
         provider: address,
         capability: String,
+        category: String,
         input_blob_id: vector<u8>,
         result_blob_id: vector<u8>,
         agreement_hash: vector<u8>,
@@ -50,6 +58,7 @@ module agentic_mesh::task {
         requester: address,
         provider: address,
         capability: String,
+        category: String,
         input_blob_id: vector<u8>,
         agreement_hash: vector<u8>,
         price: u64,
@@ -130,8 +139,101 @@ module agentic_mesh::task {
         amount
     }
 
+    fun assert_provider_card(task: &Task, provider_card: &AgentCard) {
+        assert!(registry::card_owner(provider_card) == task.provider, EInvalidProviderCard);
+    }
+
+    public(package) fun set_disputed(task: &mut Task) {
+        task.status = STATUS_DISPUTED;
+    }
+
+    public(package) fun emit_disputed_event(task: &Task, disputed_at: u64) {
+        event::emit(TaskDisputed {
+            task_id: object::id(task),
+            requester: task.requester,
+            provider: task.provider,
+            capability: task.capability,
+            price: task.price,
+            status: task.status,
+            disputed_at,
+        });
+    }
+
+    public(package) fun split_escrow(task: &mut Task, requester_amount: u64): (Balance<SUI>, Balance<SUI>) {
+        let escrow_amount = balance::value(&task.escrow);
+        assert!(escrow_amount > 0, ENoFunds);
+        assert!(requester_amount <= escrow_amount, EInvalidSplit);
+
+        let requester_balance = balance::split(&mut task.escrow, requester_amount);
+        let provider_balance = balance::split(&mut task.escrow, escrow_amount - requester_amount);
+        task.status = STATUS_RELEASED;
+        (requester_balance, provider_balance)
+    }
+
+    public(package) fun get_dispute_window_ms(task: &Task): u64 {
+        task.dispute_window_ms
+    }
+
+    public(package) fun get_completed_at(task: &Task): u64 {
+        task.completed_at
+    }
+
+    fun assert_dispute_window_open(task: &Task, now: u64) {
+        assert!(now >= task.completed_at, EDisputeWindowOpen);
+        assert!(now - task.completed_at >= task.dispute_window_ms, EDisputeWindowOpen);
+    }
+
+    fun assert_dispute_window_not_closed(task: &Task, now: u64) {
+        assert!(now >= task.completed_at, EDisputeWindowClosed);
+        assert!(now - task.completed_at < task.dispute_window_ms, EDisputeWindowClosed);
+    }
+
+    fun compute_expiry_delta(expiry_hours: u64): u64 {
+        assert!(expiry_hours <= MAX_U64 / MS_PER_HOUR, EInvalidExpiryHours);
+        expiry_hours * MS_PER_HOUR
+    }
+
+    public(package) fun accept_bid_for_task(
+        task: &mut Task,
+        provider: address,
+        bid_price: u64,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ): u64 {
+        assert!(task.status == STATUS_OPEN, EInvalidStatus);
+        let now = clock.timestamp_ms();
+        assert!(now < task.expires_at, ETaskExpired);
+        assert!(ctx.sender() == task.requester, ENotRequester);
+        assert!(provider != task.requester, ENotProvider);
+        assert!(bid_price > 0 && bid_price <= task.price, EInvalidBidPrice);
+
+        let refund_amount = task.price - bid_price;
+        if (refund_amount > 0) {
+            let refund = coin::from_balance(balance::split(&mut task.escrow, refund_amount), ctx);
+            transfer::public_transfer(refund, task.requester);
+        };
+
+        task.provider = provider;
+        task.price = bid_price;
+        task.status = STATUS_ACCEPTED;
+        task.accepted_at = now;
+
+        event::emit(TaskAccepted {
+            task_id: object::id(task),
+            requester: task.requester,
+            provider: task.provider,
+            capability: task.capability,
+            price: task.price,
+            status: task.status,
+            accepted_at: task.accepted_at,
+        });
+
+        refund_amount
+    }
+
     public fun post_task(
         capability: String,
+        category: String,
         input_blob_id: vector<u8>,
         agreement_hash: vector<u8>,
         payment: Coin<SUI>,
@@ -144,11 +246,14 @@ module agentic_mesh::task {
         assert!(price > 0, EZeroPayment);
 
         let now = clock.timestamp_ms();
+        let expiry_delta = compute_expiry_delta(expiry_hours);
+        assert!(now <= MAX_U64 - expiry_delta, EInvalidExpiryHours);
         let task = Task {
             id: object::new(ctx),
             requester: ctx.sender(),
             provider: @0x0,
             capability,
+            category,
             input_blob_id,
             result_blob_id: vector[],
             agreement_hash,
@@ -156,7 +261,7 @@ module agentic_mesh::task {
             escrow: coin::into_balance(payment),
             status: STATUS_OPEN,
             dispute_window_ms,
-            expires_at: now + (expiry_hours * MS_PER_HOUR),
+            expires_at: now + expiry_delta,
             created_at: now,
             accepted_at: 0,
             completed_at: 0,
@@ -167,6 +272,7 @@ module agentic_mesh::task {
             requester: task.requester,
             provider: task.provider,
             capability: task.capability,
+            category: task.category,
             input_blob_id: task.input_blob_id,
             agreement_hash: task.agreement_hash,
             price: task.price,
@@ -177,6 +283,30 @@ module agentic_mesh::task {
         });
 
         transfer::share_object(task);
+    }
+
+    public fun post_open_task(
+        capability: String,
+        category: String,
+        input_blob_id: vector<u8>,
+        agreement_hash: vector<u8>,
+        payment: Coin<SUI>,
+        dispute_window_ms: u64,
+        expiry_hours: u64,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        post_task(
+            capability,
+            category,
+            input_blob_id,
+            agreement_hash,
+            payment,
+            dispute_window_ms,
+            expiry_hours,
+            clock,
+            ctx,
+        );
     }
 
     public fun accept_task(task: &mut Task, clock: &Clock, ctx: &mut TxContext) {
@@ -225,6 +355,18 @@ module agentic_mesh::task {
         });
     }
 
+    public fun complete_task_with_card(
+        task: &mut Task,
+        provider_card: &mut AgentCard,
+        result_blob_id: vector<u8>,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        assert_provider_card(task, provider_card);
+        complete_task(task, result_blob_id, clock, ctx);
+        reputation::record_task_completion(provider_card);
+    }
+
     public fun release_payment(task: &mut Task, ctx: &mut TxContext) {
         assert!(task.status == STATUS_COMPLETED, ENotCompleted);
         assert!(ctx.sender() == task.requester, ENotRequester);
@@ -247,11 +389,38 @@ module agentic_mesh::task {
     public fun claim_payment(task: &mut Task, clock: &Clock, ctx: &mut TxContext) {
         assert!(task.status == STATUS_COMPLETED, ENotCompleted);
         assert!(ctx.sender() == task.provider, ENotProvider);
-        assert!(clock.timestamp_ms() >= task.completed_at + task.dispute_window_ms, EDisputeWindowOpen);
+        assert_dispute_window_open(task, clock.timestamp_ms());
 
         let provider = task.provider;
         let _released_amount = release_escrow(task, provider, ctx);
         task.status = STATUS_RELEASED;
+
+        event::emit(TaskPaymentReleased {
+            task_id: object::id(task),
+            requester: task.requester,
+            provider: task.provider,
+            capability: task.capability,
+            price: task.price,
+            status: task.status,
+            released_by: ctx.sender(),
+        });
+    }
+
+    public fun claim_payment_with_card(
+        task: &mut Task,
+        provider_card: &mut AgentCard,
+        clock: &Clock,
+        ctx: &mut TxContext,
+    ) {
+        assert_provider_card(task, provider_card);
+        assert!(task.status == STATUS_COMPLETED, ENotCompleted);
+        assert!(ctx.sender() == task.provider, ENotProvider);
+        assert_dispute_window_open(task, clock.timestamp_ms());
+
+        let provider = task.provider;
+        let released_amount = release_escrow(task, provider, ctx);
+        task.status = STATUS_RELEASED;
+        reputation::record_payment(provider_card, released_amount);
 
         event::emit(TaskPaymentReleased {
             task_id: object::id(task),
@@ -306,25 +475,17 @@ module agentic_mesh::task {
     public fun dispute_task(task: &mut Task, clock: &Clock, ctx: &mut TxContext) {
         assert!(task.status == STATUS_COMPLETED, ENotCompleted);
         assert!(ctx.sender() == task.requester, ENotRequester);
-        assert!(clock.timestamp_ms() < task.completed_at + task.dispute_window_ms, EDisputeWindowClosed);
+        assert_dispute_window_not_closed(task, clock.timestamp_ms());
 
-        task.status = STATUS_DISPUTED;
-
-        event::emit(TaskDisputed {
-            task_id: object::id(task),
-            requester: task.requester,
-            provider: task.provider,
-            capability: task.capability,
-            price: task.price,
-            status: task.status,
-            disputed_at: clock.timestamp_ms(),
-        });
+        set_disputed(task);
+        emit_disputed_event(task, clock.timestamp_ms());
     }
 
     public fun task_id(task: &Task): ID { object::id(task) }
     public fun task_requester(task: &Task): address { task.requester }
     public fun task_provider(task: &Task): address { task.provider }
     public fun task_capability(task: &Task): String { task.capability }
+    public fun task_category(task: &Task): String { task.category }
     public fun task_input_blob_id(task: &Task): vector<u8> { task.input_blob_id }
     public fun task_result_blob_id(task: &Task): vector<u8> { task.result_blob_id }
     public fun task_agreement_hash(task: &Task): vector<u8> { task.agreement_hash }
@@ -348,6 +509,7 @@ module agentic_mesh::task {
     public fun posted_event_requester(event: &TaskPosted): address { event.requester }
     public fun posted_event_provider(event: &TaskPosted): address { event.provider }
     public fun posted_event_capability(event: &TaskPosted): String { event.capability }
+    public fun posted_event_category(event: &TaskPosted): String { event.category }
     public fun posted_event_input_blob_id(event: &TaskPosted): vector<u8> { event.input_blob_id }
     public fun posted_event_agreement_hash(event: &TaskPosted): vector<u8> { event.agreement_hash }
     public fun posted_event_price(event: &TaskPosted): u64 { event.price }

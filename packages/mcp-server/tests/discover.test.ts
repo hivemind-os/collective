@@ -82,6 +82,7 @@ describe('runMeshDiscover', () => {
 
     expect(result.agents).toHaveLength(1);
     expect(result.agents[0]).toMatchObject({ name: 'Summarizer', did: 'did:mesh:agent-1' });
+    expect(result.agents[0].reputation.total_tasks).toBe(0);
     expect(context.registryClient.discoverByCapability).not.toHaveBeenCalled();
   });
 
@@ -97,8 +98,28 @@ describe('runMeshDiscover', () => {
     const result = await runMeshDiscover({ capability: 'summarize' }, context);
 
     expect(result.agents).toHaveLength(1);
-    expect(context.registryClient.discoverByCapability).toHaveBeenCalledWith('summarize', 10);
+    expect(context.registryClient.discoverByCapability).toHaveBeenCalledWith('summarize', 10, { sortByReputation: false });
     expect(context.agentCache.upsertAgent).toHaveBeenCalledWith(agent);
+  });
+
+  it('sorts by reputation when requested', async () => {
+    const stronger = createAgent({ totalTasksCompleted: 10, totalTasksFailed: 1 });
+    const weaker = createAgent({ id: '0xagent-2', did: 'did:mesh:agent-2' as AgentCard['did'], totalTasksCompleted: 1, totalTasksFailed: 3 });
+    const context = createContext({
+      agentCache: {
+        searchByCapability: vi.fn().mockImplementation((_capability, _limit, options?: { sortByReputation?: boolean }) => (
+          options?.sortByReputation ? [stronger, weaker] : [weaker, stronger]
+        )),
+        getAgentByDID: vi.fn(),
+        getAllActive: vi.fn().mockReturnValue([weaker, stronger]),
+        upsertAgent: vi.fn(),
+        removeAgent: vi.fn(),
+      } as unknown as MeshToolContext['agentCache'],
+    });
+
+    const result = await runMeshDiscover({ capability: 'summarize', sort_by: 'reputation' }, context);
+
+    expect(result.agents.map((agent) => agent.did)).toEqual([stronger.did, weaker.did]);
   });
 
   it('respects the limit parameter', async () => {

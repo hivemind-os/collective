@@ -129,6 +129,7 @@ module agentic_mesh::registry_tests {
             assert!(registry::card_did(&card) == string::utf8(b"did:mesh:agentA"));
             assert!(registry::card_description(&card) == string::utf8(b"Production agent"));
             assert!(registry::card_endpoint(&card) == string::utf8(b"https://mesh.example/agent"));
+            assert!(registry::card_encryption_public_key(&card).length() == 0);
             assert!(registry::card_active(&card));
             assert!(registry::card_version(&card) == 1);
             assert!(registry::card_registered_at(&card) == 1_000);
@@ -244,6 +245,72 @@ module agentic_mesh::registry_tests {
             assert!(registry::card_updated_at(&card) == 2_000);
             scenario.return_to_sender(card);
             ts::return_shared(reg);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_set_encryption_key() {
+        let mut scenario = ts::begin(AGENT_A);
+        registry::init_for_testing(scenario.ctx());
+        let clock = create_clock(&mut scenario);
+        let encryption_key = x"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+        register_default_agent(&mut scenario, AGENT_A, &clock, b"Agent A", b"did:mesh:agentA");
+
+        scenario.next_tx(AGENT_A);
+        {
+            let mut card = scenario.take_from_sender<AgentCard>();
+            registry::set_encryption_key(&mut card, encryption_key, scenario.ctx());
+            assert!(registry::card_encryption_public_key(&card) == encryption_key);
+            scenario.return_to_sender(card);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_update_encryption_key() {
+        let mut scenario = ts::begin(AGENT_A);
+        registry::init_for_testing(scenario.ctx());
+        let clock = create_clock(&mut scenario);
+        let first_key = x"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+        let second_key = x"202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f";
+
+        register_default_agent(&mut scenario, AGENT_A, &clock, b"Agent A", b"did:mesh:agentA");
+
+        scenario.next_tx(AGENT_A);
+        {
+            let mut card = scenario.take_from_sender<AgentCard>();
+            registry::set_encryption_key(&mut card, first_key, scenario.ctx());
+            registry::set_encryption_key(&mut card, second_key, scenario.ctx());
+            assert!(registry::card_encryption_public_key(&card) == second_key);
+            scenario.return_to_sender(card);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_query_encryption_key() {
+        let mut scenario = ts::begin(AGENT_A);
+        registry::init_for_testing(scenario.ctx());
+        let clock = create_clock(&mut scenario);
+        let encryption_key = x"404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f";
+
+        register_default_agent(&mut scenario, AGENT_A, &clock, b"Agent A", b"did:mesh:agentA");
+
+        scenario.next_tx(AGENT_A);
+        {
+            let mut card = scenario.take_from_sender<AgentCard>();
+            registry::set_encryption_key(&mut card, encryption_key, scenario.ctx());
+            let queried_key = registry::card_encryption_public_key(&card);
+            assert!(queried_key == encryption_key);
+            scenario.return_to_sender(card);
         };
 
         clock::destroy_for_testing(clock);

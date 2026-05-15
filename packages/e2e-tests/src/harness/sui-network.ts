@@ -420,7 +420,7 @@ export class SuiTestNetwork {
       '--sender',
       publishClient.deployerAddress,
       '--gas-budget',
-      '100000000',
+      '500000000',
       '--json',
     ];
 

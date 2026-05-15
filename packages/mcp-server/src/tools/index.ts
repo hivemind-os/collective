@@ -5,34 +5,52 @@ import type { MeshToolContext } from '../context.js';
 import { meshBalanceTool, runMeshBalance } from './balance.js';
 import { meshDeactivateTool, runMeshDeactivate } from './deactivate.js';
 import { meshDiscoverTool, runMeshDiscover } from './discover.js';
+import { meshDisputeTool, runMeshDispute } from './dispute.js';
 import { meshExecuteAsyncTool, runMeshExecuteAsync } from './execute-async.js';
 import { meshExecuteTool, runMeshExecute } from './execute.js';
+import { meshMarketplaceAcceptBidTool, runMeshMarketplaceAcceptBid } from './marketplace-accept-bid.js';
+import { meshMarketplaceBidTool, runMeshMarketplaceBid } from './marketplace-bid.js';
+import { meshMarketplaceBrowseTool, runMeshMarketplaceBrowse } from './marketplace-browse.js';
+import { meshMarketplacePostTool, runMeshMarketplacePost } from './marketplace-post.js';
 import { meshPolicyUpdateTool, runMeshPolicyUpdate } from './policy-update.js';
 import { meshRegisterTool, runMeshRegister } from './register.js';
+import { meshStakeTool, runMeshStake } from './stake.js';
 import { meshTaskHistoryTool, runMeshTaskHistory } from './task-history.js';
 import { meshTaskStatusTool, runMeshTaskStatus } from './task-status.js';
 
 const toolDefinitions = [
   meshDiscoverTool,
+  meshDisputeTool,
   meshExecuteTool,
   meshExecuteAsyncTool,
+  meshMarketplacePostTool,
+  meshMarketplaceBrowseTool,
+  meshMarketplaceBidTool,
+  meshMarketplaceAcceptBidTool,
   meshTaskStatusTool,
   meshRegisterTool,
   meshDeactivateTool,
   meshBalanceTool,
   meshPolicyUpdateTool,
+  meshStakeTool,
   meshTaskHistoryTool,
 ];
 
 const toolHandlers: Record<string, (params: unknown, context: MeshToolContext) => Promise<unknown>> = {
   [meshDiscoverTool.name]: runMeshDiscover,
+  [meshDisputeTool.name]: runMeshDispute,
   [meshExecuteTool.name]: runMeshExecute,
   [meshExecuteAsyncTool.name]: runMeshExecuteAsync,
+  [meshMarketplacePostTool.name]: runMeshMarketplacePost,
+  [meshMarketplaceBrowseTool.name]: runMeshMarketplaceBrowse,
+  [meshMarketplaceBidTool.name]: runMeshMarketplaceBid,
+  [meshMarketplaceAcceptBidTool.name]: runMeshMarketplaceAcceptBid,
   [meshTaskStatusTool.name]: runMeshTaskStatus,
   [meshRegisterTool.name]: runMeshRegister,
   [meshDeactivateTool.name]: runMeshDeactivate,
   [meshBalanceTool.name]: runMeshBalance,
   [meshPolicyUpdateTool.name]: runMeshPolicyUpdate,
+  [meshStakeTool.name]: runMeshStake,
   [meshTaskHistoryTool.name]: runMeshTaskHistory,
 };
 

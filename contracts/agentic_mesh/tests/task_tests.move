@@ -26,6 +26,7 @@ module agentic_mesh::task_tests {
     const TWO_SUI: u64 = 2_000_000_000;
     const DISPUTE_WINDOW_MS: u64 = 3_600_000;
     const EXPIRY_HOURS: u64 = 1;
+    const DEFAULT_CATEGORY: vector<u8> = b"general";
 
     fun create_clock(scenario: &mut ts::Scenario): Clock {
         let mut clock = clock::create_for_testing(scenario.ctx());
@@ -49,6 +50,7 @@ module agentic_mesh::task_tests {
             let payment = coin::mint_for_testing<SUI>(amount, scenario.ctx());
             task::post_task(
                 capability,
+                string::utf8(DEFAULT_CATEGORY),
                 input_blob_id,
                 agreement_hash,
                 payment,
@@ -119,6 +121,7 @@ module agentic_mesh::task_tests {
             assert!(task::task_requester(&t) == REQUESTER);
             assert!(task::task_provider(&t) == @0x0);
             assert!(task::task_capability(&t) == string::utf8(b"text-generation"));
+            assert!(task::task_category(&t) == string::utf8(DEFAULT_CATEGORY));
             assert!(task::task_input_blob_id(&t) == b"input-blob-id");
             assert!(task::task_agreement_hash(&t) == b"agreement-hash");
             assert!(task::task_price(&t) == ONE_SUI);
@@ -583,11 +586,76 @@ module agentic_mesh::task_tests {
             let payment = coin::mint_for_testing<SUI>(0, scenario.ctx());
             task::post_task(
                 string::utf8(b"free-task"),
+                string::utf8(DEFAULT_CATEGORY),
                 b"input",
                 b"agreement",
                 payment,
                 DISPUTE_WINDOW_MS,
                 EXPIRY_HOURS,
+                &clock,
+                scenario.ctx(),
+            );
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    fun test_claim_immediately_when_dispute_window_is_zero() {
+        let mut scenario = ts::begin(REQUESTER);
+        let clock = create_clock(&mut scenario);
+        let task_id = post_task_with_values(
+            &mut scenario,
+            REQUESTER,
+            &clock,
+            string::utf8(b"fast-claim"),
+            b"input-blob-id",
+            b"agreement-hash",
+            ONE_SUI,
+            0,
+            EXPIRY_HOURS,
+        );
+
+        accept_task_by_id(&mut scenario, PROVIDER, task_id, &clock);
+        complete_task_by_id(&mut scenario, PROVIDER, task_id, b"fast-result", &clock);
+
+        scenario.next_tx(PROVIDER);
+        {
+            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            task::claim_payment(&mut t, &clock, scenario.ctx());
+            assert!(task::task_status(&t) == task::status_released());
+            ts::return_shared(t);
+        };
+
+        scenario.next_tx(PROVIDER);
+        {
+            let payment = scenario.take_from_sender<coin::Coin<SUI>>();
+            assert!(coin::value(&payment) == ONE_SUI);
+            scenario.return_to_sender(payment);
+        };
+
+        clock::destroy_for_testing(clock);
+        scenario.end();
+    }
+
+    #[test]
+    #[expected_failure(abort_code = 114)]
+    fun test_post_task_with_overflowing_expiry_fails() {
+        let mut scenario = ts::begin(REQUESTER);
+        let clock = create_clock(&mut scenario);
+
+        scenario.next_tx(REQUESTER);
+        {
+            let payment = coin::mint_for_testing<SUI>(ONE_SUI, scenario.ctx());
+            task::post_task(
+                string::utf8(b"overflow-task"),
+                string::utf8(DEFAULT_CATEGORY),
+                b"input",
+                b"agreement",
+                payment,
+                DISPUTE_WINDOW_MS,
+                5_124_095_576_031,
                 &clock,
                 scenario.ctx(),
             );
@@ -678,6 +746,7 @@ module agentic_mesh::task_tests {
             let payment = coin::mint_for_testing<SUI>(TWO_SUI, scenario.ctx());
             task::post_task(
                 string::utf8(b"code-review"),
+                string::utf8(b"analysis"),
                 b"input-for-events",
                 b"agreement-for-events",
                 payment,
@@ -692,6 +761,7 @@ module agentic_mesh::task_tests {
             assert!(task::posted_event_requester(posted_event) == REQUESTER);
             assert!(task::posted_event_provider(posted_event) == @0x0);
             assert!(task::posted_event_capability(posted_event) == string::utf8(b"code-review"));
+            assert!(task::posted_event_category(posted_event) == string::utf8(b"analysis"));
             assert!(task::posted_event_input_blob_id(posted_event) == b"input-for-events");
             assert!(task::posted_event_agreement_hash(posted_event) == b"agreement-for-events");
             assert!(task::posted_event_price(posted_event) == TWO_SUI);

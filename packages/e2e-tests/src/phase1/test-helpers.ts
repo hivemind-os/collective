@@ -89,6 +89,7 @@ export async function postTaskWithBlobStore(params: {
   const { blobId: inputBlobId } = await params.blobStore.store(inputData);
   const { taskId } = await params.taskClient.postTask({
     capability: params.capability ?? 'echo',
+    category: 'general',
     inputBlobId,
     agreementHash: params.agreementHash,
     priceMist: params.priceMist ?? defaultPriceMist,

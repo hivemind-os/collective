@@ -7,9 +7,12 @@ import {
   type AuthProvider,
   type BlobStore,
   type OAuthConfig,
+  type X25519KeyPair,
   createDID,
   deriveEvmKey,
   Ed25519AuthProvider,
+  ed25519ToX25519,
+  EncryptedBlobStore,
   EventSubscription,
   EvmWallet,
   FilesystemBlobStore,
@@ -60,6 +63,12 @@ export class DaemonState {
   readonly taskClient: TaskClient;
   readonly agentCache: AgentCache;
   readonly blobStore: BlobStore;
+  readonly encryptionKeyPair: X25519KeyPair;
+  readonly encryption: {
+    enabled: boolean;
+    requireEncryption: boolean;
+    publicKey?: string;
+  };
   readonly spendingPolicy: SpendingPolicyEngine;
   readonly evmWallet?: EvmWallet;
   readonly x402Client?: X402Client;
@@ -82,6 +91,12 @@ export class DaemonState {
     taskClient: TaskClient;
     agentCache: AgentCache;
     blobStore: BlobStore;
+    encryptionKeyPair: X25519KeyPair;
+    encryption: {
+      enabled: boolean;
+      requireEncryption: boolean;
+      publicKey?: string;
+    };
     spendingPolicy: SpendingPolicyEngine;
     evmWallet?: EvmWallet;
     x402Client?: X402Client;
@@ -99,6 +114,8 @@ export class DaemonState {
     this.taskClient = params.taskClient;
     this.agentCache = params.agentCache;
     this.blobStore = params.blobStore;
+    this.encryptionKeyPair = params.encryptionKeyPair;
+    this.encryption = params.encryption;
     this.spendingPolicy = params.spendingPolicy;
     this.evmWallet = params.evmWallet;
     this.x402Client = params.x402Client;
@@ -122,7 +139,11 @@ export class DaemonState {
     const registryClient = new RegistryClient(suiClient, config.network);
     const taskClient = new TaskClient(suiClient, config.network);
     const agentCache = new AgentCache(join(config.daemon.dataDir, 'agent-cache.sqlite'));
-    const blobStore = await createBlobStore(config);
+    const encryptionKeyPair = ed25519ToX25519(context.identitySecretKey);
+    const baseBlobStore = await createBlobStore(config);
+    const blobStore = config.encryption.enabled
+      ? new EncryptedBlobStore(baseBlobStore, encryptionKeyPair)
+      : baseBlobStore;
     const spendingPolicy = new SpendingPolicyEngine({
       policy: config.spending,
       dbPath: join(config.daemon.dataDir, 'spending.sqlite'),
@@ -142,6 +163,12 @@ export class DaemonState {
       taskClient,
       agentCache,
       blobStore,
+      encryptionKeyPair,
+      encryption: {
+        enabled: config.encryption.enabled,
+        requireEncryption: config.encryption.requireEncryption,
+        publicKey: config.encryption.enabled ? toHex(encryptionKeyPair.publicKey) : undefined,
+      },
       spendingPolicy,
       evmWallet: paymentContext.evmWallet,
       x402Client: paymentContext.x402Client,
@@ -320,4 +347,8 @@ function formatMistAsSui(amountMist: bigint): string {
   }
 
   return `${whole.toString()}.${fractional.toString().padStart(9, '0').replace(/0+$/, '')} SUI`;
+}
+
+function toHex(value: Uint8Array): string {
+  return Buffer.from(value).toString('hex');
 }

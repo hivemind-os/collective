@@ -1,7 +1,8 @@
 import { PaymentRail, TaskStatus, type AgentCard, type Capability, type Task } from '@agentic-mesh/types';
-import { PaymentRailSelector, RelayConsumerClient, type SelectedPaymentRail } from '@agentic-mesh/core';
+import { PaymentRailSelector, RelayConsumerClient, ReputationEventPublisher, type SelectedPaymentRail } from '@agentic-mesh/core';
 
 import type { MeshToolContext } from '../context.js';
+import { fetchMeshBlob, hexToBytes, supportsEncryptedBlobs } from '../encryption.js';
 import { resolveProviderCapability } from './discover.js';
 
 const encoder = new TextEncoder();
@@ -62,6 +63,13 @@ export async function runMeshExecute(
   if (mode !== 'async') {
     const relayResult = await tryRelayExecution(params, context, resolved, priceMist);
     if (relayResult) {
+      await publishSuccessfulReputationEvent(context, {
+        providerDid: relayResult.provider_did,
+        taskId: relayResult.task_id,
+        capability: resolved.capability.name,
+        priceMist,
+        latencyMs: relayResult.latency_ms,
+      });
       return relayResult;
     }
   }
@@ -73,7 +81,7 @@ export async function runMeshExecute(
     throw new Error(`Task ${prepared.taskId} completed without a result blob.`);
   }
 
-  const resultBytes = await context.blobStore.fetch(task.resultBlobId);
+  const resultBytes = await fetchMeshBlob(context.blobStore, task.resultBlobId);
   if (!resultBytes) {
     throw new Error(`Result blob ${task.resultBlobId} was not found.`);
   }
@@ -87,6 +95,14 @@ export async function runMeshExecute(
     rail: prepared.rail,
     taskId: prepared.taskId,
     appId: prepared.providerDid,
+  });
+
+  await publishSuccessfulReputationEvent(context, {
+    providerDid: prepared.providerDid,
+    taskId: prepared.taskId,
+    capability: resolved.capability.name,
+    priceMist: prepared.priceMist,
+    latencyMs: task.acceptedAt && task.completedAt ? task.completedAt - task.acceptedAt : undefined,
   });
 
   return {
@@ -130,9 +146,10 @@ async function prepareAsyncExecution(
 
   approveSpend(context, priceMist, resolved.capability.pricing.rail, resolved.agent.did);
 
-  const { blobId } = await context.blobStore.store(encoder.encode(params.input));
+  const { blobId } = await storeTaskInput(context, resolved.agent, encoder.encode(params.input));
   const posted = await context.taskClient.postTask({
     capability: resolved.capability.name,
+    category: 'general',
     inputBlobId: blobId,
     priceMist,
     disputeWindowMs: DEFAULT_DISPUTE_WINDOW_MS,
@@ -320,8 +337,75 @@ function toOptionalBigInt(value?: number): bigint | undefined {
   return BigInt(Math.max(0, Math.floor(value)));
 }
 
+async function storeTaskInput(
+  context: MeshToolContext,
+  provider: AgentCard,
+  input: Uint8Array,
+): Promise<{ blobId: string }> {
+  const providerEncryptionKey = hexToBytes(provider.encryptionPublicKey);
+  const encryptionEnabled = context.encryption?.enabled ?? supportsEncryptedBlobs(context.blobStore);
+  const requireEncryption = context.encryption?.requireEncryption ?? false;
+
+  if (encryptionEnabled && providerEncryptionKey) {
+    if (!supportsEncryptedBlobs(context.blobStore)) {
+      throw new Error('Encryption is enabled, but the configured blobstore does not support encrypted payloads.');
+    }
+
+    return await context.blobStore.storeEncrypted(input, providerEncryptionKey);
+  }
+
+  if (requireEncryption) {
+    throw new Error(`Provider ${provider.did} does not publish an encryption key.`);
+  }
+
+  return await context.blobStore.store(input);
+}
+
 function taskStatusLabel(status: TaskStatus): string {
   return TaskStatus[status] ?? 'UNKNOWN';
+}
+
+async function publishSuccessfulReputationEvent(
+  context: MeshToolContext,
+  params: {
+    providerDid: string;
+    taskId: string;
+    capability: string;
+    priceMist: bigint;
+    latencyMs?: number;
+  },
+): Promise<void> {
+  const publisher = context.reputationPublisher ?? (
+    hasSigningIdentity(context.relayAuthProvider)
+      ? new ReputationEventPublisher(context.blobStore, context.relayAuthProvider)
+      : null
+  );
+  if (!publisher) {
+    return;
+  }
+
+  try {
+    const event = await publisher.createEvent({
+      type: 'task_completion',
+      subject: params.providerDid,
+      taskId: params.taskId,
+      outcome: 'success',
+      capability: params.capability,
+      latencyMs: params.latencyMs,
+      paymentAmount: {
+        amount: params.priceMist.toString(),
+        currency: 'MIST',
+      },
+    });
+    await context.reputationStore?.addEvent(event);
+    await publisher.publishEvent(event);
+  } catch (error) {
+    context.logger?.warn?.({ err: error, taskId: params.taskId }, 'Failed to publish reputation event.');
+  }
+}
+
+function hasSigningIdentity(identity: MeshToolContext['relayAuthProvider']): identity is NonNullable<MeshToolContext['relayAuthProvider']> {
+  return Boolean(identity && typeof identity.getDID === 'function' && typeof identity.signPersonalMessage === 'function');
 }
 
 function delay(ms: number): Promise<void> {

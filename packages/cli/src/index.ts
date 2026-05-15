@@ -6,10 +6,13 @@
         import { handleConnect } from './commands/connect.js';
         import { handleDaemon } from './commands/daemon.js';
         import { handleDiscover } from './commands/discover.js';
+        import { handleDispute } from './commands/dispute.js';
         import { handleInit } from './commands/init.js';
         import { handleLogs } from './commands/logs.js';
+        import { handleMarketplace } from './commands/marketplace.js';
         import { handlePolicy } from './commands/policy.js';
         import { handleRegister } from './commands/register.js';
+        import { handleStake } from './commands/stake.js';
         import { handleTask } from './commands/task.js';
         import { handleWallet } from './commands/wallet.js';
         import { error } from './utils/output.js';
@@ -37,10 +40,16 @@
               return await handleWallet(subcommand, args.slice(2));
             case 'discover':
               return await handleDiscover(args.slice(1));
+            case 'dispute':
+              return await handleDispute(subcommand, args.slice(2));
+            case 'stake':
+              return await handleStake(subcommand, args.slice(2));
             case 'task':
               return await handleTask(subcommand, args.slice(2));
             case 'logs':
               return await handleLogs(args.slice(1));
+            case 'marketplace':
+              return await handleMarketplace(subcommand, args.slice(2));
             case '--help':
             case '-h':
             case 'help':
@@ -71,6 +80,9 @@ Commands:
   policy set           Update spending limits
   wallet <cmd>         Wallet tools (balance|fund|address)
   discover <cap>       Find providers for a capability
+  dispute <cmd>        Manage disputes (open|respond|accept|status)
+  marketplace <cmd>    Marketplace tools (post|browse|bid|accept-bid)
+  stake <cmd>          Manage staking (deposit|status|withdraw)
   task status <id>     Inspect a task on Sui
   logs [--follow]      Show daemon logs
   help                 Show this help text

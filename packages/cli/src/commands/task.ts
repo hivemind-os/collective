@@ -28,6 +28,7 @@ export async function handleTask(subcommand?: string, args: string[] = []): Prom
     [
       ['Status', TaskStatus[task.status] ?? 'UNKNOWN'],
       ['Capability', task.capability],
+      ['Category', task.category],
       ['Price (SUI)', formatMistToSui(task.price)],
       ['Requester', task.requester],
       ['Provider', task.provider ?? '-'],

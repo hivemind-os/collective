@@ -5,6 +5,11 @@ import type {
   MeshSuiClient,
   PaymentRailSelector,
   RegistryClient,
+  StakingClient,
+  DisputeClient,
+  MarketplaceClient,
+  ReputationEventPublisher,
+  ReputationStore,
   SpendingPolicyEngine,
   TaskClient,
   X402Client,
@@ -22,6 +27,14 @@ export interface MeshToolContext {
   blobStore: BlobStore;
   spendingPolicy: SpendingPolicyEngine;
   networkConfig: NetworkConfig;
+  stakingClient?: StakingClient;
+  disputeClient?: DisputeClient;
+  marketplaceClient?: MarketplaceClient;
+  encryption?: {
+    enabled: boolean;
+    requireEncryption: boolean;
+    publicKey?: string;
+  };
   relayAuthProvider?: AuthProvider;
   x402Client?: X402Client;
   paymentRailSelector?: PaymentRailSelector;
@@ -29,5 +42,7 @@ export interface MeshToolContext {
     info?: (payload: unknown, message?: string) => void;
     warn?: (payload: unknown, message?: string) => void;
   };
+  reputationPublisher?: ReputationEventPublisher;
+  reputationStore?: ReputationStore;
   taskHistoryDb?: unknown;
 }

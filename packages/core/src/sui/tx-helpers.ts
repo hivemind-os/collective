@@ -4,7 +4,8 @@ import { Transaction } from '@mysten/sui/transactions';
 import { stringToBytes } from '../internal/parsing.js';
 
 export const CLOCK_OBJECT_ID = '0x6';
-const OBJECT_ID_PATTERN = /^0x[0-9a-f]+$/i;
+const OBJECT_ID_PATTERN = /^0x([0-9a-f]+)$/i;
+const MAX_OBJECT_ID_HEX_LENGTH = 64;
 const MAX_U64 = (1n << 64n) - 1n;
 
 export interface RegisterAgentParams {
@@ -24,6 +25,12 @@ export interface UpdateAgentParams {
   name: string;
   description: string;
   endpoint: string;
+}
+
+export interface SetEncryptionKeyParams {
+  packageId: string;
+  cardId: string;
+  encryptionPublicKey: Uint8Array;
 }
 
 export interface UpdateCapabilitiesParams {
@@ -48,6 +55,7 @@ export interface ReactivateAgentParams {
 export interface PostTaskParams {
   packageId: string;
   capability: string;
+  category: string;
   inputBlobId: string;
   agreementHash?: string;
   priceMist: bigint;
@@ -64,6 +72,7 @@ export interface CompleteTaskParams {
   packageId: string;
   taskId: string;
   resultBlobId: string;
+  providerCardId?: string;
 }
 
 export interface ReleasePaymentParams {
@@ -74,6 +83,7 @@ export interface ReleasePaymentParams {
 export interface ClaimPaymentParams {
   packageId: string;
   taskId: string;
+  providerCardId?: string;
 }
 
 export interface CancelTaskParams {
@@ -83,6 +93,97 @@ export interface CancelTaskParams {
 
 export interface RefundExpiredTaskParams {
   packageId: string;
+  taskId: string;
+}
+
+export interface PlaceBidParams {
+  packageId: string;
+  taskId: string;
+  bidPriceMist: bigint;
+  reputationScore: bigint;
+  evidenceBlob?: string;
+}
+
+export interface AcceptBidParams {
+  packageId: string;
+  taskId: string;
+  bidId: string;
+  otherBidIds?: string[];
+}
+
+export interface WithdrawBidParams {
+  packageId: string;
+  bidId: string;
+}
+
+export interface RejectBidParams {
+  packageId: string;
+  taskId: string;
+  bidId: string;
+}
+
+export interface OpenDisputeParams {
+  packageId: string;
+  taskId: string;
+  evidenceBlobId: string;
+  proposedSplitMist: bigint;
+  arbitratorAddress?: string;
+}
+
+export interface RespondToDisputeParams {
+  packageId: string;
+  disputeId: string;
+  evidenceBlobId: string;
+  proposedSplitMist: bigint;
+}
+
+export interface AcceptResolutionParams {
+  packageId: string;
+  disputeId: string;
+  taskId: string;
+}
+
+export interface ArbitrateDisputeParams {
+  packageId: string;
+  disputeId: string;
+  taskId: string;
+  rulingSplitMist: bigint;
+}
+
+export interface PublishReputationAnchorParams {
+  packageId: string;
+  merkleRoot: number[];
+  eventCount: number;
+  blobId: string;
+  fromTimestamp: number;
+  toTimestamp: number;
+}
+
+export interface DepositStakeParams {
+  packageId: string;
+  amountMist: bigint;
+  stakeType: 'agent' | 'relay';
+}
+
+export interface AddStakeParams {
+  packageId: string;
+  stakeId: string;
+  amountMist: bigint;
+}
+
+export interface StartDeactivationParams {
+  packageId: string;
+  stakeId: string;
+}
+
+export interface WithdrawStakeParams {
+  packageId: string;
+  stakeId: string;
+}
+
+export interface SlashStakeParams {
+  packageId: string;
+  stakeId: string;
   taskId: string;
 }
 
@@ -154,6 +255,21 @@ export function buildUpdateCapabilitiesTx(params: UpdateCapabilitiesParams): Tra
   return tx;
 }
 
+export function buildSetEncryptionKeyTx(params: SetEncryptionKeyParams): Transaction {
+  validateSetEncryptionKeyParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::registry::set_encryption_key`,
+    arguments: [
+      tx.object(params.cardId),
+      tx.pure.vector('u8', [...params.encryptionPublicKey]),
+    ],
+  });
+
+  return tx;
+}
+
 export function buildDeactivateAgentTx(params: DeactivateAgentParams): Transaction {
   validateAgentCardMutationParams(params);
 
@@ -185,9 +301,10 @@ export function buildPostTaskTx(params: PostTaskParams): Transaction {
   const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(params.priceMist)]);
 
   tx.moveCall({
-    target: `${params.packageId}::task::post_task`,
+    target: `${params.packageId}::task::post_open_task`,
     arguments: [
       tx.pure.string(params.capability),
+      tx.pure.string(params.category),
       tx.pure.vector('u8', [...stringToBytes(params.inputBlobId)]),
       tx.pure.vector('u8', [...stringToBytes(params.agreementHash ?? '')]),
       paymentCoin,
@@ -217,12 +334,19 @@ export function buildCompleteTaskTx(params: CompleteTaskParams): Transaction {
 
   const tx = new Transaction();
   tx.moveCall({
-    target: `${params.packageId}::task::complete_task`,
-    arguments: [
-      tx.object(params.taskId),
-      tx.pure.vector('u8', [...stringToBytes(params.resultBlobId)]),
-      tx.object(CLOCK_OBJECT_ID),
-    ],
+    target: `${params.packageId}::task::${params.providerCardId ? 'complete_task_with_card' : 'complete_task'}`,
+    arguments: params.providerCardId
+      ? [
+          tx.object(params.taskId),
+          tx.object(params.providerCardId),
+          tx.pure.vector('u8', [...stringToBytes(params.resultBlobId)]),
+          tx.object(CLOCK_OBJECT_ID),
+        ]
+      : [
+          tx.object(params.taskId),
+          tx.pure.vector('u8', [...stringToBytes(params.resultBlobId)]),
+          tx.object(CLOCK_OBJECT_ID),
+        ],
   });
 
   return tx;
@@ -241,12 +365,14 @@ export function buildReleasePaymentTx(params: ReleasePaymentParams): Transaction
 }
 
 export function buildClaimPaymentTx(params: ClaimPaymentParams): Transaction {
-  validateTaskMutationParams(params);
+  validateClaimPaymentParams(params);
 
   const tx = new Transaction();
   tx.moveCall({
-    target: `${params.packageId}::task::claim_payment`,
-    arguments: [tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
+    target: `${params.packageId}::task::${params.providerCardId ? 'claim_payment_with_card' : 'claim_payment'}`,
+    arguments: params.providerCardId
+      ? [tx.object(params.taskId), tx.object(params.providerCardId), tx.object(CLOCK_OBJECT_ID)]
+      : [tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
   });
 
   return tx;
@@ -276,6 +402,218 @@ export function buildRefundExpiredTaskTx(params: RefundExpiredTaskParams): Trans
   return tx;
 }
 
+export function buildPlaceBidTx(params: PlaceBidParams): Transaction {
+  validatePlaceBidParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::marketplace::place_bid`,
+    arguments: [
+      tx.object(params.taskId),
+      tx.pure.u64(params.reputationScore),
+      tx.pure.u64(params.bidPriceMist),
+      tx.pure.vector('u8', [...stringToBytes(params.evidenceBlob ?? '')]),
+      tx.object(CLOCK_OBJECT_ID),
+    ],
+  });
+
+  return tx;
+}
+
+export function buildAcceptBidTx(params: AcceptBidParams): Transaction {
+  validateAcceptBidParams(params);
+
+  const tx = new Transaction();
+  for (const bidId of params.otherBidIds ?? []) {
+    tx.moveCall({
+      target: `${params.packageId}::marketplace::reject_bid`,
+      arguments: [tx.object(bidId), tx.object(params.taskId)],
+    });
+  }
+
+  tx.moveCall({
+    target: `${params.packageId}::marketplace::accept_bid`,
+    arguments: [tx.object(params.taskId), tx.object(params.bidId), tx.object(CLOCK_OBJECT_ID)],
+  });
+
+  return tx;
+}
+
+export function buildWithdrawBidTx(params: WithdrawBidParams): Transaction {
+  validateWithdrawBidParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::marketplace::withdraw_bid`,
+    arguments: [tx.object(params.bidId)],
+  });
+
+  return tx;
+}
+
+export function buildRejectBidTx(params: RejectBidParams): Transaction {
+  validateRejectBidParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::marketplace::reject_bid`,
+    arguments: [tx.object(params.bidId), tx.object(params.taskId)],
+  });
+
+  return tx;
+}
+
+export function buildOpenDisputeTx(params: OpenDisputeParams): Transaction {
+  validateOpenDisputeParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::dispute::open_dispute`,
+    arguments: [
+      tx.object(params.taskId),
+      tx.pure.vector('u8', [...stringToBytes(params.evidenceBlobId)]),
+      tx.pure.u64(params.proposedSplitMist),
+      tx.pure.address(params.arbitratorAddress ?? '0x0'),
+      tx.object(CLOCK_OBJECT_ID),
+    ],
+  });
+
+  return tx;
+}
+
+export function buildRespondToDisputeTx(params: RespondToDisputeParams): Transaction {
+  validateRespondToDisputeParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::dispute::respond_to_dispute`,
+    arguments: [
+      tx.object(params.disputeId),
+      tx.pure.vector('u8', [...stringToBytes(params.evidenceBlobId)]),
+      tx.pure.u64(params.proposedSplitMist),
+      tx.object(CLOCK_OBJECT_ID),
+    ],
+  });
+
+  return tx;
+}
+
+export function buildAcceptResolutionTx(params: AcceptResolutionParams): Transaction {
+  validateAcceptResolutionParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::dispute::accept_resolution`,
+    arguments: [tx.object(params.disputeId), tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
+  });
+
+  return tx;
+}
+
+export function buildArbitrateDisputeTx(params: ArbitrateDisputeParams): Transaction {
+  validateArbitrateDisputeParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::dispute::arbitrate`,
+    arguments: [
+      tx.object(params.disputeId),
+      tx.object(params.taskId),
+      tx.pure.u64(params.rulingSplitMist),
+      tx.object(CLOCK_OBJECT_ID),
+    ],
+  });
+
+  return tx;
+}
+
+export function buildPublishReputationAnchorTx(params: PublishReputationAnchorParams): Transaction {
+  validatePublishReputationAnchorParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::reputation::publish_anchor`,
+    arguments: [
+      tx.pure.vector('u8', params.merkleRoot),
+      tx.pure.u64(params.eventCount),
+      tx.pure.vector('u8', [...stringToBytes(params.blobId)]),
+      tx.pure.u64(params.fromTimestamp),
+      tx.pure.u64(params.toTimestamp),
+      tx.object(CLOCK_OBJECT_ID),
+    ],
+  });
+
+  return tx;
+}
+
+export function buildDepositStakeTx(params: DepositStakeParams): Transaction {
+  validateDepositStakeParams(params);
+
+  const tx = new Transaction();
+  const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(params.amountMist)]);
+  tx.moveCall({
+    target: `${params.packageId}::staking::deposit_stake`,
+    arguments: [paymentCoin, tx.pure.u8(stakeTypeToMoveValue(params.stakeType)), tx.object(CLOCK_OBJECT_ID)],
+  });
+  return tx;
+}
+
+export function buildAddStakeTx(params: AddStakeParams): Transaction {
+  validateAddStakeParams(params);
+
+  const tx = new Transaction();
+  const [paymentCoin] = tx.splitCoins(tx.gas, [tx.pure.u64(params.amountMist)]);
+  tx.moveCall({
+    target: `${params.packageId}::staking::add_stake`,
+    arguments: [tx.object(params.stakeId), paymentCoin],
+  });
+  return tx;
+}
+
+export function buildStartDeactivationTx(params: StartDeactivationParams): Transaction {
+  validateStakeMutationParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::staking::start_deactivation`,
+    arguments: [tx.object(params.stakeId), tx.object(CLOCK_OBJECT_ID)],
+  });
+  return tx;
+}
+
+export function buildWithdrawStakeTx(params: WithdrawStakeParams): Transaction {
+  validateStakeMutationParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::staking::withdraw_stake`,
+    arguments: [tx.object(params.stakeId), tx.object(CLOCK_OBJECT_ID)],
+  });
+  return tx;
+}
+
+export function buildSlashExpiredEscrowTx(params: SlashStakeParams): Transaction {
+  validateSlashStakeParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::staking::slash_expired_escrow`,
+    arguments: [tx.object(params.stakeId), tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
+  });
+  return tx;
+}
+
+export function buildSlashNonDeliveryTx(params: SlashStakeParams): Transaction {
+  validateSlashStakeParams(params);
+
+  const tx = new Transaction();
+  tx.moveCall({
+    target: `${params.packageId}::staking::slash_non_delivery`,
+    arguments: [tx.object(params.stakeId), tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
+  });
+  return tx;
+}
+
 function validateRegisterAgentParams(params: RegisterAgentParams): void {
   assertObjectId(params.packageId, 'packageId');
   assertObjectId(params.registryId, 'registryId');
@@ -302,6 +640,12 @@ function validateUpdateCapabilitiesParams(params: UpdateCapabilitiesParams): voi
   assertCapabilities(params.capabilities);
 }
 
+function validateSetEncryptionKeyParams(params: SetEncryptionKeyParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertObjectId(params.cardId, 'cardId');
+  assertEncryptionPublicKey(params.encryptionPublicKey, 'encryptionPublicKey');
+}
+
 function validateAgentCardMutationParams(params: {
   packageId: string;
   registryId: string;
@@ -315,6 +659,7 @@ function validateAgentCardMutationParams(params: {
 function validatePostTaskParams(params: PostTaskParams): void {
   assertObjectId(params.packageId, 'packageId');
   assertNonEmptyString(params.capability, 'capability');
+  assertNonEmptyString(params.category, 'category');
   assertNonEmptyString(params.inputBlobId, 'inputBlobId');
   assertOptionalString(params.agreementHash, 'agreementHash');
   assertU64(params.priceMist, 'priceMist');
@@ -327,9 +672,95 @@ function validateTaskMutationParams(params: { packageId: string; taskId: string 
   assertObjectId(params.taskId, 'taskId');
 }
 
+function validatePlaceBidParams(params: PlaceBidParams): void {
+  validateTaskMutationParams(params);
+  assertU64(params.bidPriceMist, 'bidPriceMist');
+  assertU64(params.reputationScore, 'reputationScore');
+  assertOptionalString(params.evidenceBlob, 'evidenceBlob');
+}
+
+function validateAcceptBidParams(params: AcceptBidParams): void {
+  validateTaskMutationParams(params);
+  assertObjectId(params.bidId, 'bidId');
+  params.otherBidIds?.forEach((bidId, index) => assertObjectId(bidId, `otherBidIds[${index}]`));
+}
+
+function validateWithdrawBidParams(params: WithdrawBidParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertObjectId(params.bidId, 'bidId');
+}
+
+function validateRejectBidParams(params: RejectBidParams): void {
+  validateTaskMutationParams(params);
+  assertObjectId(params.bidId, 'bidId');
+}
+
 function validateTaskCompletionParams(params: CompleteTaskParams): void {
   validateTaskMutationParams(params);
+  assertOptionalObjectId(params.providerCardId, 'providerCardId');
   assertNonEmptyString(params.resultBlobId, 'resultBlobId');
+}
+
+function validateClaimPaymentParams(params: ClaimPaymentParams): void {
+  validateTaskMutationParams(params);
+  assertOptionalObjectId(params.providerCardId, 'providerCardId');
+}
+
+function validateOpenDisputeParams(params: OpenDisputeParams): void {
+  validateTaskMutationParams(params);
+  assertNonEmptyString(params.evidenceBlobId, 'evidenceBlobId');
+  assertU64(params.proposedSplitMist, 'proposedSplitMist');
+  assertOptionalObjectId(params.arbitratorAddress, 'arbitratorAddress');
+}
+
+function validateRespondToDisputeParams(params: RespondToDisputeParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertObjectId(params.disputeId, 'disputeId');
+  assertNonEmptyString(params.evidenceBlobId, 'evidenceBlobId');
+  assertU64(params.proposedSplitMist, 'proposedSplitMist');
+}
+
+function validateAcceptResolutionParams(params: AcceptResolutionParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertObjectId(params.disputeId, 'disputeId');
+  assertObjectId(params.taskId, 'taskId');
+}
+
+function validateArbitrateDisputeParams(params: ArbitrateDisputeParams): void {
+  validateAcceptResolutionParams(params);
+  assertU64(params.rulingSplitMist, 'rulingSplitMist');
+}
+
+function validatePublishReputationAnchorParams(params: PublishReputationAnchorParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  if (params.merkleRoot.length === 0) {
+    throw new Error('merkleRoot must not be empty.');
+  }
+  assertSafeNonNegativeInteger(params.eventCount, 'eventCount');
+  assertNonEmptyString(params.blobId, 'blobId');
+  assertSafeNonNegativeInteger(params.fromTimestamp, 'fromTimestamp');
+  assertSafeNonNegativeInteger(params.toTimestamp, 'toTimestamp');
+}
+
+function validateDepositStakeParams(params: DepositStakeParams): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertU64(params.amountMist, 'amountMist');
+  assertStakeType(params.stakeType, 'stakeType');
+}
+
+function validateAddStakeParams(params: AddStakeParams): void {
+  validateStakeMutationParams(params);
+  assertU64(params.amountMist, 'amountMist');
+}
+
+function validateStakeMutationParams(params: { packageId: string; stakeId: string }): void {
+  assertObjectId(params.packageId, 'packageId');
+  assertObjectId(params.stakeId, 'stakeId');
+}
+
+function validateSlashStakeParams(params: SlashStakeParams): void {
+  validateStakeMutationParams(params);
+  assertObjectId(params.taskId, 'taskId');
 }
 
 function toCapabilityVectors(capabilities: Capability[]): {
@@ -358,9 +789,25 @@ function assertCapabilities(capabilities: Capability[]): void {
   });
 }
 
+function assertEncryptionPublicKey(value: Uint8Array, field: string): void {
+  if (value.length !== 0 && value.length !== 32) {
+    throw new Error(`${field} must be either empty or 32 bytes.`);
+  }
+}
+
 function assertObjectId(value: string, field: string): void {
-  if (!OBJECT_ID_PATTERN.test(value.trim())) {
+  const trimmed = value.trim();
+  const match = OBJECT_ID_PATTERN.exec(trimmed);
+  const hex = match?.[1];
+
+  if (hex === undefined || hex.length > MAX_OBJECT_ID_HEX_LENGTH || /^0+$/i.test(hex)) {
     throw new Error(`${field} must be a 0x-prefixed hex object id.`);
+  }
+}
+
+function assertOptionalObjectId(value: string | undefined, field: string): void {
+  if (value !== undefined) {
+    assertObjectId(value, field);
   }
 }
 
@@ -400,4 +847,14 @@ function assertU64(value: bigint | number, field: string): void {
   if (value < 0n || value > MAX_U64) {
     throw new Error(`${field} must fit in an unsigned 64-bit integer.`);
   }
+}
+
+function assertStakeType(value: string, field: string): void {
+  if (value !== 'agent' && value !== 'relay') {
+    throw new Error(`${field} must be either "agent" or "relay".`);
+  }
+}
+
+function stakeTypeToMoveValue(value: 'agent' | 'relay'): 0 | 1 {
+  return value === 'relay' ? 1 : 0;
 }

@@ -11,6 +11,7 @@ module agentic_mesh::registry {
     const ENotActive: u64 = 3;
     const ECapabilityLengthMismatch: u64 = 4;
     const EAlreadyActive: u64 = 5;
+    const EInvalidEncryptionKeyLength: u64 = 6;
 
     public struct Registry has key {
         id: UID,
@@ -26,10 +27,15 @@ module agentic_mesh::registry {
         description: String,
         capabilities: vector<Capability>,
         endpoint: String,
+        encryption_public_key: vector<u8>,
         active: bool,
         version: u64,
         registered_at: u64,
         updated_at: u64,
+        total_tasks_completed: u64,
+        total_tasks_failed: u64,
+        total_tasks_disputed: u64,
+        total_earnings_mist: u64,
     }
 
     public struct Capability has store, copy, drop {
@@ -48,10 +54,15 @@ module agentic_mesh::registry {
         description: String,
         capabilities: vector<Capability>,
         endpoint: String,
+        encryption_public_key: vector<u8>,
         active: bool,
         version: u64,
         registered_at: u64,
         updated_at: u64,
+        total_tasks_completed: u64,
+        total_tasks_failed: u64,
+        total_tasks_disputed: u64,
+        total_earnings_mist: u64,
     }
 
     public struct AgentUpdated has copy, drop {
@@ -62,10 +73,15 @@ module agentic_mesh::registry {
         description: String,
         capabilities: vector<Capability>,
         endpoint: String,
+        encryption_public_key: vector<u8>,
         active: bool,
         version: u64,
         registered_at: u64,
         updated_at: u64,
+        total_tasks_completed: u64,
+        total_tasks_failed: u64,
+        total_tasks_disputed: u64,
+        total_earnings_mist: u64,
     }
 
     public struct AgentDeactivated has copy, drop {
@@ -76,10 +92,15 @@ module agentic_mesh::registry {
         description: String,
         capabilities: vector<Capability>,
         endpoint: String,
+        encryption_public_key: vector<u8>,
         active: bool,
         version: u64,
         registered_at: u64,
         updated_at: u64,
+        total_tasks_completed: u64,
+        total_tasks_failed: u64,
+        total_tasks_disputed: u64,
+        total_earnings_mist: u64,
     }
 
     fun init(ctx: &mut TxContext) {
@@ -160,10 +181,15 @@ module agentic_mesh::registry {
             description,
             capabilities,
             endpoint,
+            encryption_public_key: vector[],
             active: true,
             version: 1,
             registered_at: timestamp,
             updated_at: timestamp,
+            total_tasks_completed: 0,
+            total_tasks_failed: 0,
+            total_tasks_disputed: 0,
+            total_earnings_mist: 0,
         };
 
         let card_id = object::id(&card);
@@ -178,10 +204,15 @@ module agentic_mesh::registry {
             description: card.description,
             capabilities: card.capabilities,
             endpoint: card.endpoint,
+            encryption_public_key: card.encryption_public_key,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
             updated_at: card.updated_at,
+            total_tasks_completed: card.total_tasks_completed,
+            total_tasks_failed: card.total_tasks_failed,
+            total_tasks_disputed: card.total_tasks_disputed,
+            total_earnings_mist: card.total_earnings_mist,
         });
 
         transfer::transfer(card, sender);
@@ -215,10 +246,15 @@ module agentic_mesh::registry {
             description: card.description,
             capabilities: card.capabilities,
             endpoint: card.endpoint,
+            encryption_public_key: card.encryption_public_key,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
             updated_at: card.updated_at,
+            total_tasks_completed: card.total_tasks_completed,
+            total_tasks_failed: card.total_tasks_failed,
+            total_tasks_disputed: card.total_tasks_disputed,
+            total_earnings_mist: card.total_earnings_mist,
         });
     }
 
@@ -256,10 +292,15 @@ module agentic_mesh::registry {
             description: card.description,
             capabilities: card.capabilities,
             endpoint: card.endpoint,
+            encryption_public_key: card.encryption_public_key,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
             updated_at: card.updated_at,
+            total_tasks_completed: card.total_tasks_completed,
+            total_tasks_failed: card.total_tasks_failed,
+            total_tasks_disputed: card.total_tasks_disputed,
+            total_earnings_mist: card.total_earnings_mist,
         });
     }
 
@@ -285,10 +326,15 @@ module agentic_mesh::registry {
             description: card.description,
             capabilities: card.capabilities,
             endpoint: card.endpoint,
+            encryption_public_key: card.encryption_public_key,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
             updated_at: card.updated_at,
+            total_tasks_completed: card.total_tasks_completed,
+            total_tasks_failed: card.total_tasks_failed,
+            total_tasks_disputed: card.total_tasks_disputed,
+            total_earnings_mist: card.total_earnings_mist,
         });
     }
 
@@ -319,11 +365,45 @@ module agentic_mesh::registry {
             description: card.description,
             capabilities: card.capabilities,
             endpoint: card.endpoint,
+            encryption_public_key: card.encryption_public_key,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
             updated_at: card.updated_at,
+            total_tasks_completed: card.total_tasks_completed,
+            total_tasks_failed: card.total_tasks_failed,
+            total_tasks_disputed: card.total_tasks_disputed,
+            total_earnings_mist: card.total_earnings_mist,
         });
+    }
+
+    public entry fun set_encryption_key(
+        card: &mut AgentCard,
+        encryption_public_key: vector<u8>,
+        ctx: &TxContext,
+    ) {
+        let sender = ctx.sender();
+        let key_length = encryption_public_key.length();
+        assert!(card.owner == sender, ENotOwner);
+        assert!(key_length == 0 || key_length == 32, EInvalidEncryptionKeyLength);
+
+        card.encryption_public_key = encryption_public_key;
+    }
+
+    public(package) fun increment_completed(card: &mut AgentCard) {
+        card.total_tasks_completed = card.total_tasks_completed + 1;
+    }
+
+    public(package) fun increment_failed(card: &mut AgentCard) {
+        card.total_tasks_failed = card.total_tasks_failed + 1;
+    }
+
+    public(package) fun increment_disputed(card: &mut AgentCard) {
+        card.total_tasks_disputed = card.total_tasks_disputed + 1;
+    }
+
+    public(package) fun add_earnings(card: &mut AgentCard, amount: u64) {
+        card.total_earnings_mist = card.total_earnings_mist + amount;
     }
 
     public fun active_count(registry: &Registry): u64 { registry.active_count }
@@ -336,10 +416,15 @@ module agentic_mesh::registry {
     public fun card_description(card: &AgentCard): String { card.description }
     public fun card_capabilities(card: &AgentCard): vector<Capability> { card.capabilities }
     public fun card_endpoint(card: &AgentCard): String { card.endpoint }
+    public fun card_encryption_public_key(card: &AgentCard): vector<u8> { card.encryption_public_key }
     public fun card_active(card: &AgentCard): bool { card.active }
     public fun card_version(card: &AgentCard): u64 { card.version }
     public fun card_registered_at(card: &AgentCard): u64 { card.registered_at }
     public fun card_updated_at(card: &AgentCard): u64 { card.updated_at }
+    public fun card_total_tasks_completed(card: &AgentCard): u64 { card.total_tasks_completed }
+    public fun card_total_tasks_failed(card: &AgentCard): u64 { card.total_tasks_failed }
+    public fun card_total_tasks_disputed(card: &AgentCard): u64 { card.total_tasks_disputed }
+    public fun card_total_earnings_mist(card: &AgentCard): u64 { card.total_earnings_mist }
 
     public fun capability_name(capability: &Capability): String { capability.name }
     public fun capability_description(capability: &Capability): String { capability.description }
@@ -354,6 +439,7 @@ module agentic_mesh::registry {
     public fun registered_event_description(event: &AgentRegistered): String { event.description }
     public fun registered_event_capabilities(event: &AgentRegistered): vector<Capability> { event.capabilities }
     public fun registered_event_endpoint(event: &AgentRegistered): String { event.endpoint }
+    public fun registered_event_encryption_public_key(event: &AgentRegistered): vector<u8> { event.encryption_public_key }
     public fun registered_event_active(event: &AgentRegistered): bool { event.active }
     public fun registered_event_version(event: &AgentRegistered): u64 { event.version }
     public fun registered_event_registered_at(event: &AgentRegistered): u64 { event.registered_at }

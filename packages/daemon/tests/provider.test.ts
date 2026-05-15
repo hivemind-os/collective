@@ -296,9 +296,63 @@ describe('ProviderRuntime', () => {
       taskId: 'task-1',
       resultBlobId: 'result-blob',
       keypair: state.keypair,
+      providerCardId: '0xprovider-card',
     });
     expect(providerMocks.cursorStores[0]?.dbPath).toBe('provider-cursors.db');
     expect(providerMocks.cursorStores[0]?.closed).toBe(true);
+  });
+
+  it('decrypts encrypted inputs and encrypts results when keys are available', async () => {
+    const state = createRuntimeState();
+    state.encryption = { enabled: true, requireEncryption: false } as never;
+    state.blobStore = {
+      fetch: vi.fn().mockResolvedValue(
+        encoder.encode(JSON.stringify({
+          version: 1,
+          senderPublicKey: '11'.repeat(32),
+          nonce: '22'.repeat(24),
+          ciphertext: '33'.repeat(16),
+          tag: '33'.repeat(16),
+        })),
+      ),
+      fetchDecrypted: vi.fn().mockResolvedValue(encoder.encode('payload')),
+      store: vi.fn(),
+      storeEncrypted: vi.fn().mockResolvedValue({ blobId: 'encrypted-result', hash: 'hash-1' }),
+    } as never;
+    state.registryClient.getAgentCardByOwner = vi.fn().mockResolvedValue({ encryptionPublicKey: '44'.repeat(32) }) as never;
+    const runtime = new ProviderRuntime({
+      state,
+      providerConfig: {
+        enabled: true,
+        maxConcurrency: 1,
+        autoRegister: false,
+        capabilities: [
+          {
+            name: 'echo-capability',
+            description: 'Echo input',
+            version: '1.0.0',
+            priceMist: 1,
+            adapter: 'echo',
+          },
+        ],
+      },
+      cursorDbPath: 'provider-cursors.db',
+    });
+
+    await runtime.start();
+
+    const subscription = providerMocks.subscriptions[0];
+    await subscription.emit(createTaskPostedEvent({ taskId: 'task-enc', capability: 'echo-capability', blobId: 'blob-enc' }));
+    await runtime.stop();
+
+    expect((state.blobStore as { fetchDecrypted: ReturnType<typeof vi.fn> }).fetchDecrypted).toHaveBeenCalledWith('blob-enc');
+    expect((state.blobStore as { storeEncrypted: ReturnType<typeof vi.fn> }).storeEncrypted).toHaveBeenCalledTimes(1);
+    expect(state.taskClient.completeTask).toHaveBeenCalledWith({
+      taskId: 'task-enc',
+      resultBlobId: 'encrypted-result',
+      keypair: state.keypair,
+      providerCardId: '0xprovider-card',
+    });
   });
 
   it('ignores non-matching capabilities', async () => {
@@ -343,9 +397,12 @@ function createRuntimeState(): DaemonState {
     registryClient: {
       registerAgent: vi.fn(),
       getAgentCard: vi.fn(),
+      getAgentCardByOwner: vi.fn().mockResolvedValue(null),
+      findAgentByDid: vi.fn().mockResolvedValue({ id: '0xprovider-card' }),
     },
     agentCache: {
       upsertAgent: vi.fn(),
+      getAgentByDID: vi.fn().mockReturnValue({ id: '0xprovider-card' }),
     },
     taskClient: {
       acceptTask: vi.fn().mockResolvedValue({ txDigest: '0xaccept' }),
@@ -354,6 +411,10 @@ function createRuntimeState(): DaemonState {
     blobStore: {
       fetch: vi.fn().mockResolvedValue(encoder.encode('payload')),
       store: vi.fn().mockResolvedValue({ blobId: 'result-blob', checksum: 'checksum' }),
+    },
+    encryption: {
+      enabled: false,
+      requireEncryption: false,
     },
   } as unknown as DaemonState;
 }

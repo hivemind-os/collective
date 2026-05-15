@@ -25,6 +25,7 @@ export class TaskClient {
 
   async postTask(params: {
     capability: string;
+    category: string;
     inputBlobId: string;
     agreementHash?: string;
     priceMist: bigint;
@@ -35,6 +36,7 @@ export class TaskClient {
     const tx = buildPostTaskTx({
       packageId: this.config.packageId,
       capability: params.capability,
+      category: params.category,
       inputBlobId: params.inputBlobId,
       agreementHash: params.agreementHash,
       priceMist: params.priceMist,
@@ -66,11 +68,13 @@ export class TaskClient {
     taskId: string;
     resultBlobId: string;
     keypair: Signer;
+    providerCardId?: string;
   }): Promise<{ txDigest: string }> {
     const tx = buildCompleteTaskTx({
       packageId: this.config.packageId,
       taskId: params.taskId,
       resultBlobId: params.resultBlobId,
+      providerCardId: params.providerCardId,
     });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
@@ -88,8 +92,13 @@ export class TaskClient {
   async claimPayment(params: {
     taskId: string;
     keypair: Signer;
+    providerCardId?: string;
   }): Promise<{ txDigest: string }> {
-    const tx = buildClaimPaymentTx({ packageId: this.config.packageId, taskId: params.taskId });
+    const tx = buildClaimPaymentTx({
+      packageId: this.config.packageId,
+      taskId: params.taskId,
+      providerCardId: params.providerCardId,
+    });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
   }

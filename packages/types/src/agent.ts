@@ -35,8 +35,16 @@ export interface AgentCard {
   capabilities: Capability[];
   endpoint?: string;
   relayEndpoints?: RelayEndpoint[];
+  encryptionPublicKey?: string;
   active: boolean;
   version: number;
   registeredAt: number;
   updatedAt: number;
+  totalTasksCompleted?: number;
+  totalTasksFailed?: number;
+  totalTasksDisputed?: number;
+  totalEarningsMist?: bigint;
+  hasStake?: boolean;
+  stakeMist?: bigint;
+  stakeType?: 'agent' | 'relay';
 }

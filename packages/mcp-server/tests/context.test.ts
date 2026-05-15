@@ -63,7 +63,7 @@ describe('MeshToolContext and registration', () => {
     const listResources = await handlers.get(ListResourcesRequestSchema)?.();
     const listTemplates = await handlers.get(ListResourceTemplatesRequestSchema)?.();
 
-    expect(listTools.tools).toHaveLength(9);
+    expect(listTools.tools).toHaveLength(15);
     expect(listResources.resources).toHaveLength(2);
     expect(listTemplates.resourceTemplates).toHaveLength(2);
   });

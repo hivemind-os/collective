@@ -72,6 +72,11 @@ export interface PaymentConfig {
   evm?: EvmConfig;
 }
 
+export interface EncryptionConfig {
+  enabled: boolean;
+  requireEncryption: boolean;
+}
+
 export interface DaemonConfig {
   autoStart: boolean;
   ipcPath: string;
@@ -88,4 +93,5 @@ export interface MeshConfig {
   daemon: DaemonConfig;
   relay?: RelayClientConfig;
   blobstore?: BlobStoreConfig;
+  encryption?: EncryptionConfig;
 }

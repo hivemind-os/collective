@@ -1,4 +1,4 @@
-import { PaymentRail, TaskStatus, type AgentCard, type Capability, type Task } from '@agentic-mesh/types';
+import { BidStatus, PaymentRail, TaskStatus, type AgentCard, type Bid, type Capability, type Dispute, type StakePosition, type Task } from '@agentic-mesh/types';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -157,10 +157,18 @@ export function parseAgentCardFields(raw: unknown, fallbackId?: string): AgentCa
     capabilities,
     endpoint: asString(getValue(record, 'endpoint')) || undefined,
     relayEndpoints: normalizeRelayEndpoints(getValue(record, 'relayEndpoints', 'relay_endpoints')),
+    encryptionPublicKey: normalizeOptionalHex(getValue(record, 'encryption_public_key', 'encryptionPublicKey')),
     active: asBoolean(getValue(record, 'active'), true),
     version: asNumber(getValue(record, 'version'), 1),
     registeredAt: asNumber(getValue(record, 'registered_at', 'registeredAt')),
     updatedAt: asNumber(getValue(record, 'updated_at', 'updatedAt')),
+    totalTasksCompleted: normalizeOptionalNumber(getValue(record, 'total_tasks_completed', 'totalTasksCompleted')),
+    totalTasksFailed: normalizeOptionalNumber(getValue(record, 'total_tasks_failed', 'totalTasksFailed')),
+    totalTasksDisputed: normalizeOptionalNumber(getValue(record, 'total_tasks_disputed', 'totalTasksDisputed')),
+    totalEarningsMist: normalizeOptionalBigInt(getValue(record, 'total_earnings_mist', 'totalEarningsMist')),
+    hasStake: normalizeOptionalBoolean(getValue(record, 'has_stake', 'hasStake')),
+    stakeMist: normalizeOptionalBigInt(getValue(record, 'stake_mist', 'stakeMist')),
+    stakeType: normalizeStakeType(getValue(record, 'stake_type', 'stakeType')),
   };
 }
 
@@ -172,6 +180,29 @@ function normalizeOptionalAddress(value: unknown): string | undefined {
 function normalizeOptionalString(value: unknown): string | undefined {
   const normalized = bytesToString(value);
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeOptionalNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return asNumber(value);
+}
+
+function normalizeOptionalBigInt(value: unknown): bigint | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return asBigInt(value);
+}
+
+function normalizeOptionalHex(value: unknown): string | undefined {
+  const normalized = bytesToOptionalHex(value);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function normalizeOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
 }
 
 function normalizeRelayEndpoints(value: unknown): AgentCard['relayEndpoints'] {
@@ -203,8 +234,64 @@ function normalizeRelayEndpoints(value: unknown): AgentCard['relayEndpoints'] {
   return relayEndpoints.length > 0 ? relayEndpoints : undefined;
 }
 
+function bytesToOptionalHex(value: unknown): string {
+  if (typeof value === 'string' && /^[a-f0-9]+$/i.test(value) && value.length % 2 === 0) {
+    return value;
+  }
+
+  if (value instanceof Uint8Array) {
+    return bytesToHex(value);
+  }
+
+  if (Array.isArray(value) && value.every((entry) => typeof entry === 'number')) {
+    return bytesToHex(value);
+  }
+
+  return '';
+}
+
 function asExecutionMode(value: unknown): Capability['executionMode'] {
   return value === 'sync' || value === 'async' ? value : undefined;
+}
+
+function normalizeStakeType(value: unknown): StakePosition['stakeType'] | AgentCard['stakeType'] | undefined {
+  if (value === 0 || value === '0' || value === 'agent') {
+    return 'agent';
+  }
+  if (value === 1 || value === '1' || value === 'relay') {
+    return 'relay';
+  }
+  return undefined;
+}
+
+function normalizeBalanceValue(value: unknown): bigint {
+  if (isRecord(value)) {
+    return asBigInt(getValue(value, 'value'));
+  }
+  return asBigInt(value);
+}
+
+export function parseStakePositionFields(raw: unknown, fallbackId?: string): StakePosition {
+  const record = isRecord(raw) ? (normalizeMoveValue(raw) as Record<string, unknown>) : {};
+  const balanceValue = getValue(record, 'balance', 'balanceMist', 'balance_mist');
+  const deactivatedAt = asNumber(getValue(record, 'deactivated_at', 'deactivatedAt'));
+  const balanceMist = normalizeBalanceValue(balanceValue);
+  const stakeType = normalizeStakeType(getValue(record, 'stake_type', 'stakeType')) ?? 'agent';
+  const meetsMinimum = stakeType === 'relay' ? balanceMist >= 100_000_000_000n : balanceMist >= 10_000_000_000n;
+  const isActive = deactivatedAt === 0 && meetsMinimum;
+
+  return {
+    id: asString(getValue(record, 'id', 'stake_id', 'stakeId', 'objectId'), fallbackId ?? ''),
+    owner: asString(getValue(record, 'owner', 'objectOwner')),
+    stakeType,
+    balanceMist,
+    stakedAt: asNumber(getValue(record, 'staked_at', 'stakedAt')),
+    deactivatedAt,
+    slashedAmount: asBigInt(getValue(record, 'slashed_amount', 'slashedAmount')),
+    isActive,
+    meetsMinium: meetsMinimum,
+    meetsMinimum,
+  };
 }
 
 export function parseTaskFields(raw: unknown, fallbackId?: string): Task {
@@ -218,6 +305,7 @@ export function parseTaskFields(raw: unknown, fallbackId?: string): Task {
     requester: asString(getValue(record, 'requester')),
     provider: normalizeOptionalAddress(getValue(record, 'provider')),
     capability: asString(getValue(record, 'capability')),
+    category: asString(getValue(record, 'category'), 'general'),
     inputBlobId: bytesToString(getValue(record, 'input_blob_id', 'inputBlobId')),
     resultBlobId: normalizeOptionalString(getValue(record, 'result_blob_id', 'resultBlobId')),
     price: asBigInt(getValue(record, 'price')),
@@ -228,5 +316,46 @@ export function parseTaskFields(raw: unknown, fallbackId?: string): Task {
     completedAt: completedAt > 0 ? completedAt : undefined,
     expiresAt: asNumber(getValue(record, 'expires_at', 'expiresAt')),
     agreementHash: normalizeOptionalString(getValue(record, 'agreement_hash', 'agreementHash')),
+  };
+}
+
+export function parseBidFields(raw: unknown, fallbackId?: string): Bid {
+  const record = isRecord(raw) ? (normalizeMoveValue(raw) as Record<string, unknown>) : {};
+  const evidenceBlob = normalizeOptionalString(getValue(record, 'evidence_blob', 'evidenceBlob'));
+
+  return {
+    id: asString(getValue(record, 'id', 'bid_id', 'bidId', 'objectId'), fallbackId ?? ''),
+    taskId: asString(getValue(record, 'task_id', 'taskId')),
+    bidder: asString(getValue(record, 'bidder')),
+    bidPrice: asBigInt(getValue(record, 'bid_price', 'bidPrice')),
+    reputationScore: asBigInt(getValue(record, 'reputation_score', 'reputationScore')),
+    evidenceBlob,
+    createdAt: asNumber(getValue(record, 'created_at', 'createdAt')),
+    status: asNumber(getValue(record, 'status'), BidStatus.ACTIVE) as BidStatus,
+  };
+}
+
+export function parseDisputeFields(raw: unknown, fallbackId?: string): Dispute {
+  const record = isRecord(raw) ? (normalizeMoveValue(raw) as Record<string, unknown>) : {};
+  const respondedAt = asNumber(getValue(record, 'responded_at', 'respondedAt'));
+  const resolvedAt = asNumber(getValue(record, 'resolved_at', 'resolvedAt'));
+
+  return {
+    id: asString(getValue(record, 'id', 'dispute_id', 'disputeId', 'objectId'), fallbackId ?? ''),
+    taskId: asString(getValue(record, 'task_id', 'taskId')),
+    requester: asString(getValue(record, 'requester')),
+    provider: asString(getValue(record, 'provider')),
+    escrowAmount: asBigInt(getValue(record, 'escrow_amount', 'escrowAmount')),
+    status: asNumber(getValue(record, 'status')) as Dispute['status'],
+    requesterEvidenceBlob: bytesToString(getValue(record, 'requester_evidence_blob', 'requesterEvidenceBlob')),
+    providerEvidenceBlob: normalizeOptionalString(getValue(record, 'provider_evidence_blob', 'providerEvidenceBlob')),
+    requesterProposedSplit: asBigInt(getValue(record, 'requester_proposed_split', 'requesterProposedSplit')),
+    providerProposedSplit: asBigInt(getValue(record, 'provider_proposed_split', 'providerProposedSplit')),
+    arbitrator: normalizeOptionalAddress(getValue(record, 'arbitrator')),
+    rulingSplit: asBigInt(getValue(record, 'ruling_split', 'rulingSplit')),
+    openedAt: asNumber(getValue(record, 'opened_at', 'openedAt')),
+    respondedAt: respondedAt > 0 ? respondedAt : undefined,
+    resolvedAt: resolvedAt > 0 ? resolvedAt : undefined,
+    resolutionDeadline: asNumber(getValue(record, 'resolution_deadline', 'resolutionDeadline')),
   };
 }

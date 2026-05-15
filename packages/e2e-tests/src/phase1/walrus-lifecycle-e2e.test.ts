@@ -64,6 +64,7 @@ describe('Phase 1 Beta E2E: Walrus lifecycle', () => {
 
       const { taskId } = await consumerTaskClient.postTask({
         capability: 'echo',
+        category: 'general',
         inputBlobId: storedInput.blobId,
         priceMist: defaultPriceMist,
         disputeWindowMs: defaultDisputeWindowMs,
@@ -119,6 +120,7 @@ describe('Phase 1 Beta E2E: Walrus lifecycle', () => {
       const storedInput = await blobStore.store(inputData);
       const { taskId } = await consumerTaskClient.postTask({
         capability: 'echo-large',
+        category: 'general',
         inputBlobId: storedInput.blobId,
         priceMist: defaultPriceMist,
         disputeWindowMs: defaultDisputeWindowMs,
@@ -171,6 +173,7 @@ describe('Phase 1 Beta E2E: Walrus lifecycle', () => {
     const storedInput = await consumerBlobStore.store(inputData);
     const { taskId } = await consumerTaskClient.postTask({
       capability: 'echo',
+      category: 'general',
       inputBlobId: storedInput.blobId,
       priceMist: defaultPriceMist,
       disputeWindowMs: defaultDisputeWindowMs,

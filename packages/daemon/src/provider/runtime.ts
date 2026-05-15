@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import pino from 'pino';
 
-import { EventSubscription, SqliteCursorStore, parseRawEvent } from '@agentic-mesh/core';
+import { EventSubscription, SqliteCursorStore, parseEncryptedPayload, parseRawEvent } from '@agentic-mesh/core';
 import { PaymentRail, type Capability, type RelayEndpoint, type TaskPostedEvent } from '@agentic-mesh/types';
 import type { SuiEvent } from '@mysten/sui/client';
 
@@ -28,6 +28,7 @@ export class ProviderRuntime {
   private readonly relayClients: RelayClient[] = [];
   private registeredCapabilities: string[] = [];
   private chainOperations: Promise<void> = Promise.resolve();
+  private ownAgentCardId?: string;
 
   constructor(
     private readonly params: {
@@ -52,6 +53,8 @@ export class ProviderRuntime {
     if (this.params.providerConfig.autoRegister) {
       await this.registerAgentCard();
     }
+
+    await this.resolveOwnAgentCardId();
 
     const eventType = `${this.params.state.network.packageId}::task::TaskPosted`;
     this.cursorStore = new SqliteCursorStore(this.params.cursorDbPath);
@@ -141,7 +144,7 @@ export class ProviderRuntime {
 
     const queued = await this.taskQueue.enqueue(event.task.id, async () => {
       try {
-        await this.processTask(event.task.id, event.task.capability, event.task.inputBlobId);
+        await this.processTask(event.task.id, event.task.capability, event.task.inputBlobId, event.task.requester);
       } catch (error) {
         logger.error({ err: error, taskId: event.task.id }, 'Task processing failed');
       }
@@ -152,7 +155,9 @@ export class ProviderRuntime {
     }
   }
 
-  private async processTask(taskId: string, capability: string, inputBlobId: string): Promise<void> {
+  private async processTask(taskId: string, capability: string, inputBlobId: string, requester: string): Promise<void> {
+    const encryption = this.params.state.encryption ?? { enabled: false, requireEncryption: false };
+
     await this.runChainOperation(async () => {
       await this.params.state.taskClient.acceptTask({
         taskId,
@@ -160,19 +165,37 @@ export class ProviderRuntime {
       });
     });
 
-    const inputData = await this.params.state.blobStore.fetch(inputBlobId);
-    if (!inputData) {
+    const rawInput = await this.params.state.blobStore.fetch(inputBlobId);
+    if (!rawInput) {
       throw new Error(`Input blob ${inputBlobId} was not found.`);
     }
 
+    const encryptedInput = parseEncryptedPayload(rawInput);
+    if (encryption.requireEncryption && !encryptedInput) {
+      throw new Error(`Task ${taskId} is missing an encrypted input payload.`);
+    }
+
+    const inputData = encryptedInput
+      ? await fetchDecryptedPayload(this.params.state.blobStore, inputBlobId)
+      : rawInput;
     const result = await this.executeLocalTask(taskId, capability, inputData);
-    const storedResult = await this.params.state.blobStore.store(result);
+
+    const requesterCard = await this.params.state.registryClient.getAgentCardByOwner(requester);
+    const requesterEncryptionKey = decodeHexKey(requesterCard?.encryptionPublicKey);
+    if (encryption.requireEncryption && !requesterEncryptionKey) {
+      throw new Error(`Task ${taskId} requester does not publish an encryption key.`);
+    }
+
+    const storedResult = encryption.enabled && requesterEncryptionKey
+      ? await storeEncryptedPayload(this.params.state.blobStore, result, requesterEncryptionKey)
+      : await this.params.state.blobStore.store(result);
 
     await this.runChainOperation(async () => {
       await this.params.state.taskClient.completeTask({
         taskId,
         resultBlobId: storedResult.blobId,
         keypair: this.params.state.keypair,
+        providerCardId: this.ownAgentCardId,
       });
     });
   }
@@ -220,6 +243,7 @@ export class ProviderRuntime {
   }
 
   private async registerAgentCard(): Promise<void> {
+    const encryption = this.params.state.encryption ?? { enabled: false, requireEncryption: false };
     const capabilities = this.params.providerConfig.capabilities
       .filter((capability) => this.capabilityConfigs.has(normalizeCapability(capability.name)))
       .map((capability) => toCapability(capability, this.hasRelaySupport));
@@ -236,8 +260,12 @@ export class ProviderRuntime {
         did: this.params.state.did,
         capabilities,
         endpoint: this.registrationEndpoint,
+        encryptionPublicKey: encryption.enabled
+          ? this.params.state.encryptionKeyPair?.publicKey
+          : undefined,
         keypair: this.params.state.keypair,
       });
+      this.ownAgentCardId = registration.agentCardId;
       const card = await this.params.state.registryClient.getAgentCard(registration.agentCardId);
       if (card) {
         this.params.state.agentCache.upsertAgent({
@@ -250,6 +278,20 @@ export class ProviderRuntime {
       logger.info({ agentCardId: registration.agentCardId }, 'Provider agent card registered');
     } catch (error) {
       logger.error({ err: error }, 'Provider auto-registration failed');
+    }
+  }
+
+  private async resolveOwnAgentCardId(): Promise<void> {
+    const cached = this.params.state.agentCache.getAgentByDID?.(this.params.state.did);
+    if (cached?.id) {
+      this.ownAgentCardId = cached.id;
+      return;
+    }
+
+    const discovered = await this.params.state.registryClient.findAgentByDid?.(this.params.state.did);
+    if (discovered?.id) {
+      this.ownAgentCardId = discovered.id;
+      this.params.state.agentCache.upsertAgent(discovered);
     }
   }
 
@@ -321,6 +363,49 @@ function normalizeCapability(capability: string): string {
 
 function encodeRelayInput(input: unknown): Uint8Array {
   return encoder.encode(typeof input === 'string' ? input : JSON.stringify(input));
+}
+
+interface EncryptedBlobStoreLike {
+  storeEncrypted(data: Uint8Array, recipientPublicKey: Uint8Array): Promise<{ blobId: string; hash: string }>;
+  fetchDecrypted(blobId: string): Promise<Uint8Array | null>;
+}
+
+function isEncryptedBlobStore(blobStore: DaemonState['blobStore']): blobStore is DaemonState['blobStore'] & EncryptedBlobStoreLike {
+  return typeof (blobStore as Partial<EncryptedBlobStoreLike>).storeEncrypted === 'function'
+    && typeof (blobStore as Partial<EncryptedBlobStoreLike>).fetchDecrypted === 'function';
+}
+
+async function fetchDecryptedPayload(blobStore: DaemonState['blobStore'], blobId: string): Promise<Uint8Array> {
+  if (!isEncryptedBlobStore(blobStore)) {
+    throw new Error('Encrypted payloads require an encrypted blobstore.');
+  }
+
+  const data = await blobStore.fetchDecrypted(blobId);
+  if (!data) {
+    throw new Error(`Input blob ${blobId} was not found.`);
+  }
+
+  return data;
+}
+
+async function storeEncryptedPayload(
+  blobStore: DaemonState['blobStore'],
+  data: Uint8Array,
+  recipientPublicKey: Uint8Array,
+): Promise<{ blobId: string; hash: string }> {
+  if (!isEncryptedBlobStore(blobStore)) {
+    throw new Error('Encrypted payloads require an encrypted blobstore.');
+  }
+
+  return await blobStore.storeEncrypted(data, recipientPublicKey);
+}
+
+function decodeHexKey(value?: string): Uint8Array | null {
+  if (!value || value.length !== 64 || !/^[a-f0-9]+$/i.test(value)) {
+    return null;
+  }
+
+  return new Uint8Array(Buffer.from(value, 'hex'));
 }
 
 function parseExecutionResult(resultData: Uint8Array): unknown {

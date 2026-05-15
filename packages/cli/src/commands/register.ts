@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { createDID, loadOrCreateKeypair, MeshSuiClient, RegistryClient } from '@agentic-mesh/core';
+import { createDID, ed25519ToX25519, loadOrCreateKeypair, MeshSuiClient, RegistryClient } from '@agentic-mesh/core';
 import { PaymentRail, type Capability } from '@agentic-mesh/types';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import yaml from 'js-yaml';
@@ -23,6 +23,7 @@ export async function handleRegister(args: string[]): Promise<number> {
   const identity = loadOrCreateKeypair(config.identity.dataDir);
   const did = createDID(identity.publicKey);
   const keypair = Ed25519Keypair.fromSecretKey(identity.secretKey);
+  const encryptionKeyPair = ed25519ToX25519(identity.secretKey);
   const suiClient = new MeshSuiClient(config.network);
   const registryClient = new RegistryClient(suiClient, config.network);
 
@@ -32,6 +33,7 @@ export async function handleRegister(args: string[]): Promise<number> {
     description: definition.description,
     capabilities: definition.capabilities,
     endpoint: `mesh://agent/${did}`,
+    encryptionPublicKey: encryptionKeyPair.publicKey,
     keypair,
   });
 

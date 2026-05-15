@@ -6,6 +6,7 @@ import {
   PaymentRail,
   type AuthConfig,
   type BlobStoreConfig,
+  type EncryptionConfig,
   type NetworkConfig,
   type PaymentConfig,
   type SpendingLimit,
@@ -48,6 +49,7 @@ export interface DaemonFullConfig {
     heartbeatIntervalMs?: number;
   };
   blobstore: BlobStoreConfig;
+  encryption: EncryptionConfig;
   provider?: {
     enabled: boolean;
     capabilities: Array<{
@@ -164,6 +166,10 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
         dataDir: join(resolvedDataDir, 'blobs'),
       },
     },
+    encryption: {
+      enabled: true,
+      requireEncryption: false,
+    },
   };
 }
 
@@ -175,6 +181,7 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
   const daemon = isRecord(parsed.daemon) ? parsed.daemon : {};
   const relay = isRecord(parsed.relay) ? parsed.relay : {};
   const blobstore = isRecord(parsed.blobstore) ? parsed.blobstore : {};
+  const encryption = isRecord(parsed.encryption) ? parsed.encryption : {};
   const provider = isRecord(parsed.provider) ? parsed.provider : undefined;
 
   return {
@@ -199,6 +206,7 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
     },
     relay: normalizeRelayConfig(relay, defaults.relay),
     blobstore: normalizeBlobStoreConfig(blobstore, defaults.blobstore),
+    encryption: normalizeEncryptionConfig(encryption, defaults.encryption),
     provider: normalizeProviderConfig(provider),
   };
 }
@@ -307,6 +315,16 @@ function normalizeRelayConfig(
     providerMode: readBoolean(value.providerMode) ?? defaults.providerMode,
     reconnectIntervalMs: readPositiveInteger(value.reconnectIntervalMs, 'relay.reconnectIntervalMs') ?? defaults.reconnectIntervalMs,
     heartbeatIntervalMs: readPositiveInteger(value.heartbeatIntervalMs, 'relay.heartbeatIntervalMs') ?? defaults.heartbeatIntervalMs,
+  };
+}
+
+function normalizeEncryptionConfig(
+  value: LooseRecord,
+  defaults: DaemonFullConfig['encryption'],
+): DaemonFullConfig['encryption'] {
+  return {
+    enabled: readBoolean(value.enabled) ?? defaults.enabled,
+    requireEncryption: readBoolean(value.requireEncryption) ?? defaults.requireEncryption,
   };
 }
 
@@ -545,6 +563,10 @@ function validateConfig(config: DaemonFullConfig): void {
 
   if (!LOG_LEVELS.has(config.daemon.logLevel)) {
     throw new Error(`Invalid log level: ${config.daemon.logLevel}`);
+  }
+
+  if (config.encryption.requireEncryption && !config.encryption.enabled) {
+    throw new Error('encryption.requireEncryption cannot be true when encryption.enabled is false.');
   }
 }
 

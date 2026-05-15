@@ -1,10 +1,14 @@
 import type { AgentCard, Capability } from '@agentic-mesh/types';
+import { ReputationScoreCalculator } from '@agentic-mesh/core';
 
 import type { MeshToolContext } from '../context.js';
+
+const scoreCalculator = new ReputationScoreCalculator();
 
 export interface MeshDiscoverParams {
   capability: string;
   limit?: number;
+  sort_by?: 'price' | 'reputation';
 }
 
 export const meshDiscoverTool = {
@@ -15,6 +19,7 @@ export const meshDiscoverTool = {
     properties: {
       capability: { type: 'string', description: 'Capability name to search for' },
       limit: { type: 'number', description: 'Max results (default 10)' },
+      sort_by: { type: 'string', enum: ['price', 'reputation'], description: 'Sort results by price or reputation' },
     },
     required: ['capability'],
   },
@@ -26,7 +31,8 @@ export async function runMeshDiscover(
 ): Promise<{ capability: string; agents: ReturnType<typeof summarizeAgent>[] }> {
   const capability = params.capability.trim();
   const limit = normalizeLimit(params.limit);
-  const agents = await discoverAgentsByCapability(capability, context, limit);
+  const sortBy = params.sort_by ?? 'price';
+  const agents = await discoverAgentsByCapability(capability, context, limit, sortBy);
 
   return {
     capability,
@@ -38,6 +44,7 @@ export async function discoverAgentsByCapability(
   capability: string,
   context: MeshToolContext,
   limit = 10,
+  sortBy: 'price' | 'reputation' = 'price',
 ): Promise<AgentCard[]> {
   const normalizedCapability = capability.trim();
   if (!normalizedCapability) {
@@ -45,20 +52,23 @@ export async function discoverAgentsByCapability(
   }
 
   const cached = context.agentCache
-    .searchByCapability(normalizedCapability, Math.max(limit * 2, limit))
+    .searchByCapability(normalizedCapability, Math.max(limit * 2, limit), { sortByReputation: sortBy === 'reputation' })
     .filter((agent) => hasCapability(agent, normalizedCapability))
     .slice(0, limit);
 
   if (cached.length > 0) {
-    return cached;
+    return sortBy === 'reputation' ? cached : sortByPrice(cached, normalizedCapability).slice(0, limit);
   }
 
-  const discovered = await context.registryClient.discoverByCapability(normalizedCapability, limit);
+  const discovered = await context.registryClient.discoverByCapability(normalizedCapability, limit, {
+    sortByReputation: sortBy === 'reputation',
+  });
   for (const agent of discovered) {
     context.agentCache.upsertAgent(agent);
   }
 
-  return discovered.slice(0, limit);
+  const ranked = sortBy === 'reputation' ? discovered : sortByPrice(discovered, normalizedCapability);
+  return ranked.slice(0, limit);
 }
 
 export async function resolveProviderCapability(
@@ -111,11 +121,18 @@ export function summarizeAgent(agent: AgentCard, capability?: string): {
     rail: string;
     currency: string;
   }>;
+  reputation: {
+    success_rate: number;
+    total_tasks: number;
+    total_disputes: number;
+    total_earnings_mist: string;
+  };
   endpoint?: string;
 } {
   const scopedCapabilities = capability
     ? agent.capabilities.filter((entry) => capabilityNameEquals(entry.name, capability))
     : agent.capabilities;
+  const reputation = scoreCalculator.computeScore(agent, []);
 
   return {
     name: agent.name,
@@ -127,6 +144,12 @@ export function summarizeAgent(agent: AgentCard, capability?: string): {
       rail: entry.pricing.rail,
       currency: entry.pricing.currency,
     })),
+    reputation: {
+      success_rate: reputation.successRate,
+      total_tasks: reputation.totalTasks,
+      total_disputes: reputation.totalDisputes,
+      total_earnings_mist: reputation.totalEarningsMist.toString(),
+    },
     endpoint: agent.endpoint,
   };
 }
@@ -157,4 +180,21 @@ function normalizeLimit(limit?: number): number {
   }
 
   return Math.max(1, Math.floor(limit));
+}
+
+function sortByPrice(agents: AgentCard[], capability: string): AgentCard[] {
+  return [...agents].sort((left, right) => {
+    const leftCapability = findCapability(left, capability);
+    const rightCapability = findCapability(right, capability);
+    if (!leftCapability && !rightCapability) {
+      return 0;
+    }
+    if (!leftCapability) {
+      return 1;
+    }
+    if (!rightCapability) {
+      return -1;
+    }
+    return compareBigInt(leftCapability.pricing.amount, rightCapability.pricing.amount);
+  });
 }

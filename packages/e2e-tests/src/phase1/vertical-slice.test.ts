@@ -82,6 +82,7 @@ describe('Vertical Slice: Full Task Lifecycle', () => {
 
       const { taskId } = await consumerTaskClient.postTask({
         capability: 'echo',
+        category: 'general',
         inputBlobId,
         priceMist: echoPriceMist,
         disputeWindowMs,
@@ -137,6 +138,7 @@ describe('Vertical Slice: Full Task Lifecycle', () => {
 
     const { taskId } = await taskClient.postTask({
       capability: 'nonexistent',
+      category: 'general',
       inputBlobId,
       priceMist: 50_000_000n,
       disputeWindowMs,
@@ -454,6 +456,7 @@ async function postTaskWithBlobStore(params: {
   const { blobId: inputBlobId } = await params.blobStore.store(inputData);
   const { taskId } = await params.taskClient.postTask({
     capability: 'echo',
+    category: 'general',
     inputBlobId,
     priceMist: echoPriceMist,
     disputeWindowMs,

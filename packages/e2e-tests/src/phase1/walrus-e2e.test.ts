@@ -79,6 +79,7 @@ describeWalrus('Phase 1 E2E: Walrus', () => {
     const storedInput = await consumerBlobStore.store(inputData);
     const posted = await consumerTaskClient.postTask({
       capability: 'echo',
+      category: 'general',
       inputBlobId: storedInput.blobId,
       priceMist: defaultPriceMist,
       disputeWindowMs: defaultDisputeWindowMs,

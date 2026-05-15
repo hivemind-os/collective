@@ -1,6 +1,7 @@
 import { TaskStatus } from '@agentic-mesh/types';
 
 import type { MeshToolContext } from '../context.js';
+import { fetchMeshBlob } from '../encryption.js';
 
 const decoder = new TextDecoder();
 
@@ -34,7 +35,7 @@ export async function readTaskResource(taskId: string, context: MeshToolContext)
 
   let result: string | undefined;
   if ((task.status === TaskStatus.COMPLETED || task.status === TaskStatus.RELEASED) && task.resultBlobId) {
-    const bytes = await context.blobStore.fetch(task.resultBlobId);
+    const bytes = await fetchMeshBlob(context.blobStore, task.resultBlobId);
     result = bytes ? decoder.decode(bytes) : undefined;
   }
 

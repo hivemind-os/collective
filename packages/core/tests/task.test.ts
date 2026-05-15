@@ -36,6 +36,7 @@ describe('TaskClient', () => {
 
     const result = await client.postTask({
       capability: 'summarize',
+      category: 'analysis',
       inputBlobId: 'blob-1',
       agreementHash: 'hash-1',
       priceMist: 500n,
@@ -80,6 +81,7 @@ describe('TaskClient', () => {
           requester: '0xrequester',
           provider: '0x0',
           capability: 'summarize',
+          category: 'analysis',
           input_blob_id: 'blob-1',
           price: '500',
           status: 0,
@@ -99,6 +101,7 @@ describe('TaskClient', () => {
       requester: '0xrequester',
       provider: undefined,
       capability: 'summarize',
+      category: 'analysis',
       inputBlobId: 'blob-1',
       resultBlobId: undefined,
       price: 500n,

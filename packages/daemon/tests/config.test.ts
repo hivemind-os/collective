@@ -38,6 +38,7 @@ describe('config', () => {
       preferredRail: 'auto',
       evm: { enabled: false, network: 'base' },
     });
+    expect(config.encryption).toEqual({ enabled: true, requireEncryption: false });
 
     if (process.platform === 'win32') {
       expect(config.daemon.ipcPath).toBe('\\\\.\\pipe\\agentic-mesh');
@@ -90,6 +91,9 @@ describe('config', () => {
         'blobstore:',
         '  type: filesystem',
         `  baseDir: ${resolve(dir, 'blobs')}`,
+        'encryption:',
+        '  enabled: true',
+        '  requireEncryption: true',
       ].join('\n'),
       'utf8',
     );
@@ -117,6 +121,7 @@ describe('config', () => {
     expect(config.daemon.logLevel).toBe('debug');
     expect(config.blobstore.mode).toBe('filesystem');
     expect(config.blobstore.filesystem?.dataDir).toBe(resolve(dir, 'blobs'));
+    expect(config.encryption).toEqual({ enabled: true, requireEncryption: true });
   });
 
   it('loads walrus blobstore settings from YAML', async () => {
@@ -208,7 +213,9 @@ describe('config', () => {
 
     expect(config.network.rpcUrl).toBe('http://127.0.0.1:9000');
     expect(config.auth.mode).toBe('ed25519');
+    expect(config.encryption).toEqual({ enabled: true, requireEncryption: false });
     expect(persisted).toContain('rpcUrl: http://127.0.0.1:9000');
     expect(persisted).toContain('mode: ed25519');
+    expect(persisted).toContain('requireEncryption: false');
   });
 });

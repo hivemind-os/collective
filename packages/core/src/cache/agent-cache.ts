@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 
-import type { AgentCard, Capability } from '@agentic-mesh/types';
+import type { AgentCard, Capability, ReputationScore } from '@agentic-mesh/types';
+
+import { ReputationScoreCalculator } from '../reputation/score-calculator.js';
 
 interface AgentRow {
   rowid: number;
@@ -12,14 +14,23 @@ interface AgentRow {
   capabilities_json: string | null;
   capabilities_text: string | null;
   endpoint: string | null;
+  encryption_public_key: string | null;
   active: number | bigint;
   version: number | bigint;
   registered_at: number | bigint | null;
   updated_at: number | bigint | null;
+  total_tasks_completed: number | bigint | null;
+  total_tasks_failed: number | bigint | null;
+  total_tasks_disputed: number | bigint | null;
+  total_earnings_mist: number | bigint | string | null;
+  has_stake: number | bigint | null;
+  stake_mist: number | bigint | string | null;
+  stake_type: string | null;
 }
 
 export class AgentCache {
   private readonly db: Database.Database;
+  private readonly scoreCalculator = new ReputationScoreCalculator();
 
   constructor(dbPath: string) {
     this.db = new Database(dbPath);
@@ -34,15 +45,31 @@ export class AgentCache {
         capabilities_json TEXT,
         capabilities_text TEXT,
         endpoint TEXT,
+        encryption_public_key TEXT,
         active INTEGER DEFAULT 1,
         version INTEGER DEFAULT 1,
         registered_at INTEGER,
-        updated_at INTEGER
+        updated_at INTEGER,
+        total_tasks_completed INTEGER,
+        total_tasks_failed INTEGER,
+        total_tasks_disputed INTEGER,
+        total_earnings_mist TEXT,
+        has_stake INTEGER,
+        stake_mist TEXT,
+        stake_type TEXT
       );
       CREATE VIRTUAL TABLE IF NOT EXISTS agents_fts USING fts5(
         agent_id UNINDEXED, name, description, capabilities_text
       );
     `);
+    ensureAgentsColumn(this.db, 'encryption_public_key', 'TEXT');
+    ensureAgentsColumn(this.db, 'total_tasks_completed', 'INTEGER');
+    ensureAgentsColumn(this.db, 'total_tasks_failed', 'INTEGER');
+    ensureAgentsColumn(this.db, 'total_tasks_disputed', 'INTEGER');
+    ensureAgentsColumn(this.db, 'total_earnings_mist', 'TEXT');
+    ensureAgentsColumn(this.db, 'has_stake', 'INTEGER');
+    ensureAgentsColumn(this.db, 'stake_mist', 'TEXT');
+    ensureAgentsColumn(this.db, 'stake_type', 'TEXT');
   }
 
   upsertAgent(agent: AgentCard): void {
@@ -53,8 +80,11 @@ export class AgentCache {
     this.db
       .prepare(
         `INSERT INTO agents (
-          id, owner, did, name, description, capabilities_json, capabilities_text, endpoint, active, version, registered_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, owner, did, name, description, capabilities_json, capabilities_text, endpoint,
+          encryption_public_key, active, version, registered_at, updated_at,
+          total_tasks_completed, total_tasks_failed, total_tasks_disputed, total_earnings_mist,
+          has_stake, stake_mist, stake_type
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           owner = excluded.owner,
           did = excluded.did,
@@ -63,10 +93,18 @@ export class AgentCache {
           capabilities_json = excluded.capabilities_json,
           capabilities_text = excluded.capabilities_text,
           endpoint = excluded.endpoint,
+          encryption_public_key = excluded.encryption_public_key,
           active = excluded.active,
           version = excluded.version,
           registered_at = excluded.registered_at,
-          updated_at = excluded.updated_at`,
+          updated_at = excluded.updated_at,
+          total_tasks_completed = excluded.total_tasks_completed,
+          total_tasks_failed = excluded.total_tasks_failed,
+          total_tasks_disputed = excluded.total_tasks_disputed,
+          total_earnings_mist = excluded.total_earnings_mist,
+          has_stake = excluded.has_stake,
+          stake_mist = excluded.stake_mist,
+          stake_type = excluded.stake_type`,
       )
       .run(
         agent.id,
@@ -77,10 +115,18 @@ export class AgentCache {
         capabilitiesJson,
         capabilitiesText,
         agent.endpoint ?? null,
+        agent.encryptionPublicKey ?? null,
         agent.active ? 1 : 0,
         agent.version,
         agent.registeredAt,
         agent.updatedAt,
+        agent.totalTasksCompleted ?? null,
+        agent.totalTasksFailed ?? null,
+        agent.totalTasksDisputed ?? null,
+        agent.totalEarningsMist?.toString() ?? null,
+        agent.hasStake == null ? null : agent.hasStake ? 1 : 0,
+        agent.stakeMist?.toString() ?? null,
+        agent.stakeType ?? null,
       );
 
     this.db.prepare('DELETE FROM agents_fts WHERE agent_id = ?').run(agent.id);
@@ -110,7 +156,11 @@ export class AgentCache {
     return row ? mapAgentRow(row) : null;
   }
 
-  searchByCapability(query: string, limit = 20): AgentCard[] {
+  searchByCapability(
+    query: string,
+    limit = 20,
+    options: { sortByReputation?: boolean; scores?: Map<string, ReputationScore> } = {},
+  ): AgentCard[] {
     const ftsQuery = buildFtsQuery(query);
     if (!ftsQuery) {
       return [];
@@ -126,7 +176,7 @@ export class AgentCache {
            LIMIT ?`,
         )
         .all(ftsQuery, limit) as AgentRow[];
-      return rows.map(mapAgentRow);
+      return rankAgents(rows.map(mapAgentRow), options, this.scoreCalculator).slice(0, limit);
     } catch {
       const like = `%${query}%`;
       const rows = this.db
@@ -137,7 +187,7 @@ export class AgentCache {
            LIMIT ?`,
         )
         .all(like, like, like, like, limit) as AgentRow[];
-      return rows.map(mapAgentRow);
+      return rankAgents(rows.map(mapAgentRow), options, this.scoreCalculator).slice(0, limit);
     }
   }
 
@@ -162,10 +212,18 @@ function mapAgentRow(row: AgentRow): AgentCard {
     description: row.description ?? '',
     capabilities: parseCapabilities(row.capabilities_json),
     endpoint: row.endpoint ?? undefined,
+    encryptionPublicKey: row.encryption_public_key ?? undefined,
     active: Number(row.active) === 1,
     version: Number(row.version),
     registeredAt: Number(row.registered_at ?? 0),
     updatedAt: Number(row.updated_at ?? 0),
+    totalTasksCompleted: row.total_tasks_completed == null ? undefined : Number(row.total_tasks_completed),
+    totalTasksFailed: row.total_tasks_failed == null ? undefined : Number(row.total_tasks_failed),
+    totalTasksDisputed: row.total_tasks_disputed == null ? undefined : Number(row.total_tasks_disputed),
+    totalEarningsMist: row.total_earnings_mist == null ? undefined : BigInt(row.total_earnings_mist),
+    hasStake: row.has_stake == null ? undefined : Number(row.has_stake) === 1,
+    stakeMist: row.stake_mist == null ? undefined : BigInt(row.stake_mist),
+    stakeType: row.stake_type === 'agent' || row.stake_type === 'relay' ? row.stake_type : undefined,
   };
 }
 
@@ -188,6 +246,13 @@ function bigintReplacer(_key: string, value: unknown): unknown {
   return typeof value === 'bigint' ? value.toString() : value;
 }
 
+function ensureAgentsColumn(db: Database.Database, column: string, type: string): void {
+  const columns = db.prepare('PRAGMA table_info(agents)').all() as Array<{ name: string }>;
+  if (!columns.some((entry) => entry.name === column)) {
+    db.exec(`ALTER TABLE agents ADD COLUMN ${column} ${type}`);
+  }
+}
+
 function buildFtsQuery(query: string): string {
   const terms = query
     .trim()
@@ -196,4 +261,46 @@ function buildFtsQuery(query: string): string {
     .filter(Boolean);
 
   return terms.map((term) => `"${term}"*`).join(' OR ');
+}
+
+function rankAgents(
+  agents: AgentCard[],
+  options: { sortByReputation?: boolean; scores?: Map<string, ReputationScore> },
+  calculator: ReputationScoreCalculator,
+): AgentCard[] {
+  if (!options.sortByReputation) {
+    return [...agents].sort(compareStakePreference);
+  }
+
+  const scores = options.scores ?? new Map(agents.map((agent) => [agent.did, calculator.computeScore(agent, [])]));
+  return calculator.rankByReputation(agents, scores);
+}
+
+function compareStakePreference(left: AgentCard, right: AgentCard): number {
+  return (
+    compareBoolean(left.hasStake ?? false, right.hasStake ?? false) ||
+    compareBigInt(left.stakeMist ?? 0n, right.stakeMist ?? 0n) ||
+    compareNumber(left.updatedAt, right.updatedAt)
+  );
+}
+
+function compareBoolean(left: boolean, right: boolean): number {
+  if (left === right) {
+    return 0;
+  }
+  return left ? -1 : 1;
+}
+
+function compareBigInt(left: bigint, right: bigint): number {
+  if (left === right) {
+    return 0;
+  }
+  return left > right ? -1 : 1;
+}
+
+function compareNumber(left: number, right: number): number {
+  if (left === right) {
+    return 0;
+  }
+  return left > right ? -1 : 1;
 }

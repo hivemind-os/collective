@@ -1,3 +1,5 @@
+import type { TaskCategory } from './marketplace.js';
+
 export enum TaskStatus {
   OPEN = 0,
   ACCEPTED = 1,
@@ -39,6 +41,7 @@ export interface Task {
   requester: string;
   provider?: string;
   capability: string;
+  category: TaskCategory;
   inputBlobId: string;
   resultBlobId?: string;
   price: bigint;

@@ -1,6 +1,7 @@
 import { PaymentRail, type Capability } from '@agentic-mesh/types';
 
 import type { MeshToolContext } from '../context.js';
+import { hexToBytes } from '../encryption.js';
 
 export interface MeshRegisterParams {
   name: string;
@@ -60,6 +61,7 @@ export async function runMeshRegister(
     description: params.description,
     capabilities,
     endpoint: `mesh://agent/${context.did}`,
+    encryptionPublicKey: context.encryption?.enabled ? (hexToBytes(context.encryption.publicKey) ?? undefined) : undefined,
     keypair: context.keypair,
   });
 
