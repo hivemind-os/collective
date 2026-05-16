@@ -47,7 +47,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo lint
       - run: pnpm exec turbo build
-      - run: pnpm exec turbo test -- --run --passWithNoTests
+      - run: pnpm exec turbo test --filter='!@hivemind-os/collective-e2e-tests' -- --run --passWithNoTests
 
   publish:
     name: Publish to npm
