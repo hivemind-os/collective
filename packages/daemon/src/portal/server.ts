@@ -203,6 +203,46 @@ export class PortalServer {
         });
       }
     });
+
+    this.server.get('/network', async (_request, reply) => {
+      reply.type('text/html').send(renderNetworkPage(this.options.config.network));
+    });
+
+    this.server.get('/api/network', async () => {
+      return { ...this.options.config.network };
+    });
+
+    this.server.post('/api/network', async (request, reply) => {
+      const previousNetwork = { ...this.options.config.network };
+
+      try {
+        const body = (request.body ?? {}) as {
+          rpcUrl?: string;
+          faucetUrl?: string;
+          packageId?: string;
+          registryId?: string;
+        };
+
+        const validated = validateNetworkInput(body);
+        this.options.config.network = { ...this.options.config.network, ...validated };
+        await saveConfig(this.options.config, this.options.configPath);
+        await this.options.onSettingsSaved?.(this.options.config);
+        this.options.logger?.info({ configPath: this.options.configPath }, 'Portal network config persisted');
+
+        return { ok: true, network: { ...this.options.config.network } };
+      } catch (error) {
+        this.options.config.network = previousNetwork;
+        const isValidation = isNetworkValidationError(error);
+        if (!isValidation) {
+          this.options.logger?.warn({ err: error, configPath: this.options.configPath }, 'Failed to persist network config');
+        }
+
+        return reply.code(isValidation ? 400 : 500).send({
+          ok: false,
+          error: getSafeErrorMessage(error, 'Unable to save network settings.'),
+        });
+      }
+    });
   }
 
   private async startAuthFlow(
@@ -489,6 +529,7 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
       <button class="button" id="finish">Finish Setup</button>
       <p class="error" id="status" hidden></p>
       ${successMessage}
+      <p style="margin-top:24px;font-size:0.85rem"><a href="/network" style="color:#60a5fa">Network Configuration →</a></p>
     </main>
     <script>
       const slider = document.getElementById('limit');
@@ -517,6 +558,97 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
           status.hidden = false;
           button.disabled = false;
         }
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; packageId: string; registryId: string }): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agentic Mesh — Network</title>
+    <style>${BASE_STYLES}${NETWORK_PAGE_STYLES}</style>
+  </head>
+  <body>
+    <main class="card">
+      <nav class="nav"><a href="/">← Settings</a></nav>
+      <h1>Network Configuration</h1>
+      <p>Configure which Sui network the daemon connects to.</p>
+
+      <div class="presets">
+        <button class="preset" data-rpc="https://fullnode.devnet.sui.io:443" data-faucet="https://faucet.devnet.sui.io">Devnet</button>
+        <button class="preset" data-rpc="https://fullnode.testnet.sui.io:443" data-faucet="https://faucet.testnet.sui.io">Testnet</button>
+        <button class="preset" data-rpc="http://127.0.0.1:9000" data-faucet="http://127.0.0.1:9123">Local</button>
+      </div>
+
+      <label for="rpcUrl">RPC URL <span class="required">*</span></label>
+      <input id="rpcUrl" type="url" value="${escapeAttr(network.rpcUrl)}" placeholder="https://fullnode.devnet.sui.io:443" required />
+
+      <label for="faucetUrl">Faucet URL</label>
+      <input id="faucetUrl" type="url" value="${escapeAttr(network.faucetUrl)}" placeholder="https://faucet.devnet.sui.io" />
+
+      <label for="packageId">Package ID</label>
+      <input id="packageId" type="text" value="${escapeAttr(network.packageId)}" placeholder="0x..." />
+
+      <label for="registryId">Registry ID</label>
+      <input id="registryId" type="text" value="${escapeAttr(network.registryId)}" placeholder="0x..." />
+
+      <p class="hint" id="hint" hidden></p>
+      <button class="button" id="save">Save Network Config</button>
+      <p class="error" id="status" hidden></p>
+      <p class="success" id="success" hidden></p>
+    </main>
+    <script>
+      const rpcUrl = document.getElementById('rpcUrl');
+      const faucetUrl = document.getElementById('faucetUrl');
+      const packageId = document.getElementById('packageId');
+      const registryId = document.getElementById('registryId');
+      const saveBtn = document.getElementById('save');
+      const status = document.getElementById('status');
+      const successEl = document.getElementById('success');
+      const hint = document.getElementById('hint');
+
+      document.querySelectorAll('.preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+          rpcUrl.value = btn.dataset.rpc;
+          faucetUrl.value = btn.dataset.faucet;
+          hint.textContent = 'Preset applied to RPC and Faucet URLs. Package and Registry IDs are unchanged.';
+          hint.hidden = false;
+          successEl.hidden = true;
+          status.hidden = true;
+        });
+      });
+
+      saveBtn.addEventListener('click', async () => {
+        saveBtn.disabled = true;
+        status.hidden = true;
+        successEl.hidden = true;
+        hint.hidden = true;
+        try {
+          const response = await fetch('/api/network', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              rpcUrl: rpcUrl.value.trim(),
+              faucetUrl: faucetUrl.value.trim(),
+              packageId: packageId.value.trim(),
+              registryId: registryId.value.trim(),
+            }),
+          });
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            throw new Error(typeof body.error === 'string' ? body.error : 'Unable to save network settings.');
+          }
+          successEl.textContent = 'Network configuration saved. The daemon will reconnect to the configured network.';
+          successEl.hidden = false;
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : 'Unable to save network settings.';
+          status.hidden = false;
+        }
+        saveBtn.disabled = false;
       });
     </script>
   </body>
@@ -720,3 +852,83 @@ const BASE_STYLES = `
   .success { color: #86efac; }
   .error { color: #fca5a5; }
 `;
+
+const NETWORK_PAGE_STYLES = `
+  .nav { margin-bottom: 16px; }
+  .nav a { color: #60a5fa; text-decoration: none; font-size: 0.9rem; }
+  .nav a:hover { text-decoration: underline; }
+  .presets { display: flex; gap: 8px; margin-bottom: 20px; }
+  .preset { background: #1e293b; border: 1px solid #475569; border-radius: 8px; color: #e2e8f0; padding: 8px 14px; font-size: 0.85rem; cursor: pointer; }
+  .preset:hover { background: #334155; }
+  label { display: block; margin-top: 16px; font-size: 0.85rem; font-weight: 600; }
+  .required { color: #f87171; }
+  input[type='url'], input[type='text'] { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 10px 12px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-family: monospace; font-size: 0.85rem; }
+  input[type='url']:focus, input[type='text']:focus { outline: none; border-color: #2563eb; }
+  .hint { color: #94a3b8; font-size: 0.85rem; margin-top: 12px; }
+  #save { margin-top: 24px; width: 100%; }
+`;
+
+function escapeAttr(value: string): string {
+  return value.replace(/[&"'<>]/g, (character) => HTML_ESCAPES[character] ?? character);
+}
+
+function validateNetworkInput(body: {
+  rpcUrl?: string;
+  faucetUrl?: string;
+  packageId?: string;
+  registryId?: string;
+}): { rpcUrl: string; faucetUrl: string; packageId: string; registryId: string } {
+  const rpcUrl = (body.rpcUrl ?? '').trim();
+  const faucetUrl = (body.faucetUrl ?? '').trim();
+  const packageId = (body.packageId ?? '').trim();
+  const registryId = (body.registryId ?? '').trim();
+
+  if (!rpcUrl) {
+    throw new NetworkValidationError('RPC URL is required.');
+  }
+
+  validateHttpUrl(rpcUrl, 'RPC URL');
+
+  if (faucetUrl) {
+    validateHttpUrl(faucetUrl, 'Faucet URL');
+  }
+
+  if (packageId && !isValidHexId(packageId)) {
+    throw new NetworkValidationError('Package ID must be a valid hex address starting with 0x.');
+  }
+
+  if (registryId && !isValidHexId(registryId)) {
+    throw new NetworkValidationError('Registry ID must be a valid hex address starting with 0x.');
+  }
+
+  return { rpcUrl, faucetUrl, packageId, registryId };
+}
+
+function validateHttpUrl(value: string, label: string): void {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new NetworkValidationError(`${label} must use http or https protocol.`);
+    }
+  } catch (error) {
+    if (error instanceof NetworkValidationError) {
+      throw error;
+    }
+    throw new NetworkValidationError(`${label} is not a valid URL.`);
+  }
+}
+
+function isValidHexId(value: string): boolean {
+  return /^0x[0-9a-fA-F]{1,64}$/.test(value);
+}
+
+class NetworkValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NetworkValidationError';
+  }
+}
+
+function isNetworkValidationError(error: unknown): boolean {
+  return error instanceof NetworkValidationError;
+}
