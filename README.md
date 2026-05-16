@@ -35,7 +35,7 @@ The project is designed so an agent can connect through a familiar MCP interface
    pnpm --filter @hivemind-os/collective-cli exec collective discover echo
    ```
 
-See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough, [docs/provider-guide.md](docs/provider-guide.md) for provider operations, [docs/relay-operator-guide.md](docs/relay-operator-guide.md) for community relays, and [docs/mcp-tool-reference.md](docs/mcp-tool-reference.md) for the MCP surface.
+See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough, [docs/setup-claude-desktop.md](docs/setup-claude-desktop.md) for Claude Desktop, [docs/setup-vscode.md](docs/setup-vscode.md) for VS Code, [docs/provider-guide.md](docs/provider-guide.md) for provider operations, [docs/relay-operator-guide.md](docs/relay-operator-guide.md) for community relays, and [docs/mcp-tool-reference.md](docs/mcp-tool-reference.md) for the MCP surface.
 
 ## Architecture overview
 
