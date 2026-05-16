@@ -70,15 +70,22 @@ jobs:
         id: publish
         run: |
           set -uo pipefail
+          STDERR_FILE=$(mktemp)
           OUTPUT=$(sui client publish contracts/agentic_mesh \
             --gas-budget ${{ inputs.gas_budget }} \
-            --json 2>&1) || {
+            --json 2>"$STDERR_FILE") || {
             echo "::error::sui client publish failed"
+            cat "$STDERR_FILE"
             echo "$OUTPUT"
             exit 1
           }
 
-          echo "$OUTPUT" | jq . || echo "$OUTPUT"
+          # Print any warnings from stderr
+          if [ -s "$STDERR_FILE" ]; then
+            echo "::warning::$(cat "$STDERR_FILE")"
+          fi
+
+          echo "$OUTPUT" | jq .
 
           PACKAGE_ID=$(echo "$OUTPUT" | jq -r '.objectChanges[] | select(.type == "published") | .packageId')
           REGISTRY_ID=$(echo "$OUTPUT" | jq -r '.objectChanges[] | select(.objectType != null and (.objectType | test("::registry::Registry$"))) | .objectId')
