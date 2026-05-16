@@ -241,7 +241,7 @@ async function startServer(): Promise<{ server: IpcServer; state: DaemonState; i
   return { server, state, ipcPath };
 }
 
-async function connectAndHandshake(ipcPath: string, appName = 'test-app'): Promise<TestClient> {
+async function connectAndHandshake(ipcPath: string, appName = 'test-app', opts?: { tasks?: boolean }): Promise<TestClient> {
   const socket = await new Promise<net.Socket>((resolvePromise, reject) => {
     const client = net.connect(ipcPath, () => {
       resolvePromise(client);
@@ -264,23 +264,28 @@ async function connectAndHandshake(ipcPath: string, appName = 'test-app'): Promi
   });
   expect(helloResp.result).toHaveProperty('acknowledged', true);
 
-  // MCP initialize
+  // MCP initialize — optionally advertise tasks capability
+  const capabilities: Record<string, unknown> = {};
+  if (opts?.tasks) {
+    capabilities.tasks = {};
+  }
+
   const initResp = await client.request({
     jsonrpc: '2.0',
     id: 2,
     method: 'initialize',
     params: {
       protocolVersion: '2025-03-26',
-      capabilities: {},
+      capabilities,
       clientInfo: { name: appName, version: '0.0.1' },
     },
   });
   expect(initResp.result).toHaveProperty('capabilities');
 
-  // Verify tasks capability advertised
+  // Verify tasks capability advertised by server
   const result = initResp.result as Record<string, unknown>;
-  const capabilities = result.capabilities as Record<string, unknown>;
-  expect(capabilities).toHaveProperty('tasks');
+  const serverCapabilities = result.capabilities as Record<string, unknown>;
+  expect(serverCapabilities).toHaveProperty('tasks');
 
   // Send initialized notification
   await client.send({
@@ -380,8 +385,9 @@ describe('MCP Task Protocol Integration', () => {
     expect((msg2.params as Record<string, unknown>).capability).toBe('summarize');
   });
 
-  it('mesh_execute with _meta.blocking=true uses sync path and returns error result', async () => {
+  it('mesh_execute uses blocking path for clients without tasks capability', async () => {
     const { ipcPath } = await startServer();
+    // Client does NOT advertise tasks capability
     const client = await connectAndHandshake(ipcPath);
 
     const resp = await client.request({
@@ -394,24 +400,25 @@ describe('MCP Task Protocol Integration', () => {
           capability: 'nonexistent-capability',
           input: 'test input',
         },
-        _meta: { blocking: true },
       },
     });
 
-    // Should get an error result (not a task handle) since blocking mode uses sync path
+    // Should get an error result via blocking sync path (no task handle),
+    // since the test has no provider the sync execute will fail with an error
     const result = resp.result as Record<string, unknown>;
     expect(result).toHaveProperty('isError', true);
     const content = result.content as Array<{ type: string; text: string }>;
     expect(content[0].text).toContain('error');
   });
 
-  it('mesh_execute without blocking fails gracefully when no provider', async () => {
+  it('mesh_execute uses async task path for clients WITH tasks capability', async () => {
     const { ipcPath } = await startServer();
-    const client = await connectAndHandshake(ipcPath);
+    // Client DOES advertise tasks capability
+    const client = await connectAndHandshake(ipcPath, 'task-client', { tasks: true });
 
-    // mesh_execute without blocking mode — will fail because no provider exists.
-    // The error happens during prepareMeshExecution (before task creation), so
-    // it may come back as either an error response or an isError tool result.
+    // mesh_execute with tasks capability — will try async path and fail because
+    // no provider exists. The error happens during prepareMeshExecution (before
+    // task creation), so it comes back as an isError tool result.
     const resp = await client.request({
       jsonrpc: '2.0',
       id: 21,

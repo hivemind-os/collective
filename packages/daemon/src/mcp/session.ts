@@ -238,7 +238,13 @@ export class McpSession {
     // Merge: daemon-specific tools + mcp-server tools (skip mcp-server's mesh_balance)
     const allToolDefs = [
       ...daemonToolDefs,
-      ...meshToolDefinitions.filter((def) => !daemonToolHandlers[def.name]),
+      ...meshToolDefinitions.filter((def) => !daemonToolHandlers[def.name]).map((def) => {
+        // Annotate mesh_execute with task support hint for task-capable clients
+        if (def.name === 'mesh_execute') {
+          return { ...def, execution: { taskSupport: 'optional' as const } };
+        }
+        return def;
+      }),
     ];
 
     const context = this.toolContext;
@@ -251,7 +257,6 @@ export class McpSession {
       const toolName = request.params.name;
       const meta = request.params._meta as Record<string, unknown> | undefined;
       const progressToken = meta?.progressToken as string | number | undefined;
-      const blockingMode = meta?.blocking === true;
 
       // Daemon-specific handlers
       const daemonHandler = daemonToolHandlers[toolName];
@@ -267,8 +272,9 @@ export class McpSession {
       // mcp-server handlers
       const meshHandler = meshToolHandlers[toolName];
       if (meshHandler && context) {
-        // For mesh_execute: return as MCP Task unless blocking mode is requested
-        if (toolName === 'mesh_execute' && !blockingMode) {
+        // For mesh_execute: use MCP Tasks (async) only if the client advertises tasks support;
+        // otherwise default to blocking (standard CallToolResult) for maximum compatibility.
+        if (toolName === 'mesh_execute' && this.clientSupportsTasks()) {
           try {
             return await this.handleExecuteAsTask(request.params.arguments as Record<string, unknown>, context, progressToken);
           } catch (error) {
@@ -302,6 +308,16 @@ export class McpSession {
     if (context) {
       registerResourceHandlers(this.server, context);
     }
+  }
+
+  /**
+   * Check whether the connected client advertises MCP Tasks support.
+   * Only VS Code Copilot (as of 2025-11-25 spec) does this; Claude Desktop,
+   * ChatGPT, Cursor, Windsurf, and GH Coding Agent do not.
+   */
+  private clientSupportsTasks(): boolean {
+    const caps = this.server.getClientCapabilities();
+    return caps?.tasks != null;
   }
 
   /**

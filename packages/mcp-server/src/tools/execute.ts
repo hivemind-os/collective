@@ -22,7 +22,7 @@ export interface MeshExecuteParams {
 
 export const meshExecuteTool = {
   name: 'mesh_execute',
-  description: 'Execute a mesh task and wait for the result',
+  description: 'Execute a mesh task. Returns a task handle (async) if the client supports MCP Tasks, otherwise blocks until completion.',
   inputSchema: {
     type: 'object' as const,
     properties: {
