@@ -50,6 +50,9 @@ jobs:
           mkdir -p ~/.sui/sui_config
           echo "${{ secrets.SUI_CLIENT_CONFIG }}" | base64 -d > ~/.sui/sui_config/client.yaml
           echo "${{ secrets.SUI_KEYSTORE }}" | base64 -d > ~/.sui/sui_config/sui.keystore
+          # Fix keystore path to match CI runner home directory
+          sed -i "s|File:.*sui.keystore|File: $HOME/.sui/sui_config/sui.keystore|" ~/.sui/sui_config/client.yaml
+          echo "Configured Sui credentials for $(whoami) at $HOME"
 
       - name: Verify active environment
         run: |
