@@ -391,6 +391,8 @@ function applyEnvironmentOverrides(
   options: { hasExplicitIpcPath: boolean } = { hasExplicitIpcPath: false },
 ): DaemonFullConfig {
   const envDataDir = getEnvDataDir();
+  const envIpcPath = process.env.COLLECTIVE_IPC_PATH;
+  const envPidFile = process.env.COLLECTIVE_PID_FILE;
   const withDataDir = envDataDir
     ? {
         ...config,
@@ -398,22 +400,31 @@ function applyEnvironmentOverrides(
         daemon: {
           ...config.daemon,
           dataDir: envDataDir,
-          pidFile: join(envDataDir, 'daemon.pid'),
-          ipcPath: options.hasExplicitIpcPath ? config.daemon.ipcPath : getDefaultIpcPath(envDataDir),
+          pidFile: envPidFile ?? join(envDataDir, 'daemon.pid'),
+          ipcPath: envIpcPath ?? (options.hasExplicitIpcPath ? config.daemon.ipcPath : getDefaultIpcPath(envDataDir)),
         },
         blobstore: applyBlobStoreDataDirOverride(config.blobstore, join(envDataDir, 'blobs')),
       }
     : config;
 
-  return {
+  const withEnvOverrides = {
     ...withDataDir,
-    network: {
-      ...withDataDir.network,
-      ...resolveNetworkEnvOverrides(withDataDir.network),
-    },
     daemon: {
       ...withDataDir.daemon,
-      logLevel: normalizeLogLevel(process.env.COLLECTIVE_LOG_LEVEL, withDataDir.daemon.logLevel),
+      ...(envIpcPath && !envDataDir ? { ipcPath: envIpcPath } : {}),
+      ...(envPidFile && !envDataDir ? { pidFile: envPidFile } : {}),
+    },
+  };
+
+  return {
+    ...withEnvOverrides,
+    network: {
+      ...withEnvOverrides.network,
+      ...resolveNetworkEnvOverrides(withEnvOverrides.network),
+    },
+    daemon: {
+      ...withEnvOverrides.daemon,
+      logLevel: normalizeLogLevel(process.env.COLLECTIVE_LOG_LEVEL, withEnvOverrides.daemon.logLevel),
     },
   };
 }
