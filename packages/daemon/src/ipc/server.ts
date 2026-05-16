@@ -6,6 +6,7 @@ import pino from 'pino';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import type { DaemonStatusBase, DaemonState } from '../state.js';
 import { Connection } from './connection.js';
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { ConnectionRegistry, type ConnectedApp, type ConnectedAppMetadata } from './connection-registry.js';
 import {
   validateClientProcessOwnership,
@@ -136,6 +137,29 @@ export class IpcServer {
     for (const connection of this.connections.values()) {
       connection.sendNotification('auth.status_changed', status);
     }
+  }
+
+  /**
+   * Look up the low-level MCP Server for a connected app by name.
+   * Throws if multiple connections match (ambiguous).
+   * Returns undefined if no match is found.
+   */
+  getMcpServerForApp(appName: string): Server | undefined {
+    const matches: Connection[] = [];
+    for (const connection of this.connections.values()) {
+      if (connection.connectedAppName === appName) {
+        matches.push(connection);
+      }
+    }
+
+    if (matches.length > 1) {
+      throw new Error(
+        `Ambiguous MCP sampling target: ${matches.length} connections match appName "${appName}". ` +
+          'Use a more specific identifier or disconnect duplicate clients.',
+      );
+    }
+
+    return matches[0]?.mcpServer;
   }
 
   private handleConnection(socket: net.Socket): void {

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { CallToolResult, JSONRPCMessage as SdkJsonRpcMessage } from '@modelcontextprotocol/sdk/types.js';
 import { PaymentRail } from '@agentic-mesh/types';
@@ -139,6 +140,11 @@ export class McpSession {
 
   async close(): Promise<void> {
     await this.server.close();
+  }
+
+  /** Expose the low-level MCP Server for sampling requests. */
+  get mcpServer(): Server {
+    return this.server.server;
   }
 
   private registerTools(): void {

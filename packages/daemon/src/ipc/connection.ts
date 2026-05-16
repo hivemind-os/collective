@@ -6,6 +6,7 @@ import pino from 'pino';
 import { logAuditEvent } from '../audit.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import { McpSession, type McpSessionStatus } from '../mcp/session.js';
+import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { DaemonState } from '../state.js';
 import type { ConnectedAppMetadata } from './connection-registry.js';
 import type { ClientValidationResult } from './pipe-security.js';
@@ -32,6 +33,16 @@ interface ConnectionOptions {
 export class Connection {
   readonly id = randomUUID();
   readonly connectedAt = Date.now();
+
+  /** The app name set during shim_hello handshake, or undefined if not yet received. */
+  get connectedAppName(): string | undefined {
+    return this.appName;
+  }
+
+  /** The low-level MCP Server for this connection (for sampling requests). */
+  get mcpServer(): Server {
+    return this.session.mcpServer;
+  }
 
   private appName?: string;
   private appPid?: number;

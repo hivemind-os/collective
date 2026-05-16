@@ -21,6 +21,9 @@ import type { DaemonState } from '../state.js';
 import { EchoAdapter } from './adapters/echo.js';
 import type { ExecutionAdapter } from './adapters/interface.js';
 import { LocalFunctionAdapter, type LocalFunction } from './adapters/local-fn.js';
+import { McpSamplingAdapter, type McpSamplingFn } from './adapters/mcp-sampling.js';
+import { SubprocessAdapter } from './adapters/subprocess.js';
+import { WebhookAdapter } from './adapters/webhook.js';
 import type { ProviderCapabilityConfig, ProviderConfig } from './capabilities.js';
 import { TaskQueue } from './task-queue.js';
 
@@ -46,6 +49,7 @@ export class ProviderRuntime {
       cursorDbPath: string;
       relayConfig?: DaemonFullConfig['relay'];
       relayClientFactory?: (config: RelayClientConfig, identity: DaemonState['relayAuthProvider']) => RelayClient;
+      mcpSamplingFn?: McpSamplingFn;
     },
   ) {
     this.taskQueue = new TaskQueue(params.providerConfig.maxConcurrency);
@@ -251,10 +255,14 @@ export class ProviderRuntime {
     this.capabilityConfigs.clear();
     this.registeredCapabilities = [];
 
+    const deps: AdapterDeps = {
+      mcpSamplingFn: this.params.mcpSamplingFn,
+    };
+
     for (const capability of this.params.providerConfig.capabilities) {
       try {
         const key = normalizeCapability(capability.name);
-        const adapter = createAdapter(capability);
+        const adapter = createAdapter(capability, deps);
         this.adapters.set(key, adapter);
         this.capabilityConfigs.set(key, capability);
         this.registeredCapabilities.push(capability.name);
@@ -346,20 +354,86 @@ export class ProviderRuntime {
   }
 }
 
-function createAdapter(capability: ProviderCapabilityConfig): ExecutionAdapter {
+interface AdapterDeps {
+  mcpSamplingFn?: McpSamplingFn;
+}
+
+function createAdapter(capability: ProviderCapabilityConfig, deps: AdapterDeps): ExecutionAdapter {
+  const config = capability.adapterConfig ?? {};
+
   switch (capability.adapter) {
     case 'echo':
       return new EchoAdapter();
     case 'local-function': {
-      const fnCandidate = capability.adapterConfig?.fn ?? capability.adapterConfig?.function;
+      const fnCandidate = config.fn ?? config.function;
       if (typeof fnCandidate !== 'function') {
         throw new Error(`Capability ${capability.name} is missing a local function adapter.`);
       }
       return new LocalFunctionAdapter(fnCandidate as LocalFunction);
     }
+    case 'webhook':
+      return new WebhookAdapter({
+        url: requireString(config.url, 'webhook url'),
+        method: optionalString(config.method),
+        headers: optionalStringRecord(config.headers),
+        timeoutMs: optionalNumber(config.timeoutMs),
+        maxResponseBytes: optionalNumber(config.maxResponseBytes),
+      });
+    case 'subprocess':
+      return new SubprocessAdapter({
+        command: requireString(config.command, 'subprocess command'),
+        args: optionalStringArray(config.args),
+        cwd: optionalString(config.cwd),
+        env: optionalStringRecord(config.env),
+        timeoutMs: optionalNumber(config.timeoutMs),
+        maxOutputBytes: optionalNumber(config.maxOutputBytes),
+      });
+    case 'mcp-sampling': {
+      if (!deps.mcpSamplingFn) {
+        throw new Error('MCP sampling adapter requires an active IPC server with sampling support.');
+      }
+      return new McpSamplingAdapter(
+        {
+          appName: requireString(config.appName, 'mcp-sampling appName'),
+          systemPrompt: requireString(config.systemPrompt, 'mcp-sampling systemPrompt'),
+          maxTokens: optionalNumber(config.maxTokens),
+          modelHint: optionalString(config.modelHint),
+        },
+        deps.mcpSamplingFn,
+      );
+    }
     default:
       throw new Error(`Unsupported execution adapter: ${capability.adapter}`);
   }
+}
+
+function requireString(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw new Error(`Missing required config field: ${label}`);
+  }
+  return value;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function optionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function optionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
+function optionalStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const result: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof v === 'string') result[k] = v;
+  }
+  return result;
 }
 
 function toCapability(capability: ProviderCapabilityConfig, hasRelaySupport: boolean): Capability {

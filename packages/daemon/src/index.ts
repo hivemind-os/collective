@@ -150,11 +150,21 @@ export async function main(): Promise<void> {
 
     const providerConfig = loadProviderConfig(config);
     if (providerConfig?.enabled) {
+      const ipcRef = ipcServer;
       providerRuntime = new ProviderRuntime({
         state: daemonState,
         providerConfig,
         cursorDbPath: join(config.daemon.dataDir, 'provider-cursors.db'),
         relayConfig: config.relay,
+        mcpSamplingFn: ipcRef
+          ? async (appName, params) => {
+              const server = ipcRef.getMcpServerForApp(appName);
+              if (!server) {
+                throw new Error(`No MCP client connected with appName "${appName}"`);
+              }
+              return server.createMessage(params);
+            }
+          : undefined,
       });
       await providerRuntime.start();
       daemonState.setProviderRunning(true);
