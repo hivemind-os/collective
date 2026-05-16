@@ -3,9 +3,11 @@ import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { SessionExpiredError } from '../../src/auth/errors.js';
 import { ZkLoginSessionStore } from '../../src/auth/session-store.js';
+import { SessionState } from '../../src/auth/session-state.js';
 import type { StoredZkLoginSession } from '../../src/auth/types.js';
 
 const createdPaths: string[] = [];
@@ -23,6 +25,7 @@ async function createTestDir(): Promise<string> {
 
 function createSession(overrides: Partial<StoredZkLoginSession> = {}): StoredZkLoginSession {
   return {
+    provider: 'google',
     jwt: 'header.payload.signature',
     salt: '12345',
     epoch: 10,
@@ -138,5 +141,61 @@ describe('ZkLoginSessionStore', () => {
 
     await store.deleteExpired(20);
     expect(await store.loadLatest()).toBeNull();
+  });
+
+  it('retries refresh failures with exponential backoff before succeeding', async () => {
+    const dir = await createTestDir();
+    const sleep = vi.fn(async () => undefined);
+    const store = new ZkLoginSessionStore(dir, new Uint8Array([7, 7, 7, 7]), { sleep });
+    const session = createSession({ maxEpoch: 11 });
+    const refresher = vi
+      .fn(async (current: StoredZkLoginSession) => ({
+        ...current,
+        maxEpoch: 20,
+        updatedAt: 5,
+        refreshFailureCount: 0,
+        sessionState: SessionState.VALID,
+      }))
+      .mockRejectedValueOnce(new Error('temporary-1'))
+      .mockRejectedValueOnce(new Error('temporary-2'));
+
+    await store.save(session);
+
+    const refreshed = await store.refreshIfNeeded(10, refresher);
+
+    expect(refresher).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenNthCalledWith(1, 1_000);
+    expect(sleep).toHaveBeenNthCalledWith(2, 2_000);
+    expect(refreshed).toMatchObject({ maxEpoch: 20, refreshFailureCount: 0, sessionState: SessionState.VALID });
+    expect(store.getSessionState()).toBe(SessionState.VALID);
+  });
+
+  it('marks sessions as needing re-authentication after max refresh failures', async () => {
+    const dir = await createTestDir();
+    const sleep = vi.fn(async () => undefined);
+    const states: SessionState[] = [];
+    const store = new ZkLoginSessionStore(dir, new Uint8Array([5, 5, 5, 5]), {
+      sleep,
+      onSessionStateChange: ({ currentState }) => {
+        states.push(currentState);
+      },
+    });
+    const session = createSession({ maxEpoch: 11 });
+
+    await store.save(session);
+
+    await expect(store.refreshIfNeeded(10, async () => {
+      throw new Error('refresh-down');
+    })).rejects.toBeInstanceOf(SessionExpiredError);
+
+    expect(sleep).toHaveBeenNthCalledWith(1, 1_000);
+    expect(sleep).toHaveBeenNthCalledWith(2, 2_000);
+    expect(states).toEqual([SessionState.VALID, SessionState.REFRESHING, SessionState.NEEDS_REAUTH]);
+    expect(store.getSessionState()).toBe(SessionState.NEEDS_REAUTH);
+    expect(store.getRefreshFailureCount()).toBe(3);
+    await expect(store.loadLatest()).resolves.toMatchObject({
+      refreshFailureCount: 3,
+      sessionState: SessionState.NEEDS_REAUTH,
+    });
   });
 });

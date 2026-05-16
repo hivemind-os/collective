@@ -246,8 +246,11 @@ async function completeMockZkLogin(sessionDir: string): Promise<{
   }
 }
 
-function createStoredSession(overrides: Partial<Awaited<ReturnType<ZkLoginProvider['authenticateWithJwt']>>> = {}) {
+function createStoredSession(
+  overrides: Partial<Awaited<ReturnType<ZkLoginProvider['authenticateWithJwt']>>> = {},
+): Awaited<ReturnType<ZkLoginProvider['authenticateWithJwt']>> {
   return {
+    provider: 'google' as const,
     jwt: 'header.payload.signature',
     salt: '123456',
     epoch: 9,

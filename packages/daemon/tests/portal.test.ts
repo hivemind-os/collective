@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ZkLoginProvider } from '@agentic-mesh/core';
 
 import type { DaemonFullConfig } from '../src/config.js';
-import { getDefaultConfig } from '../src/config.js';
+import { getDefaultConfig, loadConfig } from '../src/config.js';
 import { PortalServer } from '../src/portal/server.js';
 
 const createdPaths: string[] = [];
@@ -28,6 +28,28 @@ function createJwt(claims: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
   return `${header}.${payload}.signature`;
+}
+
+async function writePortalConfigFile(
+  configPath: string,
+  dir: string,
+  auth: { googleClientId?: string; appleClientId?: string },
+): Promise<void> {
+  await writeFile(
+    configPath,
+    [
+      'auth:',
+      '  mode: zklogin',
+      ...(auth.googleClientId ? ['  google:', `    clientId: ${auth.googleClientId}`] : []),
+      ...(auth.appleClientId ? ['  apple:', `    clientId: ${auth.appleClientId}`] : []),
+      '  portal:',
+      '    port: 0',
+      'daemon:',
+      `  dataDir: ${resolve(dir, 'daemon')}`,
+      `  pidFile: ${resolve(dir, 'daemon.pid')}`,
+    ].join('\n'),
+    'utf8',
+  );
 }
 
 async function startMockOidc(): Promise<{ server: FastifyInstance; baseUrl: string }> {
@@ -80,11 +102,12 @@ async function startMockOidc(): Promise<{ server: FastifyInstance; baseUrl: stri
 }
 
 describe('portal server', () => {
-  it('serves the auth flow and updates setup state', async () => {
+  it('serves the auth flow, persists settings, and reloads them on startup', async () => {
     const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
     const { server: mockOidc, baseUrl } = await startMockOidc();
     const defaults = getDefaultConfig();
-    const config: DaemonFullConfig = {
+    const initialConfig: DaemonFullConfig = {
       ...defaults,
       daemon: {
         ...defaults.daemon,
@@ -101,6 +124,9 @@ describe('portal server', () => {
         },
       },
     };
+    await writePortalConfigFile(configPath, dir, { googleClientId: 'portal-client-id' });
+    const config = initialConfig;
+    const logger = { info: vi.fn(), warn: vi.fn() };
     const authProvider = new ZkLoginProvider({
       client: {
         getCurrentEpoch: vi.fn().mockResolvedValue({ epoch: '7' }),
@@ -115,11 +141,12 @@ describe('portal server', () => {
         proverEndpoint: `${baseUrl}/v1`,
       },
     });
-    const portal = new PortalServer({ config, authProvider });
+    const portal = new PortalServer({ config, configPath, authProvider, logger });
     const portalUrl = await portal.start();
 
     const landing = await fetch(portalUrl);
-    expect(await landing.text()).toContain('Welcome to Agentic Mesh');
+    const landingHtml = await landing.text();
+    expect(landingHtml).toContain('Sign in with Google');
 
     const authRedirect = await fetch(`${portalUrl}/auth/google`, { redirect: 'manual' });
     expect(authRedirect.status).toBe(302);
@@ -156,13 +183,112 @@ describe('portal server', () => {
 
     await portal.stop();
     await mockOidc.close();
+
+    const reloaded = loadConfig(configPath);
+    expect(reloaded.spending.limits.find((limit) => limit.interval === 'day' && !limit.scope && !limit.rail)?.amount).toBe(
+      5_000_000_000n,
+    );
+    expect(logger.info).toHaveBeenCalledWith({ configPath }, 'Portal settings persisted');
   });
 
-  it('handles oauth denial and clears the pending PKCE verifier', async () => {
+  it('renders Apple sign-in and handles the form_post callback', async () => {
     const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
     const { server: mockOidc, baseUrl } = await startMockOidc();
     const defaults = getDefaultConfig();
-    const config: DaemonFullConfig = {
+    const initialConfig: DaemonFullConfig = {
+      ...defaults,
+      daemon: {
+        ...defaults.daemon,
+        dataDir: resolve(dir, 'daemon'),
+        pidFile: resolve(dir, 'daemon.pid'),
+      },
+      auth: {
+        mode: 'zklogin',
+        google: {
+          clientId: 'google-client-id',
+        },
+        apple: {
+          clientId: 'apple-client-id',
+        },
+        portal: {
+          port: 0,
+        },
+      },
+    };
+    await writePortalConfigFile(configPath, dir, {
+      googleClientId: 'google-client-id',
+      appleClientId: 'apple-client-id',
+    });
+    const config = initialConfig;
+    const authProvider = new ZkLoginProvider({
+      client: {
+        getCurrentEpoch: vi.fn().mockResolvedValue({ epoch: '7' }),
+      },
+      oauth: {
+        provider: 'google',
+        clientId: config.auth.google?.clientId ?? '',
+        redirectUri: '',
+        authorizationEndpoint: `${baseUrl}/auth`,
+        tokenEndpoint: `${baseUrl}/token`,
+        saltEndpoint: `${baseUrl}/get_salt`,
+        proverEndpoint: `${baseUrl}/v1`,
+      },
+    });
+    const portal = new PortalServer({ config, configPath, authProvider });
+    const portalUrl = await portal.start();
+
+    const landing = await fetch(portalUrl);
+    const landingHtml = await landing.text();
+    expect(landingHtml).toContain('Sign in with Google');
+    expect(landingHtml).toContain('Sign in with Apple');
+
+    const authRedirect = await fetch(`${portalUrl}/auth/apple`, { redirect: 'manual' });
+    expect(authRedirect.status).toBe(302);
+    const providerRedirect = authRedirect.headers.get('location');
+    expect(providerRedirect).toContain(`${baseUrl}/auth`);
+
+    const providerUrl = new URL(providerRedirect ?? '');
+    expect(providerUrl.searchParams.get('redirect_uri')).toBe(`${portalUrl}/auth/apple/callback`);
+    expect(providerUrl.searchParams.get('response_mode')).toBe('form_post');
+    expect(providerUrl.searchParams.get('response_type')).toBe('code id_token');
+    expect(providerUrl.searchParams.get('scope')).toBe('name email');
+
+    const state = providerUrl.searchParams.get('state') ?? '';
+    const nonce = providerUrl.searchParams.get('nonce') ?? '';
+    const callbackPage = await fetch(`${portalUrl}/auth/apple/callback`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        state,
+        id_token: createJwt({
+          iss: 'https://appleid.apple.com',
+          aud: config.auth.apple?.clientId ?? '',
+          sub: 'apple-user',
+          nonce,
+        }),
+        user: JSON.stringify({
+          name: { firstName: 'Ada', lastName: 'Lovelace' },
+          email: 'ada@example.com',
+        }),
+      }),
+    });
+    expect(await callbackPage.text()).toContain('Finish setup');
+    expect(authProvider.getSession()?.provider).toBe('apple');
+    expect(authProvider.getSession()?.iss).toBe('https://appleid.apple.com');
+
+    await portal.stop();
+    await mockOidc.close();
+  });
+
+  it('renders the reauth page and auto-closes after re-authentication', async () => {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+    const { server: mockOidc, baseUrl } = await startMockOidc();
+    const defaults = getDefaultConfig();
+    const initialConfig: DaemonFullConfig = {
       ...defaults,
       daemon: {
         ...defaults.daemon,
@@ -179,6 +305,8 @@ describe('portal server', () => {
         },
       },
     };
+    await writePortalConfigFile(configPath, dir, { googleClientId: 'portal-client-id' });
+    const config = initialConfig;
     const authProvider = new ZkLoginProvider({
       client: {
         getCurrentEpoch: vi.fn().mockResolvedValue({ epoch: '7' }),
@@ -193,7 +321,65 @@ describe('portal server', () => {
         proverEndpoint: `${baseUrl}/v1`,
       },
     });
-    const portal = new PortalServer({ config, authProvider });
+    const portal = new PortalServer({ config, configPath, authProvider });
+    const portalUrl = await portal.start();
+
+    const reauthPage = await fetch(`${portalUrl}/auth/reauth`);
+    expect(await reauthPage.text()).toContain('Your session has expired');
+
+    const authRedirect = await fetch(`${portalUrl}/auth/google?flow=reauth`, { redirect: 'manual' });
+    const providerRedirect = authRedirect.headers.get('location');
+    const callbackRedirect = await fetch(providerRedirect ?? '', { redirect: 'manual' });
+    const callbackUrl = callbackRedirect.headers.get('location');
+
+    const callbackPage = await fetch(callbackUrl ?? '');
+    const callbackHtml = await callbackPage.text();
+    expect(callbackHtml).toContain('Authentication restored');
+    expect(callbackHtml).toContain('window.close()');
+
+    await portal.stop();
+    await mockOidc.close();
+  });
+
+  it('handles oauth denial and clears the pending PKCE verifier', async () => {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+    const { server: mockOidc, baseUrl } = await startMockOidc();
+    const defaults = getDefaultConfig();
+    const initialConfig: DaemonFullConfig = {
+      ...defaults,
+      daemon: {
+        ...defaults.daemon,
+        dataDir: resolve(dir, 'daemon'),
+        pidFile: resolve(dir, 'daemon.pid'),
+      },
+      auth: {
+        mode: 'zklogin',
+        google: {
+          clientId: 'portal-client-id',
+        },
+        portal: {
+          port: 0,
+        },
+      },
+    };
+    await writePortalConfigFile(configPath, dir, { googleClientId: 'portal-client-id' });
+    const config = initialConfig;
+    const authProvider = new ZkLoginProvider({
+      client: {
+        getCurrentEpoch: vi.fn().mockResolvedValue({ epoch: '7' }),
+      },
+      oauth: {
+        provider: 'google',
+        clientId: config.auth.google?.clientId ?? '',
+        redirectUri: '',
+        authorizationEndpoint: `${baseUrl}/auth`,
+        tokenEndpoint: `${baseUrl}/token`,
+        saltEndpoint: `${baseUrl}/get_salt`,
+        proverEndpoint: `${baseUrl}/v1`,
+      },
+    });
+    const portal = new PortalServer({ config, configPath, authProvider });
     const portalUrl = await portal.start();
 
     const authRedirect = await fetch(`${portalUrl}/auth/google`, { redirect: 'manual' });

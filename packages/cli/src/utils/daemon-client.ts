@@ -18,6 +18,12 @@ interface JsonRpcResponse {
   };
 }
 
+interface JsonRpcNotification {
+  jsonrpc: '2.0';
+  method: string;
+  params?: unknown;
+}
+
 export interface DaemonStatus {
   did: string;
   address: string;
@@ -29,6 +35,24 @@ export interface DaemonStatus {
     profile?: string;
     connectedAt: number;
   }>;
+}
+
+export interface DaemonAuthStatus {
+  authMode: string;
+  authenticated: boolean;
+  state: string;
+  address: string | null;
+  expiresAt: number | null;
+  expiresInMs: number | null;
+  refreshAvailable: boolean;
+  lastError: string | null;
+  updatedAt: number;
+}
+
+export interface DaemonReauthResponse {
+  portalUrl: string | null;
+  browserOpened: boolean;
+  status: DaemonAuthStatus;
 }
 
 export class DaemonClient {
@@ -66,6 +90,14 @@ export class DaemonClient {
 
   async getStatus(): Promise<DaemonStatus> {
     return (await this.callTool('mesh_status', {})) as DaemonStatus;
+  }
+
+  async getAuthStatus(): Promise<DaemonAuthStatus> {
+    return (await this.request('auth.status')).result as DaemonAuthStatus;
+  }
+
+  async triggerReauth(): Promise<DaemonReauthResponse> {
+    return (await this.request('auth.reauth')).result as DaemonReauthResponse;
   }
 
   async close(): Promise<void> {
@@ -138,8 +170,8 @@ export class DaemonClient {
       const line = this.buffer.slice(0, newlineIndex).trim();
       this.buffer = this.buffer.slice(newlineIndex + 1);
       if (line) {
-        const message = JSON.parse(line) as JsonRpcResponse;
-        if (message.id !== null) {
+        const message = JSON.parse(line) as JsonRpcResponse | JsonRpcNotification;
+        if ('id' in message && message.id !== null) {
           const pending = this.pending.get(message.id);
           if (pending) {
             this.pending.delete(message.id);
@@ -163,6 +195,24 @@ export async function getDaemonStatus(ipcPath: string): Promise<DaemonStatus> {
   const client = await DaemonClient.connect(ipcPath);
   try {
     return await client.getStatus();
+  } finally {
+    await client.close();
+  }
+}
+
+export async function getDaemonAuthStatus(ipcPath: string): Promise<DaemonAuthStatus> {
+  const client = await DaemonClient.connect(ipcPath);
+  try {
+    return await client.getAuthStatus();
+  } finally {
+    await client.close();
+  }
+}
+
+export async function requestDaemonReauth(ipcPath: string): Promise<DaemonReauthResponse> {
+  const client = await DaemonClient.connect(ipcPath);
+  try {
+    return await client.triggerReauth();
   } finally {
     await client.close();
   }

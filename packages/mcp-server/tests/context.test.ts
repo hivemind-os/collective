@@ -1,6 +1,13 @@
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { ListResourceTemplatesRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  CallToolRequestSchema,
+  ListResourceTemplatesRequestSchema,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
+
+import { SessionState } from '@agentic-mesh/core';
 
 import { registerMeshTools, type MeshToolContext } from '../src/index.js';
 
@@ -67,5 +74,39 @@ describe('MeshToolContext and registration', () => {
     expect(listTools.tools.map((tool: { name: string }) => tool.name)).toContain('mesh_relay_registry');
     expect(listResources.resources).toHaveLength(2);
     expect(listTemplates.resourceTemplates).toHaveLength(2);
+  });
+
+  it('includes auth session state in tool errors', async () => {
+    const handlers = new Map<unknown, (request?: unknown) => Promise<unknown>>();
+    const server = {
+      setRequestHandler: vi.fn((schema: unknown, handler: (request?: unknown) => Promise<unknown>) => {
+        handlers.set(schema, handler);
+      }),
+    } as unknown as Server;
+    const context = createContext();
+    context.suiClient = {
+      ...context.suiClient,
+      getBalance: vi.fn(async () => {
+        throw new Error('wallet unavailable');
+      }),
+    } as MeshToolContext['suiClient'];
+    context.authProvider = {
+      getSessionState: () => SessionState.NEEDS_REAUTH,
+    } as MeshToolContext['authProvider'];
+
+    registerMeshTools(server, context);
+
+    const callTool = await handlers.get(CallToolRequestSchema)?.({
+      params: {
+        name: 'mesh_balance',
+        arguments: {},
+      },
+    });
+    const payload = JSON.parse(callTool.content[0].text) as Record<string, unknown>;
+
+    expect(callTool.isError).toBe(true);
+    expect(payload.error).toBe('wallet unavailable (session state: needs_reauth)');
+    expect(payload.session_state).toBe('needs_reauth');
+    expect(payload.reauth_required).toBe(false);
   });
 });

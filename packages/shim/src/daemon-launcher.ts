@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import net from 'node:net';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
@@ -15,10 +15,12 @@ export interface LauncherOptions {
   startupTimeoutMs: number;
 }
 
+const LEGACY_WINDOWS_PIPE_PATH = '\\\\.\\pipe\\agentic-mesh';
+
 export function getDefaultIpcPath(): string {
   return process.env.MESH_IPC_PATH ??
     (process.platform === 'win32'
-      ? '\\\\.\\pipe\\agentic-mesh'
+      ? `${LEGACY_WINDOWS_PIPE_PATH}-${sanitizePipeSegment(getCurrentUsername())}`
       : resolve(homedir(), '.agentic-mesh', 'mesh.sock'));
 }
 
@@ -84,4 +86,18 @@ export async function ensureDaemonRunning(options: LauncherOptions): Promise<voi
 function commandExists(command: string): boolean {
   const probe = process.platform === 'win32' ? 'where' : 'which';
   return spawnSync(probe, [command], { stdio: 'ignore' }).status === 0;
+}
+
+function getCurrentUsername(): string {
+  try {
+    return userInfo().username;
+  } catch {
+    return process.env.USERNAME ?? process.env.USER ?? 'unknown-user';
+  }
+}
+
+function sanitizePipeSegment(value: string): string {
+  const leaf = value.split(/[\\/]+/).filter(Boolean).at(-1) ?? value;
+  const sanitized = leaf.trim().toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
+  return sanitized || 'unknown-user';
 }

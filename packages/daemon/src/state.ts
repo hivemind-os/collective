@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import pino from 'pino';
+
 import {
   AgentCache,
   type AuthProvider,
   type BlobStore,
   type OAuthConfig,
+  type OAuthProvider,
   type X25519KeyPair,
   createDID,
   deriveEvmKey,
@@ -22,6 +25,7 @@ import {
   RegistryClient,
   SqliteCursorStore,
   SpendingPolicyEngine,
+  SessionExpiredError,
   TaskClient,
   WalrusBlobStore,
   X402Client,
@@ -51,6 +55,8 @@ export interface DaemonIdentityContext {
   identityKeypair: Ed25519Keypair;
   identitySecretKey: Uint8Array;
 }
+
+const logger = pino({ name: '@agentic-mesh/daemon:state' });
 
 export class DaemonState {
   readonly keypair: Signer;
@@ -212,7 +218,7 @@ export async function createDaemonIdentityContext(config: DaemonFullConfig): Pro
   await mkdir(config.daemon.dataDir, { recursive: true });
   await mkdir(config.identity.dataDir, { recursive: true });
 
-  const identity = loadOrCreateKeypair(config.identity.dataDir);
+  const identity = await loadOrCreateKeypair(config.identity.dataDir);
   const identityKeypair = Ed25519Keypair.fromSecretKey(identity.secretKey);
   const did = createDID(identity.publicKey);
 
@@ -230,12 +236,22 @@ export async function createDaemonIdentityContext(config: DaemonFullConfig): Pro
     join(config.daemon.dataDir, 'sessions'),
     deriveSessionEncryptionKey(identity.secretKey),
   );
+  const currentEpoch = Number.parseInt((await suiClient.client.getCurrentEpoch()).epoch, 10);
+  const persistedSession = await sessionStore.loadLatestValid(currentEpoch);
   const authProvider = new ZkLoginProvider({
     client: suiClient.client,
-    oauth: buildOAuthConfig(config),
+    oauth: buildOAuthConfig(config, '', getStoredOAuthProvider(persistedSession)),
     sessionStore,
   });
-  await authProvider.restoreSession();
+  try {
+    await authProvider.restoreSession();
+  } catch (error) {
+    if (!(error instanceof SessionExpiredError)) {
+      throw error;
+    }
+
+    logger.warn({ err: error, sessionState: authProvider.getSessionState() }, 'Stored zkLogin session requires re-authentication.');
+  }
 
   return {
     authProvider,
@@ -245,24 +261,62 @@ export async function createDaemonIdentityContext(config: DaemonFullConfig): Pro
   };
 }
 
-export function buildOAuthConfig(config: DaemonFullConfig, redirectUri = ''): OAuthConfig {
-  if (config.auth.google?.clientId) {
+export function buildOAuthConfig(
+  config: DaemonFullConfig,
+  redirectUri = '',
+  preferredProvider?: OAuthProvider,
+): OAuthConfig {
+  const provider = resolveOAuthProvider(config, preferredProvider);
+
+  if (provider === 'google') {
     return {
-      provider: 'google',
-      clientId: config.auth.google.clientId,
+      provider,
+      clientId: config.auth.google?.clientId ?? '',
       redirectUri,
     };
+  }
+
+  return {
+    provider,
+    clientId: config.auth.apple?.clientId ?? '',
+    redirectUri,
+  };
+}
+
+function resolveOAuthProvider(config: DaemonFullConfig, preferredProvider?: OAuthProvider): OAuthProvider {
+  if (preferredProvider === 'google' && config.auth.google?.clientId) {
+    return 'google';
+  }
+
+  if (preferredProvider === 'apple' && config.auth.apple?.clientId) {
+    return 'apple';
+  }
+
+  if (config.auth.google?.clientId) {
+    return 'google';
   }
 
   if (config.auth.apple?.clientId) {
-    return {
-      provider: 'apple',
-      clientId: config.auth.apple.clientId,
-      redirectUri,
-    };
+    return 'apple';
   }
 
   throw new Error('OAuth provider configuration is incomplete.');
+}
+
+function getStoredOAuthProvider(session: { provider?: OAuthProvider; iss: string } | null): OAuthProvider | undefined {
+  if (!session) {
+    return undefined;
+  }
+
+  if (session.provider === 'google' || session.iss === 'https://accounts.google.com') {
+    return 'google';
+  }
+
+  if (session.provider === 'apple' || session.iss === 'https://appleid.apple.com') {
+    return 'apple';
+  }
+
+  return undefined;
 }
 
 function createPaymentContext(

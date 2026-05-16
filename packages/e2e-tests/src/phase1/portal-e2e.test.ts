@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { ZkLoginProvider, ZkLoginSessionStore } from '@agentic-mesh/core';
 import type { SuiClient } from '@mysten/sui/client';
-import { type DaemonFullConfig, getDefaultConfig } from '@agentic-mesh/daemon/config';
+import { type DaemonFullConfig, getDefaultConfig, saveConfig } from '@agentic-mesh/daemon/config';
 import { PortalServer } from '@agentic-mesh/daemon/portal/server';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
@@ -151,6 +151,9 @@ async function startPortalHarness(params: {
     },
   };
 
+  const configPath = join(baseDir, 'agentic-mesh.config.yaml');
+  await saveConfig(config, configPath);
+
   const authProvider = new ZkLoginProvider({
     client: {
       getCurrentEpoch: async () => ({ epoch: '7' } as Awaited<ReturnType<SuiClient['getCurrentEpoch']>>),
@@ -164,6 +167,7 @@ async function startPortalHarness(params: {
   });
   const portal = new PortalServer({
     config,
+    configPath,
     authProvider,
     onAuthenticated: params.onAuthenticated,
     onSettingsSaved: params.onSettingsSaved,

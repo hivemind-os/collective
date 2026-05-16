@@ -40,7 +40,7 @@ export function parseSuiToMist(input: string): bigint {
 }
 
 async function showBalance(): Promise<number> {
-  const { config, address } = loadWalletContext();
+  const { config, address } = await loadWalletContext();
   const suiClient = new MeshSuiClient(config.network);
   const balanceMist = await suiClient.getBalance(address);
   success(`Wallet balance for ${address}`);
@@ -50,7 +50,7 @@ async function showBalance(): Promise<number> {
 }
 
 async function fundWallet(): Promise<number> {
-  const { config, address, did } = loadWalletContext();
+  const { config, address, did } = await loadWalletContext();
   info(`Requesting faucet funds for ${address}`);
   const faucetUrls = [config.network.faucetUrl, `${config.network.faucetUrl.replace(/\/$/, '')}/gas`].filter(Boolean);
 
@@ -87,14 +87,14 @@ async function fundWallet(): Promise<number> {
 }
 
 async function showAddress(): Promise<number> {
-  const { address } = loadWalletContext();
+  const { address } = await loadWalletContext();
   console.log(address);
   return 0;
 }
 
-function loadWalletContext(): { config: ReturnType<typeof loadMeshConfig>; did: string; address: string } {
+async function loadWalletContext(): Promise<{ config: ReturnType<typeof loadMeshConfig>; did: string; address: string }> {
   const config = loadMeshConfig();
-  const identity = loadOrCreateKeypair(config.identity.dataDir);
+  const identity = await loadOrCreateKeypair(config.identity.dataDir);
   const did = createDID(identity.publicKey);
   const keypair = Ed25519Keypair.fromSecretKey(identity.secretKey);
   return {

@@ -162,7 +162,18 @@ async function startServer(
   };
 
   const state = await DaemonState.create(config);
-  const server = new IpcServer(ipcPath, state);
+  const server = new IpcServer(ipcPath, state, {
+    validateClient: async () => ({
+      allowed: true,
+      source: process.platform === 'win32' ? 'windows-pid' : 'unix-socket',
+    }),
+    verifyPipeSecurity: async () => ({
+      transport: process.platform === 'win32' ? 'windows-pipe' : 'unix-socket',
+      userScoped: true,
+      aclVerified: process.platform !== 'win32',
+      note: 'test override',
+    }),
+  });
   await server.start();
   return { server, state, ipcPath };
 }

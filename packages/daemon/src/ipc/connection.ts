@@ -4,9 +4,11 @@ import net from 'node:net';
 import pino from 'pino';
 
 import { logAuditEvent } from '../audit.js';
+import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import { McpSession, type McpSessionStatus } from '../mcp/session.js';
 import type { DaemonState } from '../state.js';
 import type { ConnectedAppMetadata } from './connection-registry.js';
+import type { ClientValidationResult } from './pipe-security.js';
 import {
   createErrorResponse,
   isJsonRpcNotification,
@@ -20,6 +22,9 @@ const logger = pino({ name: '@agentic-mesh/daemon:connection' });
 
 interface ConnectionOptions {
   getStatus: () => McpSessionStatus;
+  getAuthStatus: () => DaemonAuthStatus;
+  triggerReauth: () => Promise<{ portalUrl: string | null; browserOpened: boolean; status: DaemonAuthStatus }>;
+  validateClient: (metadata: ConnectedAppMetadata) => Promise<ClientValidationResult>;
   onHello: (metadata: ConnectedAppMetadata) => void;
   onClose: () => void;
 }
@@ -100,7 +105,7 @@ export class Connection {
         return;
       }
 
-      this.handleShimHello(message.id, message.params);
+      await this.handleShimHello(message.id, message.params);
       return;
     }
 
@@ -116,10 +121,20 @@ export class Connection {
       return;
     }
 
+    if (isJsonRpcRequest(message) && message.method === 'auth.status') {
+      this.handleAuthStatus(message.id);
+      return;
+    }
+
+    if (isJsonRpcRequest(message) && message.method === 'auth.reauth') {
+      await this.handleAuthReauth(message.id);
+      return;
+    }
+
     await this.handleMcpMessage(message);
   }
 
-  private handleShimHello(id: string | number, params: unknown): void {
+  private async handleShimHello(id: string | number, params: unknown): Promise<void> {
     if (!isRecord(params)) {
       this.sendMessage(createErrorResponse(id, -32602, 'shim_hello requires app metadata'));
       return;
@@ -127,14 +142,36 @@ export class Connection {
 
     const appPid = readPid(params.pid ?? params.appPid);
     const appName = readString(params.appName) ?? readString(params.clientName) ?? inferAppName(appPid);
+    const profile = readString(params.profile);
     if (!appName || appPid === undefined) {
       this.sendMessage(createErrorResponse(id, -32602, 'shim_hello requires appName and pid'));
       return;
     }
 
+    const validation = await this.options.validateClient({
+      appName,
+      appPid,
+      profile,
+    });
+    if (!validation.allowed) {
+      logger.warn(
+        {
+          connectionId: this.id,
+          appName,
+          appPid,
+          expectedUser: validation.expectedUser,
+          actualUser: validation.actualUser,
+          reason: validation.reason,
+        },
+        'IPC client validation failed.',
+      );
+      this.rejectAndClose(id, validation.reason ?? 'IPC client validation failed.');
+      return;
+    }
+
     this.appName = appName;
     this.appPid = appPid;
-    this.profile = readString(params.profile);
+    this.profile = profile;
     this.helloReceived = true;
     this.options.onHello({
       appName: this.appName,
@@ -176,6 +213,23 @@ export class Connection {
     });
   }
 
+  private handleAuthStatus(id: string | number): void {
+    this.sendMessage({
+      jsonrpc: '2.0',
+      id,
+      result: this.options.getAuthStatus(),
+    });
+  }
+
+  private async handleAuthReauth(id: string | number): Promise<void> {
+    const result = await this.options.triggerReauth();
+    this.sendMessage({
+      jsonrpc: '2.0',
+      id,
+      result,
+    });
+  }
+
   private async handleMcpMessage(message: JsonRpcMessage): Promise<void> {
     await this.sessionReady;
 
@@ -203,6 +257,14 @@ export class Connection {
     }
   }
 
+  sendNotification(method: string, params?: unknown): void {
+    this.sendMessage({
+      jsonrpc: '2.0',
+      method,
+      params,
+    });
+  }
+
   close(): void {
     if (this.closed) {
       return;
@@ -221,9 +283,18 @@ export class Connection {
     void this.session.close().catch((error) => {
       logger.debug({ err: error, connectionId: this.id }, 'Failed to close MCP session cleanly.');
     });
-    if (!this.socket.destroyed) {
+    if (!this.socket.destroyed && !this.socket.writableEnded) {
       this.socket.destroy();
     }
+  }
+
+  private rejectAndClose(id: string | number, message: string): void {
+    if (this.closed || this.socket.destroyed) {
+      return;
+    }
+
+    this.socket.end(`${serializeResponse(createErrorResponse(id, -32001, message))}\n`);
+    this.close();
   }
 
   private sendMessage(message: JsonRpcMessage): void {

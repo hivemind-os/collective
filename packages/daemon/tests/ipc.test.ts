@@ -3,11 +3,11 @@ import { mkdir, rm } from 'node:fs/promises';
 import net from 'node:net';
 import { resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { DaemonFullConfig } from '../src/config.js';
 import { getDefaultConfig } from '../src/config.js';
-import { IpcServer } from '../src/ipc/server.js';
+import { IpcServer, type IpcServerOptions } from '../src/ipc/server.js';
 import { DaemonState } from '../src/state.js';
 
 const createdPaths: string[] = [];
@@ -85,7 +85,7 @@ function createIpcPath(dir: string): string {
     : resolve(dir, 'agentic-mesh.sock');
 }
 
-async function startServer(): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {
+async function startServer(options: IpcServerOptions = {}): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {
   const dir = await createTestDir();
   const ipcPath = createIpcPath(dir);
   const defaults = getDefaultConfig();
@@ -108,7 +108,19 @@ async function startServer(): Promise<{ server: IpcServer; state: DaemonState; i
   };
 
   const state = await DaemonState.create(config);
-  const server = new IpcServer(ipcPath, state);
+  const server = new IpcServer(ipcPath, state, {
+    validateClient: async () => ({
+      allowed: true,
+      source: process.platform === 'win32' ? 'windows-pid' : 'unix-socket',
+    }),
+    verifyPipeSecurity: async () => ({
+      transport: process.platform === 'win32' ? 'windows-pipe' : 'unix-socket',
+      userScoped: true,
+      aclVerified: process.platform !== 'win32',
+      note: 'test override',
+    }),
+    ...options,
+  });
   await server.start();
   return { server, state, ipcPath };
 }
@@ -274,6 +286,91 @@ describe('ipc server', () => {
       appName: 'metadata-app',
       pid: 501,
       profile: 'default',
+    });
+
+    await server.stop();
+    await state.shutdown();
+  });
+
+  it('returns auth status over IPC', async () => {
+    const getAuthStatus = vi.fn(() => ({
+      authMode: 'zklogin' as const,
+      authenticated: false,
+      state: 'reauth_required' as const,
+      address: '0x123',
+      expiresAt: null,
+      expiresInMs: null,
+      refreshAvailable: true,
+      lastError: 'Authentication expired. Please re-authenticate via the daemon portal.',
+      updatedAt: Date.now(),
+    }));
+    const { server, state, ipcPath } = await startServer({ getAuthStatus });
+    const client = await connectClient(ipcPath);
+    await initializeClient(client, 'auth-status-app', 601);
+
+    const response = await client.request({
+      jsonrpc: '2.0',
+      id: 'auth-status',
+      method: 'auth.status',
+    });
+
+    expect(response.result).toMatchObject({
+      authMode: 'zklogin',
+      state: 'reauth_required',
+      refreshAvailable: true,
+    });
+
+    await server.stop();
+    await state.shutdown();
+  });
+
+  it('triggers reauth and notifies connected clients on auth changes', async () => {
+    const triggerReauth = vi.fn(async () => ({
+      portalUrl: 'http://127.0.0.1:19876/auth/reauth',
+      browserOpened: false,
+      status: {
+        authMode: 'zklogin' as const,
+        authenticated: false,
+        state: 'reauth_required' as const,
+        address: '0x123',
+        expiresAt: null,
+        expiresInMs: null,
+        refreshAvailable: true,
+        lastError: 'Authentication expired. Please re-authenticate via the daemon portal.',
+        updatedAt: Date.now(),
+      },
+    }));
+    const { server, state, ipcPath } = await startServer({ triggerReauth });
+    const client = await connectClient(ipcPath);
+    await initializeClient(client, 'auth-reauth-app', 602);
+
+    const response = await client.request({
+      jsonrpc: '2.0',
+      id: 'auth-reauth',
+      method: 'auth.reauth',
+    });
+
+    expect(triggerReauth).toHaveBeenCalledOnce();
+    expect(response.result.portalUrl).toContain('/auth/reauth');
+
+    server.notifyAuthStatusChanged({
+      authMode: 'zklogin',
+      authenticated: false,
+      state: 'expired',
+      address: '0x123',
+      expiresAt: Date.now() - 1_000,
+      expiresInMs: -1_000,
+      refreshAvailable: true,
+      lastError: 'Authentication expired. Please re-authenticate via the daemon portal.',
+      updatedAt: Date.now(),
+    });
+
+    const notification = await client.nextMessage();
+    expect(notification).toMatchObject({
+      method: 'auth.status_changed',
+      params: {
+        state: 'expired',
+      },
     });
 
     await server.stop();

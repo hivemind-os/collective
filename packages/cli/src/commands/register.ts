@@ -20,7 +20,7 @@ export async function handleRegister(args: string[]): Promise<number> {
   const config = loadMeshConfig();
   assertNetworkConfigured(config.network);
 
-  const identity = loadOrCreateKeypair(config.identity.dataDir);
+  const identity = await loadOrCreateKeypair(config.identity.dataDir);
   const did = createDID(identity.publicKey);
   const keypair = Ed25519Keypair.fromSecretKey(identity.secretKey);
   const encryptionKeyPair = ed25519ToX25519(identity.secretKey);

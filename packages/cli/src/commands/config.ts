@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
+import { getDefaultIpcPath as getDaemonDefaultIpcPath } from '@agentic-mesh/daemon/config';
 import { PaymentRail, type NetworkConfig, type SpendingPolicy } from '@agentic-mesh/types';
 import yaml from 'js-yaml';
 
@@ -88,7 +89,7 @@ export function buildDefaultConfig(dataDir = getMeshDataDir()): MeshCliConfig {
       limits: [{ amount: 1_000_000_000n, interval: 'day', currency: 'MIST' }],
     },
     daemon: {
-      ipcPath: process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : join(resolvedDataDir, 'mesh.sock'),
+      ipcPath: getDaemonDefaultIpcPath(resolvedDataDir),
       dataDir: resolvedDataDir,
       pidFile: join(resolvedDataDir, 'daemon.pid'),
       logLevel: normalizeLogLevel(process.env.MESH_LOG_LEVEL, 'info'),
@@ -112,7 +113,8 @@ export function loadMeshConfig(configPath?: string): MeshCliConfig {
     process.env.MESH_DATA_DIR ?? readString(getNestedValue(parsed, 'daemon', 'dataDir')) ?? dirname(resolvedConfigPath),
   );
   const defaults = buildDefaultConfig(baseDataDir);
-  const config = applyEnvironmentOverrides(mergeConfig(defaults, parsed));
+  const hasExplicitIpcPath = readString(getNestedValue(parsed, 'daemon', 'ipcPath')) !== undefined;
+  const config = applyEnvironmentOverrides(mergeConfig(defaults, parsed), { hasExplicitIpcPath });
   validateConfig(config);
 
   if (!existsSync(resolvedConfigPath)) {
@@ -206,7 +208,10 @@ function mergeConfig(defaults: MeshCliConfig, parsed: LooseRecord): MeshCliConfi
   };
 }
 
-function applyEnvironmentOverrides(config: MeshCliConfig): MeshCliConfig {
+function applyEnvironmentOverrides(
+  config: MeshCliConfig,
+  options: { hasExplicitIpcPath: boolean } = { hasExplicitIpcPath: false },
+): MeshCliConfig {
   const envDataDir = process.env.MESH_DATA_DIR ? normalizePath(process.env.MESH_DATA_DIR) : undefined;
   const withDataDir = envDataDir
     ? {
@@ -216,7 +221,7 @@ function applyEnvironmentOverrides(config: MeshCliConfig): MeshCliConfig {
           ...config.daemon,
           dataDir: envDataDir,
           pidFile: join(envDataDir, 'daemon.pid'),
-          ipcPath: process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : join(envDataDir, 'mesh.sock'),
+          ipcPath: options.hasExplicitIpcPath ? config.daemon.ipcPath : getDaemonDefaultIpcPath(envDataDir),
           logFile: join(envDataDir, 'daemon.log'),
         },
         blobstore: {

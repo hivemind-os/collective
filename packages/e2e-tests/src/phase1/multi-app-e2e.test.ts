@@ -121,9 +121,11 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
     const { server, state, ipcPath } = await startServer();
     const first = await connectClient(ipcPath);
     const second = await connectClient(ipcPath);
+    const firstPid = getClientPid(101);
+    const secondPid = getClientPid(202);
 
-    const firstHello = await sendHello(first, 'claude-desktop', 101);
-    const secondHello = await sendHello(second, 'vscode', 202);
+    const firstHello = await sendHello(first, 'claude-desktop', firstPid);
+    const secondHello = await sendHello(second, 'vscode', secondPid);
 
     expect(firstHello.result.connectionId).not.toBe(secondHello.result.connectionId);
     expect(server.getConnectedApps()).toHaveLength(2);
@@ -136,9 +138,11 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
     const { server, state, ipcPath } = await startServer();
     const first = await connectClient(ipcPath);
     const second = await connectClient(ipcPath);
+    const firstPid = getClientPid(301);
+    const secondPid = getClientPid(302);
 
-    await initializeClient(first, 'claude-desktop', 301, 'default');
-    await initializeClient(second, 'vscode', 302, 'workspace');
+    await initializeClient(first, 'claude-desktop', firstPid, 'default');
+    await initializeClient(second, 'vscode', secondPid, 'workspace');
 
     const [firstStatus, secondStatus] = await Promise.all([
       first.request<MeshStatusToolResponse>({
@@ -159,8 +163,8 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
     expect(secondStatus.id).toBe('second-status');
     expect(firstStatus.result.structuredContent.connectedApps).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ appName: 'claude-desktop', pid: 301, profile: 'default' }),
-        expect.objectContaining({ appName: 'vscode', pid: 302, profile: 'workspace' }),
+        expect.objectContaining({ appName: 'claude-desktop', pid: firstPid, profile: 'default' }),
+        expect.objectContaining({ appName: 'vscode', pid: secondPid, profile: 'workspace' }),
       ]),
     );
     expect(secondStatus.result.structuredContent.connectedApps).toEqual(firstStatus.result.structuredContent.connectedApps);
@@ -173,9 +177,11 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
     const { server, state, ipcPath } = await startServer();
     const first = await connectClient(ipcPath);
     const second = await connectClient(ipcPath);
+    const firstPid = getClientPid(401);
+    const secondPid = getClientPid(402);
 
-    await initializeClient(first, 'claude-desktop', 401);
-    await initializeClient(second, 'vscode', 402);
+    await initializeClient(first, 'claude-desktop', firstPid);
+    await initializeClient(second, 'vscode', secondPid);
     await closeSocket(first.socket);
 
     const response = await second.request<MeshStatusToolResponse>({
@@ -185,9 +191,9 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
       params: { name: 'mesh_status', arguments: {} },
     });
 
-    expect(server.getConnectedApps()).toMatchObject([{ appName: 'vscode', appPid: 402 }]);
+    expect(server.getConnectedApps()).toMatchObject([{ appName: 'vscode', appPid: secondPid }]);
     expect(response.result.structuredContent.connectedApps).toHaveLength(1);
-    expect(response.result.structuredContent.connectedApps[0]).toMatchObject({ appName: 'vscode', pid: 402 });
+    expect(response.result.structuredContent.connectedApps[0]).toMatchObject({ appName: 'vscode', pid: secondPid });
 
     await server.stop();
     await state.shutdown();
@@ -197,13 +203,15 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
     const { server, state, ipcPath } = await startServer();
     const first = await connectClient(ipcPath);
     const second = await connectClient(ipcPath);
+    const firstPid = getClientPid(501);
+    const secondPid = getClientPid(502);
 
-    await sendHello(first, 'claude-desktop', 501, 'default');
-    await sendHello(second, 'vscode', 502, 'workspace');
+    await sendHello(first, 'claude-desktop', firstPid, 'default');
+    await sendHello(second, 'vscode', secondPid, 'workspace');
 
     expect(server.getConnectedApps()).toMatchObject([
-      { appName: 'claude-desktop', appPid: 501, profile: 'default' },
-      { appName: 'vscode', appPid: 502, profile: 'workspace' },
+      { appName: 'claude-desktop', appPid: firstPid, profile: 'default' },
+      { appName: 'vscode', appPid: secondPid, profile: 'workspace' },
     ]);
 
     await server.stop();
@@ -214,9 +222,11 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
     const { server, state, ipcPath } = await startServer();
     const first = await connectClient(ipcPath);
     const second = await connectClient(ipcPath);
+    const firstPid = getClientPid(601);
+    const secondPid = getClientPid(602);
 
-    await sendHello(first, 'claude-desktop', 601, 'default');
-    await sendHello(second, 'vscode', 602);
+    await sendHello(first, 'claude-desktop', firstPid, 'default');
+    await sendHello(second, 'vscode', secondPid);
 
     const response = await second.request<DaemonStatusResponse>({
       jsonrpc: '2.0',
@@ -322,6 +332,10 @@ async function initializeClient(client: TestClient, appName: string, pid: number
     jsonrpc: '2.0',
     method: 'notifications/initialized',
   });
+}
+
+function getClientPid(fallbackPid: number): number {
+  return process.platform === 'win32' ? process.pid : fallbackPid;
 }
 
 async function closeSocket(socket: net.Socket): Promise<void> {

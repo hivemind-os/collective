@@ -2,9 +2,16 @@ import { createCipheriv, createDecipheriv, createHash, hkdfSync, randomBytes } f
 import { chmod, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import pino from 'pino';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
-import type { StoredZkLoginSession } from './types.js';
+import { SessionExpiredError, SessionRefreshError } from './errors.js';
+import {
+  SessionState,
+  type SessionRefreshPolicy,
+  type SessionStateChangeCallback,
+} from './session-state.js';
+import type { OAuthProvider, StoredZkLoginSession } from './types.js';
 
 interface SessionEnvelopeV1 {
   version: 1;
@@ -33,35 +40,86 @@ interface SessionEnvelopeV2 {
 
 type SessionEnvelope = SessionEnvelopeV1 | SessionEnvelopeV2;
 
-interface SerializedSession extends Omit<StoredZkLoginSession, 'ephemeralKeypair'> {
+type SessionStoreLogger = Pick<ReturnType<typeof pino>, 'info' | 'warn' | 'error'>;
+
+type SerializedSession = Omit<StoredZkLoginSession, 'ephemeralKeypair' | 'provider'> & {
+  provider?: OAuthProvider;
   ephemeralSecretKey: string;
+};
+
+export interface ZkLoginSessionStoreOptions {
+  refresh?: SessionRefreshPolicy;
+  logger?: SessionStoreLogger;
+  onSessionStateChange?: SessionStateChangeCallback;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const SESSION_ENCRYPTION_INFO = Buffer.from('agentic-mesh:zklogin-session-store:v2', 'utf8');
 const SESSION_ENCRYPTION_SALT = Buffer.from('aes-256-gcm', 'utf8');
+const DEFAULT_REFRESH_POLICY: Required<SessionRefreshPolicy> = {
+  maxAttempts: 3,
+  backoffMs: [1_000, 2_000, 4_000],
+  maxConsecutiveFailures: 3,
+};
+const logger = pino({ name: '@agentic-mesh/core:auth:session-store' });
 
 export class ZkLoginSessionStore {
   private readonly encryptionKey: Buffer;
   private readonly legacyEncryptionKey: Buffer;
+  private readonly refreshPolicy: Required<SessionRefreshPolicy>;
+  private readonly logger: SessionStoreLogger;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly stateChangeListeners = new Set<SessionStateChangeCallback>();
+
+  private sessionState = SessionState.EXPIRED;
+  private refreshFailureCount = 0;
 
   constructor(
     private readonly baseDir: string,
     encryptionKey: Uint8Array,
+    options: ZkLoginSessionStoreOptions = {},
   ) {
     const keyMaterial = Buffer.from(encryptionKey);
     this.legacyEncryptionKey = Buffer.from(createHash('sha256').update(keyMaterial).digest());
     this.encryptionKey = Buffer.from(hkdfSync('sha256', keyMaterial, SESSION_ENCRYPTION_SALT, SESSION_ENCRYPTION_INFO, 32));
+    this.refreshPolicy = {
+      maxAttempts: options.refresh?.maxAttempts ?? DEFAULT_REFRESH_POLICY.maxAttempts,
+      backoffMs: [...(options.refresh?.backoffMs ?? DEFAULT_REFRESH_POLICY.backoffMs)],
+      maxConsecutiveFailures: options.refresh?.maxConsecutiveFailures ?? DEFAULT_REFRESH_POLICY.maxConsecutiveFailures,
+    };
+    this.logger = options.logger ?? logger;
+    this.sleep = options.sleep ?? wait;
+    if (options.onSessionStateChange) {
+      this.stateChangeListeners.add(options.onSessionStateChange);
+    }
+  }
+
+  getSessionState(): SessionState {
+    return this.sessionState;
+  }
+
+  getRefreshFailureCount(): number {
+    return this.refreshFailureCount;
+  }
+
+  onSessionStateChange(callback: SessionStateChangeCallback): () => void {
+    this.stateChangeListeners.add(callback);
+    return () => {
+      this.stateChangeListeners.delete(callback);
+    };
   }
 
   async save(session: StoredZkLoginSession): Promise<void> {
     await this.ensureBaseDir();
 
-    const payload = this.serializeSession(session);
+    const normalizedSession = this.normalizeSession(session);
+    const payload = this.serializeSession(normalizedSession);
     const envelope = this.encrypt(payload);
-    const path = join(this.baseDir, getSessionFilename(session));
+    const path = join(this.baseDir, getSessionFilename(normalizedSession));
 
     await writeFile(path, JSON.stringify(envelope, null, 2), { encoding: 'utf8', mode: 0o600 });
     await chmod(path, 0o600);
+    this.updateSessionState(this.resolveSessionState(normalizedSession), normalizedSession, 'session_saved');
   }
 
   async loadLatest(): Promise<StoredZkLoginSession | null> {
@@ -97,9 +155,20 @@ export class ZkLoginSessionStore {
   }
 
   async loadLatestValid(currentEpoch: number): Promise<StoredZkLoginSession | null> {
-    const sessions = await this.loadAll();
-    sessions.sort((left, right) => right.updatedAt - left.updatedAt);
-    return sessions.find((session) => !this.isExpired(session, currentEpoch)) ?? null;
+    const latest = await this.loadLatest();
+    if (!latest) {
+      this.updateSessionState(SessionState.EXPIRED, null, 'session_missing');
+      return null;
+    }
+
+    const sessionState = this.resolveSessionState(latest, currentEpoch);
+    if (sessionState !== SessionState.VALID) {
+      this.updateSessionState(sessionState, sessionState === SessionState.EXPIRED ? null : latest, 'session_invalid');
+      return null;
+    }
+
+    this.updateSessionState(SessionState.VALID, latest, 'session_loaded');
+    return latest;
   }
 
   async hasValidSession(currentEpoch: number): Promise<boolean> {
@@ -121,23 +190,148 @@ export class ZkLoginSessionStore {
   async refreshIfNeeded(
     currentEpoch: number,
     refresher: (session: StoredZkLoginSession) => Promise<StoredZkLoginSession | null>,
+    options: { force?: boolean } = {},
   ): Promise<StoredZkLoginSession | null> {
-    const session = await this.loadLatestValid(currentEpoch);
+    const session = await this.loadLatest();
     if (!session) {
+      this.updateSessionState(SessionState.EXPIRED, null, 'session_missing');
       return null;
     }
 
-    if (!this.isNearExpiry(session, currentEpoch) || !session.refreshToken) {
+    const currentState = this.resolveSessionState(session, currentEpoch);
+    if (currentState === SessionState.EXPIRED) {
+      this.updateSessionState(SessionState.EXPIRED, null, 'session_expired');
+      return null;
+    }
+
+    if (currentState === SessionState.NEEDS_REAUTH) {
+      this.updateSessionState(SessionState.NEEDS_REAUTH, session, 'session_needs_reauth');
+      throw new SessionExpiredError('Stored zkLogin session requires re-authentication.', {
+        consecutiveFailures: session.refreshFailureCount ?? 0,
+        session,
+        sessionState: SessionState.NEEDS_REAUTH,
+      });
+    }
+
+    this.updateSessionState(SessionState.VALID, session, 'session_available');
+    if ((!options.force && !this.isNearExpiry(session, currentEpoch)) || !session.refreshToken) {
       return session;
     }
 
-    const refreshed = await refresher(session);
-    if (refreshed) {
-      await this.save(refreshed);
-      return refreshed;
+    this.updateSessionState(SessionState.REFRESHING, session, 'refresh_started');
+
+    let lastError: SessionRefreshError | null = null;
+    for (let attempt = 1; attempt <= this.refreshPolicy.maxAttempts; attempt += 1) {
+      this.logger.info(
+        {
+          address: session.address,
+          attempt,
+          currentEpoch,
+          maxAttempts: this.refreshPolicy.maxAttempts,
+          maxEpoch: session.maxEpoch,
+          refreshFailureCount: session.refreshFailureCount ?? 0,
+        },
+        'Refreshing zkLogin session.',
+      );
+
+      try {
+        const refreshed = await refresher(session);
+        if (!refreshed) {
+          throw new Error('zkLogin refresher returned no session.');
+        }
+
+        const normalizedSession = this.normalizeSession({
+          ...refreshed,
+          refreshFailureCount: 0,
+          sessionState: SessionState.VALID,
+        });
+        await this.save(normalizedSession);
+        this.logger.info(
+          {
+            address: normalizedSession.address,
+            currentEpoch,
+            maxEpoch: normalizedSession.maxEpoch,
+          },
+          'Refreshed zkLogin session.',
+        );
+        return normalizedSession;
+      } catch (error) {
+        const consecutiveFailures = (session.refreshFailureCount ?? 0) + attempt;
+        lastError = new SessionRefreshError('Failed to refresh zkLogin session.', {
+          attempts: attempt,
+          maxAttempts: this.refreshPolicy.maxAttempts,
+          retryDelaysMs: this.refreshPolicy.backoffMs,
+          consecutiveFailures,
+          sessionState: SessionState.REFRESHING,
+          session,
+          cause: error,
+        });
+
+        this.logger.warn(
+          {
+            address: session.address,
+            attempt,
+            currentEpoch,
+            err: error,
+            maxAttempts: this.refreshPolicy.maxAttempts,
+            maxEpoch: session.maxEpoch,
+            consecutiveFailures,
+          },
+          'zkLogin session refresh attempt failed.',
+        );
+
+        if (attempt < this.refreshPolicy.maxAttempts) {
+          await this.sleep(this.refreshPolicy.backoffMs[Math.min(attempt - 1, this.refreshPolicy.backoffMs.length - 1)]);
+        }
+      }
     }
 
-    return session;
+    const consecutiveFailures = (session.refreshFailureCount ?? 0) + this.refreshPolicy.maxAttempts;
+    const nextState =
+      consecutiveFailures >= this.refreshPolicy.maxConsecutiveFailures ? SessionState.NEEDS_REAUTH : SessionState.VALID;
+    const failedSession = this.normalizeSession({
+      ...session,
+      refreshFailureCount: consecutiveFailures,
+      sessionState: nextState,
+      updatedAt: Date.now(),
+    });
+    await this.save(failedSession);
+
+    if (nextState === SessionState.NEEDS_REAUTH) {
+      this.logger.error(
+        {
+          address: failedSession.address,
+          currentEpoch,
+          maxConsecutiveFailures: this.refreshPolicy.maxConsecutiveFailures,
+          maxEpoch: failedSession.maxEpoch,
+          refreshFailureCount: consecutiveFailures,
+        },
+        'zkLogin session refresh failed and re-authentication is required.',
+      );
+      throw new SessionExpiredError('zkLogin session refresh failed. Re-authentication is required.', {
+        attempts: this.refreshPolicy.maxAttempts,
+        maxAttempts: this.refreshPolicy.maxAttempts,
+        retryDelaysMs: this.refreshPolicy.backoffMs,
+        consecutiveFailures,
+        session: failedSession,
+        sessionState: nextState,
+        cause: lastError,
+      });
+    }
+
+    throw new SessionRefreshError('zkLogin session refresh failed after retries.', {
+      attempts: this.refreshPolicy.maxAttempts,
+      maxAttempts: this.refreshPolicy.maxAttempts,
+      retryDelaysMs: this.refreshPolicy.backoffMs,
+      consecutiveFailures,
+      sessionState: nextState,
+      session: failedSession,
+      cause: lastError,
+    });
+  }
+
+  async delete(session: Pick<StoredZkLoginSession, 'iss' | 'sub'>): Promise<void> {
+    await rm(join(this.baseDir, getSessionFilename(session)), { force: true });
   }
 
   async deleteExpired(currentEpoch: number): Promise<void> {
@@ -167,17 +361,60 @@ export class ZkLoginSessionStore {
   }
 
   private serializeSession(session: StoredZkLoginSession): SerializedSession {
+    const normalizedSession = this.normalizeSession(session);
     return {
-      ...session,
-      ephemeralSecretKey: session.ephemeralKeypair.getSecretKey(),
+      ...normalizedSession,
+      ephemeralSecretKey: normalizedSession.ephemeralKeypair.getSecretKey(),
     };
   }
 
   private deserializeSession(session: SerializedSession): StoredZkLoginSession {
+    return this.normalizeSession({
+      ...session,
+      provider: session.provider ?? inferOAuthProvider(session.iss),
+      ephemeralKeypair: Ed25519Keypair.fromSecretKey(session.ephemeralSecretKey),
+    });
+  }
+
+  private normalizeSession(session: StoredZkLoginSession): StoredZkLoginSession {
     return {
       ...session,
-      ephemeralKeypair: Ed25519Keypair.fromSecretKey(session.ephemeralSecretKey),
+      refreshFailureCount: session.refreshFailureCount ?? 0,
+      sessionState: normalizePersistedSessionState(session.sessionState),
     };
+  }
+
+  private resolveSessionState(session: StoredZkLoginSession, currentEpoch?: number): SessionState {
+    if (typeof currentEpoch === 'number' && this.isExpired(session, currentEpoch)) {
+      return SessionState.EXPIRED;
+    }
+
+    return session.sessionState === SessionState.NEEDS_REAUTH ? SessionState.NEEDS_REAUTH : SessionState.VALID;
+  }
+
+  private updateSessionState(
+    nextState: SessionState,
+    session: StoredZkLoginSession | null,
+    reason?: string,
+    error?: unknown,
+  ): void {
+    const previousState = this.sessionState;
+    this.sessionState = nextState;
+    this.refreshFailureCount = session?.refreshFailureCount ?? (nextState === SessionState.EXPIRED ? 0 : this.refreshFailureCount);
+    if (previousState === nextState) {
+      return;
+    }
+
+    for (const listener of this.stateChangeListeners) {
+      listener({
+        previousState,
+        currentState: nextState,
+        session,
+        reason,
+        refreshFailureCount: this.refreshFailureCount,
+        error,
+      });
+    }
   }
 
   private encrypt(session: SerializedSession): SessionEnvelope {
@@ -246,6 +483,28 @@ function getSessionFilename(session: Pick<StoredZkLoginSession, 'iss' | 'sub'>):
   return `${digest}.json`;
 }
 
+function inferOAuthProvider(issuer: string): OAuthProvider {
+  if (issuer === 'https://accounts.google.com') {
+    return 'google';
+  }
+
+  if (issuer === 'https://appleid.apple.com') {
+    return 'apple';
+  }
+
+  throw new Error(`Unsupported zkLogin issuer: ${issuer}`);
+}
+
+function normalizePersistedSessionState(sessionState?: SessionState): SessionState {
+  return sessionState === SessionState.NEEDS_REAUTH ? SessionState.NEEDS_REAUTH : SessionState.VALID;
+}
+
 function isErrnoException(error: unknown, code: string): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error && error.code === code;
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolvePromise) => {
+    setTimeout(resolvePromise, ms);
+  });
 }

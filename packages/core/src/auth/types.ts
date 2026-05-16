@@ -1,7 +1,10 @@
 import type { Signer } from '@mysten/sui/cryptography';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
+import type { SessionState, SessionStateChangeCallback } from './session-state.js';
+
 export type AuthMode = 'ed25519' | 'zklogin';
+export type OAuthProvider = 'google' | 'apple';
 
 export interface AuthProvider {
   mode: AuthMode;
@@ -12,9 +15,13 @@ export interface AuthProvider {
   isAuthenticated(): boolean;
   getPublicKey(): Uint8Array;
   toSuiSigner(): Signer;
+  getSessionState?(): SessionState;
+  isSessionValid?(): boolean | Promise<boolean>;
+  onSessionStateChange?(callback: SessionStateChangeCallback): () => void;
 }
 
 export interface ZkLoginSession {
+  provider: OAuthProvider;
   jwt: string;
   salt: string;
   epoch: number;
@@ -32,6 +39,8 @@ export interface StoredZkLoginSession extends ZkLoginSession {
   refreshToken?: string;
   createdAt: number;
   updatedAt: number;
+  sessionState?: SessionState;
+  refreshFailureCount?: number;
 }
 
 export interface ZkLoginProof {
@@ -42,7 +51,7 @@ export interface ZkLoginProof {
 }
 
 export interface OAuthConfig {
-  provider: 'google' | 'apple';
+  provider: OAuthProvider;
   clientId: string;
   redirectUri: string;
   authorizationEndpoint?: string;

@@ -1,8 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
 
-import { createDID, loadOrCreateKeypair } from '@agentic-mesh/core';
+import { createDID, identityKeyExists, loadOrCreateKeypair } from '@agentic-mesh/core';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { buildDefaultConfig, getConfigPath, getMeshDataDir, saveMeshConfig } from './config.js';
@@ -14,14 +13,13 @@ export async function handleInit(args: string[]): Promise<number> {
   const configPath = getConfigPath();
   const configExists = existsSync(configPath);
   const defaultConfig = buildDefaultConfig(dataDir);
-  const keyPath = join(defaultConfig.identity.dataDir, 'identity.key');
-  const keyExists = existsSync(keyPath);
+  const keyExists = await identityKeyExists(defaultConfig.identity.dataDir);
 
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(defaultConfig.identity.dataDir, { recursive: true });
   success(`Created data directory: ${displayPath(dataDir)}`);
 
-  const identity = loadOrCreateKeypair(defaultConfig.identity.dataDir);
+  const identity = await loadOrCreateKeypair(defaultConfig.identity.dataDir);
   const did = createDID(identity.publicKey);
   const address = Ed25519Keypair.fromSecretKey(identity.secretKey).getPublicKey().toSuiAddress();
 

@@ -1,6 +1,9 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as fsPromises from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
   PaymentRail,
@@ -13,6 +16,8 @@ import {
   type SpendingPolicy,
 } from '@agentic-mesh/types';
 import yaml from 'js-yaml';
+
+import { getDefaultIpcPath } from './ipc/pipe-security.js';
 
 export interface DaemonPerAppSpendingConfig {
   limits: SpendingLimit[];
@@ -67,29 +72,41 @@ export interface DaemonFullConfig {
 }
 
 type LooseRecord = Record<string, unknown>;
+interface ConfigDiff {
+  path: string[];
+  value?: unknown;
+  delete?: true;
+}
+
 const LOG_LEVELS = new Set<DaemonFullConfig['daemon']['logLevel']>(['debug', 'info', 'warn', 'error']);
+const configSaveLocks = new Map<string, Promise<void>>();
+export const configIo = {
+  mkdir: fsPromises.mkdir,
+  writeFile: fsPromises.writeFile,
+  rename: fsPromises.rename,
+  rm: fsPromises.rm,
+};
 
 export function getDefaultConfig(): DaemonFullConfig {
   return buildDefaultConfig(resolve(homedir(), '.agentic-mesh'));
 }
 
+export function getConfigPath(configPath?: string): string {
+  return resolve(expandHome(configPath ?? join(getEnvDataDir() ?? resolve(homedir(), '.agentic-mesh'), 'config.yaml')));
+}
+
+export { getDefaultIpcPath };
+
 export function loadConfig(configPath?: string): DaemonFullConfig {
-  const resolvedConfigPath = resolve(
-    expandHome(configPath ?? join(getEnvDataDir() ?? resolve(homedir(), '.agentic-mesh'), 'config.yaml')),
-  );
+  const resolvedConfigPath = getConfigPath(configPath);
 
   const parsed = loadConfigFile(resolvedConfigPath);
-  const baseDataDir = normalizePath(
-    getEnvDataDir() ?? readString(getNestedValue(parsed, 'daemon', 'dataDir')) ?? resolve(homedir(), '.agentic-mesh'),
-  );
-
-  let config = mergeConfig(buildDefaultConfig(baseDataDir), parsed);
-  config = applyEnvironmentOverrides(config);
+  const config = buildResolvedConfig(parsed);
   validateConfig(config);
 
-  if (!existsSync(resolvedConfigPath)) {
-    mkdirSync(dirname(resolvedConfigPath), { recursive: true, mode: 0o700 });
-    writePrivateConfigFile(resolvedConfigPath, yaml.dump(serializeConfig(config)));
+  if (!fs.existsSync(resolvedConfigPath)) {
+    fs.mkdirSync(dirname(resolvedConfigPath), { recursive: true, mode: 0o700 });
+    writePrivateConfigFile(resolvedConfigPath, formatConfigContents(serializeConfig(config), resolvedConfigPath));
   } else {
     enforcePrivateFilePermissions(resolvedConfigPath);
   }
@@ -97,22 +114,180 @@ export function loadConfig(configPath?: string): DaemonFullConfig {
   return config;
 }
 
+export async function saveConfig(config: DaemonFullConfig, configPath = getConfigPath()): Promise<string> {
+  const resolvedConfigPath = getConfigPath(configPath);
+  validateConfig(config);
+
+  await withConfigSaveLock(resolvedConfigPath, async () => {
+    const parsed = loadConfigFile(resolvedConfigPath);
+    const currentConfig = buildResolvedConfig(parsed);
+    const updates = collectConfigDiffs(serializeConfig(currentConfig), serializeConfig(config));
+    const nextParsed = applyConfigDiffs(parsed, updates);
+    await writePrivateConfigFileAtomic(
+      resolvedConfigPath,
+      formatConfigContents(nextParsed, resolvedConfigPath),
+    );
+  });
+
+  return resolvedConfigPath;
+}
+
 function writePrivateConfigFile(configPath: string, contents: string): void {
-  writeFileSync(configPath, contents, { encoding: 'utf8', mode: 0o600 });
+  fs.writeFileSync(configPath, contents, { encoding: 'utf8', mode: 0o600 });
   enforcePrivateFilePermissions(configPath);
 }
 
+async function writePrivateConfigFileAtomic(configPath: string, contents: string): Promise<void> {
+  const tempPath = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
+  await configIo.mkdir(dirname(configPath), { recursive: true, mode: 0o700 });
+
+  try {
+    await configIo.writeFile(tempPath, contents, { encoding: 'utf8', mode: 0o600 });
+    await configIo.rename(tempPath, configPath);
+    enforcePrivateFilePermissions(configPath);
+  } finally {
+    await configIo.rm(tempPath, { force: true }).catch(() => undefined);
+  }
+}
+
 function enforcePrivateFilePermissions(path: string): void {
-  chmodSync(path, 0o600);
+  fs.chmodSync(path, 0o600);
 }
 
 function loadConfigFile(configPath: string): LooseRecord {
-  if (!existsSync(configPath)) {
+  if (!fs.existsSync(configPath)) {
     return {};
   }
 
-  const loaded = yaml.load(readFileSync(configPath, 'utf8'));
+  const loaded = yaml.load(fs.readFileSync(configPath, 'utf8'));
   return isRecord(loaded) ? loaded : {};
+}
+
+function buildResolvedConfig(parsed: LooseRecord): DaemonFullConfig {
+  const baseDataDir = normalizePath(
+    getEnvDataDir() ?? readString(getNestedValue(parsed, 'daemon', 'dataDir')) ?? resolve(homedir(), '.agentic-mesh'),
+  );
+  const hasExplicitIpcPath = readString(getNestedValue(parsed, 'daemon', 'ipcPath')) !== undefined;
+
+  return applyEnvironmentOverrides(mergeConfig(buildDefaultConfig(baseDataDir), parsed), { hasExplicitIpcPath });
+}
+
+async function withConfigSaveLock<T>(configPath: string, operation: () => Promise<T>): Promise<T> {
+  const previous = configSaveLocks.get(configPath) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const chain = previous.catch(() => undefined).then(() => gate);
+  configSaveLocks.set(configPath, chain);
+
+  await previous.catch(() => undefined);
+
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (configSaveLocks.get(configPath) === chain) {
+      configSaveLocks.delete(configPath);
+    }
+  }
+}
+
+function collectConfigDiffs(current: unknown, next: unknown, path: string[] = []): ConfigDiff[] {
+  if (isRecord(current) && isRecord(next)) {
+    const diffs: ConfigDiff[] = [];
+    const keys = new Set([...Object.keys(current), ...Object.keys(next)]);
+
+    for (const key of keys) {
+      const hasCurrent = Object.hasOwn(current, key);
+      const hasNext = Object.hasOwn(next, key);
+      if (!hasNext) {
+        diffs.push({ path: [...path, key], delete: true });
+        continue;
+      }
+
+      if (!hasCurrent) {
+        diffs.push({ path: [...path, key], value: structuredClone(next[key]) });
+        continue;
+      }
+
+      diffs.push(...collectConfigDiffs(current[key], next[key], [...path, key]));
+    }
+
+    return diffs;
+  }
+
+  return isDeepStrictEqual(current, next) ? [] : [{ path, value: structuredClone(next) }];
+}
+
+function applyConfigDiffs(parsed: LooseRecord, diffs: ConfigDiff[]): LooseRecord {
+  const next = structuredClone(parsed);
+
+  for (const diff of diffs) {
+    if (diff.path.length === 0) {
+      return isRecord(diff.value) ? structuredClone(diff.value) : {};
+    }
+
+    if (diff.delete) {
+      deleteNestedValue(next, diff.path);
+      continue;
+    }
+
+    setNestedValue(next, diff.path, structuredClone(diff.value));
+  }
+
+  return next;
+}
+
+function setNestedValue(record: LooseRecord, path: string[], value: unknown): void {
+  let current = record;
+  for (const segment of path.slice(0, -1)) {
+    const next = current[segment];
+    if (!isRecord(next)) {
+      current[segment] = {};
+    }
+    current = current[segment] as LooseRecord;
+  }
+
+  current[path[path.length - 1] as string] = value;
+}
+
+function deleteNestedValue(record: LooseRecord, path: string[]): void {
+  const parents: Array<{ record: LooseRecord; key: string }> = [];
+  let current: LooseRecord | undefined = record;
+
+  for (const segment of path.slice(0, -1)) {
+    if (!current || !isRecord(current[segment])) {
+      return;
+    }
+
+    parents.push({ record: current, key: segment });
+    current = current[segment] as LooseRecord;
+  }
+
+  if (!current) {
+    return;
+  }
+
+  delete current[path[path.length - 1] as string];
+
+  for (let index = parents.length - 1; index >= 0; index -= 1) {
+    const parent = parents[index];
+    const child = parent.record[parent.key];
+    if (!isRecord(child) || Object.keys(child).length > 0) {
+      break;
+    }
+
+    delete parent.record[parent.key];
+  }
+}
+
+function formatConfigContents(config: LooseRecord, configPath: string): string {
+  if (extname(configPath).toLowerCase() === '.json') {
+    return `${JSON.stringify(config, null, 2)}\n`;
+  }
+
+  return yaml.dump(config, { lineWidth: 120 });
 }
 
 function buildDefaultConfig(dataDir: string): DaemonFullConfig {
@@ -146,8 +321,7 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
       },
     },
     daemon: {
-      ipcPath:
-        process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : join(resolvedDataDir, 'mesh.sock'),
+      ipcPath: getDefaultIpcPath(resolvedDataDir),
       dataDir: resolvedDataDir,
       pidFile: join(resolvedDataDir, 'daemon.pid'),
       logLevel: 'info',
@@ -211,7 +385,10 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
   };
 }
 
-function applyEnvironmentOverrides(config: DaemonFullConfig): DaemonFullConfig {
+function applyEnvironmentOverrides(
+  config: DaemonFullConfig,
+  options: { hasExplicitIpcPath: boolean } = { hasExplicitIpcPath: false },
+): DaemonFullConfig {
   const envDataDir = getEnvDataDir();
   const withDataDir = envDataDir
     ? {
@@ -221,7 +398,7 @@ function applyEnvironmentOverrides(config: DaemonFullConfig): DaemonFullConfig {
           ...config.daemon,
           dataDir: envDataDir,
           pidFile: join(envDataDir, 'daemon.pid'),
-          ipcPath: process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : join(envDataDir, 'mesh.sock'),
+          ipcPath: options.hasExplicitIpcPath ? config.daemon.ipcPath : getDefaultIpcPath(envDataDir),
         },
         blobstore: applyBlobStoreDataDirOverride(config.blobstore, join(envDataDir, 'blobs')),
       }
@@ -571,32 +748,27 @@ function validateConfig(config: DaemonFullConfig): void {
 }
 
 function serializeConfig(config: DaemonFullConfig): LooseRecord {
-  return {
-    ...config,
-    auth: config.auth,
-    spending: {
-      ...config.spending,
-      requireConfirmationAbove: config.spending.requireConfirmationAbove?.toString(),
-      limits: config.spending.limits.map(serializeSpendingLimit),
-      perApp: config.spending.perApp
-        ? Object.fromEntries(
-            Object.entries(config.spending.perApp).map(([appName, appConfig]) => [
-              appName,
-              {
-                limits: appConfig.limits.map(serializeSpendingLimit),
-              },
-            ]),
-          )
-        : undefined,
-    },
-  };
+  return serializeValue(config) as LooseRecord;
 }
 
-function serializeSpendingLimit(limit: DaemonSpendingPolicy['limits'][number]): LooseRecord {
-  return {
-    ...limit,
-    amount: limit.amount.toString(),
-  };
+function serializeValue(value: unknown): unknown {
+  if (typeof value === 'bigint') {
+    return value.toString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => serializeValue(entry));
+  }
+
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([, entry]) => entry !== undefined)
+        .map(([key, entry]) => [key, serializeValue(entry)]),
+    );
+  }
+
+  return value;
 }
 
 function normalizeLogLevel(value: unknown, fallback: DaemonFullConfig['daemon']['logLevel']) {

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getDefaultConfig, loadConfig } from '../src/config.js';
+import { configIo, getDefaultConfig, getDefaultIpcPath, loadConfig, saveConfig } from '../src/config.js';
 
 const createdPaths: string[] = [];
 const envKeys = ['MESH_RPC_URL', 'MESH_PACKAGE_ID', 'MESH_REGISTRY_ID', 'MESH_LOG_LEVEL', 'MESH_DATA_DIR'] as const;
@@ -41,7 +41,8 @@ describe('config', () => {
     expect(config.encryption).toEqual({ enabled: true, requireEncryption: false });
 
     if (process.platform === 'win32') {
-      expect(config.daemon.ipcPath).toBe('\\\\.\\pipe\\agentic-mesh');
+      expect(config.daemon.ipcPath).toBe(getDefaultIpcPath(config.daemon.dataDir));
+      expect(config.daemon.ipcPath.startsWith('\\\\.\\pipe\\agentic-mesh-')).toBe(true);
     } else {
       expect(config.daemon.ipcPath.endsWith('mesh.sock')).toBe(true);
     }
@@ -200,6 +201,109 @@ describe('config', () => {
     expect(config.daemon.dataDir).toBe(dataDir);
     expect(config.identity.dataDir).toBe(resolve(dataDir, 'identity'));
     expect(config.blobstore.filesystem?.dataDir).toBe(resolve(dataDir, 'blobs'));
+  });
+
+  it('preserves an explicit IPC path when MESH_DATA_DIR is overridden', async () => {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+    const explicitIpcPath = process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : resolve(dir, 'custom.sock');
+    const overrideDataDir = resolve(dir, 'override-data');
+
+    await writeFile(
+      configPath,
+      [
+        'daemon:',
+        `  ipcPath: ${explicitIpcPath}`,
+        `  dataDir: ${resolve(dir, 'daemon')}`,
+        `  pidFile: ${resolve(dir, 'daemon.pid')}`,
+      ].join('\n'),
+      'utf8',
+    );
+
+    process.env.MESH_DATA_DIR = overrideDataDir;
+
+    const config = loadConfig(configPath);
+
+    expect(config.daemon.dataDir).toBe(overrideDataDir);
+    expect(config.daemon.ipcPath).toBe(explicitIpcPath);
+  });
+
+  it('saves updated portal settings without rewriting unrelated config', async () => {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+
+    await writeFile(
+      configPath,
+      [
+        'auth:',
+        '  mode: zklogin',
+        '  google:',
+        '    clientId: original-google-client',
+        '  portal:',
+        '    port: 0',
+        'spending:',
+        '  limits:',
+        '    - amount: "42"',
+        '      interval: day',
+        'payment:',
+        '  preferredRail: auto',
+        'custom:',
+        '  keep: true',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = loadConfig(configPath);
+    config.auth.apple = { clientId: 'apple-client' };
+    config.auth.portal = { port: 4010 };
+    config.payment.preferredRail = 'x402';
+    config.spending.limits = [{ amount: 9_000_000_000n, interval: 'day', currency: 'MIST' }];
+
+    await saveConfig(config, configPath);
+
+    const reloaded = loadConfig(configPath);
+    const persisted = await readFile(configPath, 'utf8');
+
+    expect(reloaded.auth.google?.clientId).toBe('original-google-client');
+    expect(reloaded.auth.apple?.clientId).toBe('apple-client');
+    expect(reloaded.auth.portal?.port).toBe(4010);
+    expect(reloaded.payment.preferredRail).toBe('x402');
+    expect(reloaded.spending.limits[0]?.amount).toBe(9_000_000_000n);
+    expect(persisted).toContain('custom:');
+    expect(persisted).toContain('keep: true');
+    expect(persisted).not.toContain('faucetUrl: http://127.0.0.1:9123');
+  });
+
+  it('keeps the last persisted config if an atomic rename fails', async () => {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+
+    await writeFile(
+      configPath,
+      [
+        'auth:',
+        '  mode: zklogin',
+        '  google:',
+        '    clientId: test-google-client',
+        'spending:',
+        '  limits:',
+        '    - amount: "42"',
+        '      interval: day',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const before = await readFile(configPath, 'utf8');
+    const config = loadConfig(configPath);
+    config.spending.limits = [{ amount: 99n, interval: 'day', currency: 'MIST' }];
+
+    const renameSpy = vi.spyOn(configIo, 'rename').mockRejectedValueOnce(new Error('rename failed'));
+    await expect(saveConfig(config, configPath)).rejects.toThrow('rename failed');
+    renameSpy.mockRestore();
+
+    expect(await readFile(configPath, 'utf8')).toBe(before);
+    expect(loadConfig(configPath).spending.limits[0]?.amount).toBe(42n);
+    expect((await readdir(dir)).some((entry) => entry.includes('.tmp'))).toBe(false);
   });
 
   it('creates a default config file when one is missing', async () => {

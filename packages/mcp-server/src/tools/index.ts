@@ -1,6 +1,8 @@
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
+import { SessionExpiredError } from '@agentic-mesh/core';
+
 import type { MeshToolContext } from '../context.js';
 import { meshAnalyticsTool, runMeshAnalytics } from './analytics.js';
 import { meshBalanceTool, runMeshBalance } from './balance.js';
@@ -83,8 +85,17 @@ export function registerToolHandlers(server: Server, context: MeshToolContext): 
       const response = await handler((request.params.arguments ?? {}) as never, context);
       return createSuccessResult(response);
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return createErrorResult(message);
+      const message =
+        error instanceof SessionExpiredError
+          ? 'Authentication expired. Please re-authenticate via the daemon portal.'
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      const sessionState = await getSessionState(context);
+      return createErrorResult(
+        sessionState ? `${message} (session state: ${sessionState})` : message,
+        sessionState ? { session_state: sessionState, reauth_required: error instanceof SessionExpiredError } : undefined,
+      );
     }
   });
 }
@@ -102,7 +113,10 @@ function createSuccessResult(payload: unknown): { content: Array<{ type: 'text';
   };
 }
 
-function createErrorResult(message: string): {
+function createErrorResult(
+  message: string,
+  details?: Record<string, unknown>,
+): {
   isError: true;
   content: Array<{ type: 'text'; text: string }>;
 } {
@@ -111,10 +125,20 @@ function createErrorResult(message: string): {
     content: [
       {
         type: 'text',
-        text: serialize({ error: message }),
+        text: serialize({ error: message, ...details }),
       },
     ],
   };
+}
+
+async function getSessionState(context: MeshToolContext): Promise<string | null> {
+  const provider = context.authProvider;
+  if (!provider?.getSessionState) {
+    return null;
+  }
+
+  const state = await provider.getSessionState();
+  return typeof state === 'string' ? state : null;
 }
 
 function serialize(payload: unknown): string {

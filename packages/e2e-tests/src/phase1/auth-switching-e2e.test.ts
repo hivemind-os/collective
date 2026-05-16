@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 import { FilesystemBlobStore, MeshSuiClient, RegistryClient, TaskClient, ZkLoginProvider, ZkLoginSessionStore } from '@agentic-mesh/core';
 import type { SuiClient } from '@mysten/sui/client';
-import { type DaemonFullConfig, getDefaultConfig } from '@agentic-mesh/daemon/config';
+import { type DaemonFullConfig, getDefaultConfig, saveConfig } from '@agentic-mesh/daemon/config';
 import { type PortalAuthProvider, PortalServer } from '@agentic-mesh/daemon/portal/server';
 import { DaemonState, buildOAuthConfig, createDaemonIdentityContext } from '@agentic-mesh/daemon/state';
 import { TaskStatus } from '@agentic-mesh/types';
@@ -111,6 +111,9 @@ describe('Phase 1 Beta E2E: Auth mode switching', () => {
       googleClientId: 'zklogin-beta-client',
     });
 
+    const configPath = join(baseDir, 'agentic-mesh.config.yaml');
+    await saveConfig(config, configPath);
+
     const authProvider = new ZkLoginProvider({
       client: {
         getCurrentEpoch: async () => ({ epoch: '7' } as Awaited<ReturnType<SuiClient['getCurrentEpoch']>>),
@@ -120,6 +123,7 @@ describe('Phase 1 Beta E2E: Auth mode switching', () => {
     });
     const portal = new PortalServer({
       config,
+      configPath,
       authProvider: authProvider as PortalAuthProvider,
     });
 

@@ -38,6 +38,7 @@ export interface MeshToolContext {
     publicKey?: string;
   };
   relayAuthProvider?: AuthProvider;
+  authProvider?: AuthProvider;
   x402Client?: X402Client;
   paymentRailSelector?: PaymentRailSelector;
   logger?: {
