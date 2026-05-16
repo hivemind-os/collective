@@ -1,0 +1,96 @@
+name: Deploy Contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: "Target Sui network"
+        required: true
+        type: choice
+        options:
+          - devnet
+          - testnet
+          - mainnet
+      gas_budget:
+        description: "Gas budget in MIST"
+        required: false
+        default: "500000000"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Move unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Sui CLI
+        uses: CommandOSSLabs/setup-sui-cli@v1
+      - name: Run Move tests
+        run: sui move test --build-env ${{ inputs.network }}
+        working-directory: contracts/agentic_mesh
+
+  deploy:
+    name: Deploy to ${{ inputs.network }}
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network == 'mainnet' && 'mainnet' || '' }}
+    outputs:
+      package_id: ${{ steps.publish.outputs.package_id }}
+      registry_id: ${{ steps.publish.outputs.registry_id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Sui CLI
+        uses: CommandOSSLabs/setup-sui-cli@v1
+
+      - name: Configure Sui credentials
+        run: |
+          mkdir -p ~/.sui/sui_config
+          echo "${{ secrets.SUI_CLIENT_CONFIG }}" | base64 -d > ~/.sui/sui_config/client.yaml
+          echo "${{ secrets.SUI_KEYSTORE }}" | base64 -d > ~/.sui/sui_config/sui.keystore
+
+      - name: Verify active environment
+        run: |
+          ACTIVE_ENV=$(sui client active-env)
+          echo "Active environment: $ACTIVE_ENV"
+          if [ "$ACTIVE_ENV" != "${{ inputs.network }}" ]; then
+            echo "::warning::Active Sui env ($ACTIVE_ENV) does not match requested network (${{ inputs.network }}). Attempting to switch..."
+            sui client switch --env ${{ inputs.network }}
+          fi
+
+      - name: Verify deployer balance
+        run: sui client gas --json | head -20
+
+      - name: Publish contracts
+        id: publish
+        run: |
+          set -euo pipefail
+          OUTPUT=$(sui client publish contracts/agentic_mesh \
+            --gas-budget ${{ inputs.gas_budget }} \
+            --json)
+
+          echo "$OUTPUT" | jq .
+
+          PACKAGE_ID=$(echo "$OUTPUT" | jq -r '.objectChanges[] | select(.type == "published") | .packageId')
+          REGISTRY_ID=$(echo "$OUTPUT" | jq -r '.objectChanges[] | select(.objectType != null and (.objectType | test("::registry::Registry$"))) | .objectId')
+
+          if [ -z "$PACKAGE_ID" ] || [ "$PACKAGE_ID" = "null" ]; then
+            echo "::error::Failed to extract packageId from publish output"
+            exit 1
+          fi
+
+          echo "package_id=$PACKAGE_ID" >> "$GITHUB_OUTPUT"
+          echo "registry_id=$REGISTRY_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        run: |
+          echo "## 🚀 Contract Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Network** | \`${{ inputs.network }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Package ID** | \`${{ steps.publish.outputs.package_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Registry ID** | \`${{ steps.publish.outputs.registry_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Gas Budget** | ${{ inputs.gas_budget }} MIST |" >> "$GITHUB_STEP_SUMMARY"

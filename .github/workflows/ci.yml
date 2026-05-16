@@ -53,6 +53,17 @@ jobs:
       - name: Run unit tests
         run: pnpm exec turbo test -- --run --passWithNoTests
 
+  move-tests:
+    name: Move contract tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Sui CLI
+        uses: CommandOSSLabs/setup-sui-cli@v1
+      - name: Run Move tests
+        run: sui move test --build-env testnet
+        working-directory: contracts/agentic_mesh
+
   smoke-e2e:
     name: smoke-e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

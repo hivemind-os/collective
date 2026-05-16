@@ -1,0 +1,183 @@
+name: Publish Packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: "Version bump type"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prepatch
+          - preminor
+          - premajor
+          - prerelease
+          - custom
+      custom_version:
+        description: "Custom version (only used when version_bump is 'custom')"
+        required: false
+        default: ""
+      tag:
+        description: "npm dist-tag"
+        required: false
+        default: "latest"
+      dry_run:
+        description: "Dry run (no actual publish)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    name: Lint, build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo lint
+      - run: pnpm exec turbo build
+      - run: pnpm exec turbo test -- --run --passWithNoTests
+
+  publish:
+    name: Publish to npm
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm exec turbo build
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ inputs.version_bump }}" = "custom" ]; then
+            if [ -z "${{ inputs.custom_version }}" ]; then
+              echo "::error::custom_version is required when version_bump is 'custom'"
+              exit 1
+            fi
+            echo "version=${{ inputs.custom_version }}" >> "$GITHUB_OUTPUT"
+          else
+            # Read current version from root package.json
+            CURRENT=$(jq -r .version packages/types/package.json)
+            NEW=$(npx semver "$CURRENT" -i "${{ inputs.version_bump }}")
+            echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump versions
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          echo "Bumping all packages to $VERSION"
+
+          PACKAGES=(
+            "packages/types"
+            "packages/core"
+            "packages/mcp-server"
+            "packages/daemon"
+            "packages/shim"
+            "packages/cli"
+            "packages/relay"
+            "packages/indexer"
+          )
+
+          for pkg in "${PACKAGES[@]}"; do
+            jq --arg v "$VERSION" '.version = $v' "$pkg/package.json" > "$pkg/package.json.tmp"
+            mv "$pkg/package.json.tmp" "$pkg/package.json"
+          done
+
+          # Update cross-references: workspace:* stays as-is for pnpm,
+          # but pnpm publish --no-git-checks will resolve them automatically.
+
+      - name: Publish packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ inputs.tag }}"
+          DRY_RUN="${{ inputs.dry_run }}"
+
+          # Publish in dependency order
+          PACKAGES=(
+            "packages/types"
+            "packages/core"
+            "packages/mcp-server"
+            "packages/daemon"
+            "packages/shim"
+            "packages/cli"
+            "packages/relay"
+            "packages/indexer"
+          )
+
+          FLAGS="--access public --tag $TAG --no-git-checks"
+          if [ "$DRY_RUN" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+
+          for pkg in "${PACKAGES[@]}"; do
+            NAME=$(jq -r .name "$pkg/package.json")
+            echo "📦 Publishing $NAME@$VERSION ($TAG)..."
+            (cd "$pkg" && pnpm publish $FLAGS)
+            echo "✅ $NAME published"
+          done
+
+      - name: Commit & tag
+        if: inputs.dry_run == false
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "chore(release): v${VERSION}" || echo "No changes to commit"
+          git tag "v${VERSION}"
+          git push origin HEAD --tags
+
+      - name: Summary
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DRY_RUN="${{ inputs.dry_run }}"
+          echo "## 📦 npm Publish Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "> ⚠️ **DRY RUN** — no packages were actually published" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Version** | \`${VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Tag** | \`${{ inputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Bump** | \`${{ inputs.version_bump }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Packages" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-types" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-core" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-mcp-server" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-daemon" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-shim" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-cli" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-relay" >> "$GITHUB_STEP_SUMMARY"
+          echo "@hivemind-os/collective-indexer" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`\`\`" >> "$GITHUB_STEP_SUMMARY"
