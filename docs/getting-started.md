@@ -1,4 +1,4 @@
-# Getting Started with Agentic Mesh
+# Getting Started with HiveMind Collective
 
 ## Prerequisites
 
@@ -16,19 +16,19 @@ pnpm install
 pnpm run build
 ```
 
-If you want the CLI available on your PATH during development, you can use `pnpm --filter @agentic-mesh/cli exec mesh ...` for all commands below.
+If you want the CLI available on your PATH during development, you can use `pnpm --filter @hivemind-os/collective-cli exec collective ...` for all commands below.
 
 ## First-time setup
 
 Initialize your local profile:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh init
+pnpm --filter @hivemind-os/collective-cli exec collective init
 ```
 
 This command:
 
-- creates `~/.agentic-mesh/`
+- creates `~/.hivemind-os/collective/`
 - generates an Ed25519 identity key
 - derives your mesh DID and Sui address
 - writes a default `config.yaml`
@@ -36,7 +36,7 @@ This command:
 Inspect the generated config at any time with:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh config
+pnpm --filter @hivemind-os/collective-cli exec collective config
 ```
 
 ## Funding your wallet
@@ -44,13 +44,13 @@ pnpm --filter @agentic-mesh/cli exec mesh config
 For testnet or a local faucet-enabled network:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh wallet fund
+pnpm --filter @hivemind-os/collective-cli exec collective wallet fund
 ```
 
 To confirm the result:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh wallet balance
+pnpm --filter @hivemind-os/collective-cli exec collective wallet balance
 ```
 
 If automatic funding fails, the CLI prints the wallet address and configured faucet URL so you can fund it manually.
@@ -58,13 +58,13 @@ If automatic funding fails, the CLI prints the wallet address and configured fau
 ## Start the daemon
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh daemon start
+pnpm --filter @hivemind-os/collective-cli exec collective daemon start
 ```
 
 Check health at any time:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh daemon status
+pnpm --filter @hivemind-os/collective-cli exec collective daemon status
 ```
 
 ## Configure Claude Desktop / VS Code
@@ -78,21 +78,21 @@ Use the CLI shim entrypoint in your MCP client configuration:
 }
 ```
 
-If the shim package is not installed yet, start with `mesh daemon start` and install the shim once it is available in your environment.
+If the shim package is not installed yet, start with `collective daemon start` and install the shim once it is available in your environment.
 
 ## Your first task execution
 
 1. Discover a provider:
    ```bash
-   pnpm --filter @agentic-mesh/cli exec mesh discover echo
+   pnpm --filter @hivemind-os/collective-cli exec collective discover echo
    ```
 2. If you are running provider mode yourself, register a capability first:
    ```bash
-   pnpm --filter @agentic-mesh/cli exec mesh register --name echo --capability "echo:Echo service:1.0.0:1000000"
+   pnpm --filter @hivemind-os/collective-cli exec collective register --name echo --capability "echo:Echo service:1.0.0:1000000"
    ```
 3. Use your MCP client to call into the mesh-connected tools or inspect task progress from the CLI:
    ```bash
-   pnpm --filter @agentic-mesh/cli exec mesh task status <task-id>
+   pnpm --filter @hivemind-os/collective-cli exec collective task status <task-id>
    ```
 
 ## Community relay quick start
@@ -100,38 +100,38 @@ If the shim package is not installed yet, start with `mesh daemon start` and ins
 If you want to operate a routing relay, first deposit relay stake and then register the relay:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh stake deposit 100 --type relay
-pnpm --filter @agentic-mesh/cli exec mesh relay register --endpoint wss://relay.example.com/ws --stake-id 0x<stake-id> --region us-east --fee 50
+pnpm --filter @hivemind-os/collective-cli exec collective stake deposit 100 --type relay
+pnpm --filter @hivemind-os/collective-cli exec collective relay register --endpoint wss://relay.example.com/ws --stake-id 0x<stake-id> --region us-east --fee 50
 ```
 
 See [relay-operator-guide.md](relay-operator-guide.md) for automatic heartbeat and fee-tracking setup.
 
 ## Troubleshooting
 
-### `mesh connect` says the shim is unavailable
+### `collective connect` says the shim is unavailable
 
-Install or build `@agentic-mesh/shim`, then retry. Until then, the daemon lifecycle and provider workflows still work from the CLI.
+Install or build `@hivemind-os/collective-shim`, then retry. Until then, the daemon lifecycle and provider workflows still work from the CLI.
 
-### `mesh register` fails because package or registry IDs are empty
+### `collective register` fails because package or registry IDs are empty
 
-Update `network.packageId` and `network.registryId` in `~/.agentic-mesh/config.yaml` after deploying the contracts for your target Sui network.
+Update `network.packageId` and `network.registryId` in `~/.hivemind-os/collective/config.yaml` after deploying the contracts for your target Sui network.
 
-### `mesh daemon status` says the daemon is not running
+### `collective daemon status` says the daemon is not running
 
 Start it explicitly:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh daemon start
+pnpm --filter @hivemind-os/collective-cli exec collective daemon start
 ```
 
 ### I need the current config path
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh config path
+pnpm --filter @hivemind-os/collective-cli exec collective config path
 ```
 
 ### I want to inspect daemon logs
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh logs --follow
+pnpm --filter @hivemind-os/collective-cli exec collective logs --follow
 ```

@@ -1,4 +1,4 @@
-import { loadOrCreateKeypair, MeshSuiClient, StakingClient, STAKING_COOLDOWN_MS } from '@agentic-mesh/core';
+import { loadOrCreateKeypair, MeshSuiClient, StakingClient, STAKING_COOLDOWN_MS } from '@hivemind-os/collective-core';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { loadMeshConfig, type MeshCliConfig } from './config.js';

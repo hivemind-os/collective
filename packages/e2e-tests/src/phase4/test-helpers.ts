@@ -20,8 +20,8 @@ import {
   FanOutExecutor,
   PerformanceTracker,
   ProviderSelector,
-} from '@agentic-mesh/core';
-import { AnalyticsEngine, IndexerStore, MeshIndexer, createIndexerGraphQLServer } from '@agentic-mesh/indexer';
+} from '@hivemind-os/collective-core';
+import { AnalyticsEngine, IndexerStore, MeshIndexer, createIndexerGraphQLServer } from '@hivemind-os/collective-indexer';
 import {
   AggregationMode,
   PaymentScheme,
@@ -30,7 +30,7 @@ import {
   TaskStatus,
   type DID,
   type NetworkConfig,
-} from '@agentic-mesh/types';
+} from '@hivemind-os/collective-types';
 import type { TestWallet } from '../harness/index.js';
 import { PortAllocator } from '../harness/index.js';
 import {

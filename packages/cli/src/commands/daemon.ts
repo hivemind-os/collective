@@ -178,7 +178,7 @@ function printStatus(status: DaemonStatus): void {
 
 async function resolveDaemonCommand(): Promise<{ command: string; args: string[] }> {
   try {
-    const packageJsonPath = require.resolve('@agentic-mesh/daemon/package.json');
+    const packageJsonPath = require.resolve('@hivemind-os/collective-daemon/package.json');
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { main?: string };
     const entryPath = resolve(dirname(packageJsonPath), packageJson.main ?? 'dist/index.js');
     return {
@@ -194,7 +194,7 @@ async function resolveDaemonCommand(): Promise<{ command: string; args: string[]
       };
     }
 
-    throw new Error('Unable to locate @agentic-mesh/daemon. Run pnpm install && pnpm run build first.');
+    throw new Error('Unable to locate @hivemind-os/collective-daemon. Run pnpm install && pnpm run build first.');
   }
 }
 

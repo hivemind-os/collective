@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { PaymentRail, type DID } from '@agentic-mesh/types';
+import { PaymentRail, type DID } from '@hivemind-os/collective-types';
 
 import type { AuthProvider } from '../auth/types.js';
 import { parseDID, verify } from '../identity/index.js';

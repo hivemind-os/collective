@@ -1,12 +1,12 @@
-import { loadConfig as loadDaemonConfig, type DaemonFullConfig } from '@agentic-mesh/daemon/config';
-import { DaemonState } from '@agentic-mesh/daemon/state';
+import { loadConfig as loadDaemonConfig, type DaemonFullConfig } from '@hivemind-os/collective-daemon/config';
+import { DaemonState } from '@hivemind-os/collective-daemon/state';
 import {
   runMeshMultiExecute,
   type MeshMultiExecuteParams,
   type MeshMultiExecuteResult,
   type MeshToolContext,
-} from '@agentic-mesh/mcp-server';
-import { AggregationMode, ProviderSelectionStrategy } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-mcp-server';
+import { AggregationMode, ProviderSelectionStrategy } from '@hivemind-os/collective-types';
 
 import { info, success, table } from '../utils/output.js';
 

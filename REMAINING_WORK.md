@@ -1,4 +1,4 @@
-# Agentic Mesh — Remaining Work
+# HiveMind Collective — Remaining Work
 
 **Date:** 2026-05-15
 **Current state:** All 22 implementation milestones complete, spec frozen at v1.0.0, all known shortcuts fixed, examples created. Everything runs against a local Sui network. Nothing has been deployed to a public network yet.
@@ -79,7 +79,7 @@
 
 **Status:** All packages are `"private": true` with no `publishConfig`. The SDK cannot be consumed outside the monorepo.
 
-- [ ] Decide which packages to publish: `@agentic-mesh/types`, `@agentic-mesh/core`, `@agentic-mesh/mcp-server` at minimum
+- [ ] Decide which packages to publish: `@hivemind-os/collective-types`, `@hivemind-os/collective-core`, `@hivemind-os/collective-mcp-server` at minimum
 - [ ] Add `publishConfig` with `"access": "public"` to each publishable package
 - [ ] Set up **changesets** or a release workflow for semantic versioning
 - [ ] Add a GitHub Actions workflow for `npm publish` on tagged releases
@@ -90,13 +90,13 @@
 
 ## 7. CLI Distribution
 
-**Status:** The CLI works via `pnpm --filter @agentic-mesh/cli exec mesh ...` from the monorepo. No standalone binary or global npm install.
+**Status:** The CLI works via `pnpm --filter @hivemind-os/collective-cli exec collective ...` from the monorepo. No standalone binary or global npm install.
 
-- [ ] Make `@agentic-mesh/cli` a publishable package with a `bin` entry
-- [ ] Test `npx @agentic-mesh/cli mesh init` flow
+- [ ] Make `@hivemind-os/collective-cli` a publishable package with a `bin` entry
+- [ ] Test `npx @hivemind-os/collective-cli mesh init` flow
 - [ ] Consider a standalone binary via `pkg` or `bun compile` for zero-dependency install
 - [ ] Add shell completions (bash, zsh, PowerShell)
-- [ ] Add `mesh --version` and `mesh --help` polish
+- [ ] Add `collective --version` and `collective --help` polish
 
 ---
 
@@ -129,7 +129,7 @@
 **Status:** The v1.0 spec roadmap calls for an "Interoperability test suite." Current tests validate the TypeScript reference implementation against itself.
 
 - [ ] Define an **interoperability test protocol** — what must a conforming implementation support?
-- [ ] Create a **conformance test harness** that validates any Agentic Mesh client against the spec
+- [ ] Create a **conformance test harness** that validates any HiveMind Collective client against the spec
 - [ ] Test against at least one **alternative implementation** (e.g., Python, Rust)
 - [ ] Publish the conformance suite as a standalone package
 
@@ -209,7 +209,7 @@
 | **P1** | Walrus production integration | Filesystem blob store doesn't scale |
 | **P1** | Seed relay deployment | Real-time task flow needs at least one relay |
 | **P1** | npm package publishing | SDK must be consumable outside the monorepo |
-| **P1** | CLI distribution | Developers need `npx @agentic-mesh/cli` |
+| **P1** | CLI distribution | Developers need `npx @hivemind-os/collective-cli` |
 | **P2** | x402 / Base production | Dual-chain is a differentiator but Sui-only works |
 | **P2** | CI/CD enhancements | Move tests in CI, coverage, release automation |
 | **P2** | Documentation gaps | Deployment guide, security guide critical for operators |

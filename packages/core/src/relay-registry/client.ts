@@ -1,6 +1,6 @@
 import pino from 'pino';
 
-import { RelayNodeStatus, type RelayListFilters, type RelayNode } from '@agentic-mesh/types';
+import { RelayNodeStatus, type RelayListFilters, type RelayNode } from '@hivemind-os/collective-types';
 import type { SuiEvent, SuiTransactionBlockResponse } from '@mysten/sui/client';
 import type { Signer } from '@mysten/sui/cryptography';
 
@@ -13,7 +13,7 @@ import {
 } from '../sui/tx-helpers.js';
 import { StakingClient } from '../staking/client.js';
 
-const logger = pino({ name: '@agentic-mesh/core:relay-registry' });
+const logger = pino({ name: '@hivemind-os/collective-core:relay-registry' });
 
 export interface RelayRegistryContractConfig {
   packageId: string;

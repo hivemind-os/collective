@@ -1,4 +1,4 @@
-import type { StakePosition } from '@agentic-mesh/types';
+import type { StakePosition } from '@hivemind-os/collective-types';
 import type { SuiEvent, SuiTransactionBlockResponse } from '@mysten/sui/client';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 

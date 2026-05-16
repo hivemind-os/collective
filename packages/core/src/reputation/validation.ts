@@ -1,4 +1,4 @@
-import type { ReputationEvent, ReputationEventType } from '@agentic-mesh/types';
+import type { ReputationEvent, ReputationEventType } from '@hivemind-os/collective-types';
 
 const EVENT_TYPES = new Set<ReputationEventType>([
   'task_completion',

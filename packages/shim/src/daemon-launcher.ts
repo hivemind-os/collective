@@ -15,26 +15,26 @@ export interface LauncherOptions {
   startupTimeoutMs: number;
 }
 
-const LEGACY_WINDOWS_PIPE_PATH = '\\\\.\\pipe\\agentic-mesh';
+const LEGACY_WINDOWS_PIPE_PATH = '\\\\.\\pipe\\hivemind-collective';
 
 export function getDefaultIpcPath(): string {
-  return process.env.MESH_IPC_PATH ??
+  return process.env.COLLECTIVE_IPC_PATH ??
     (process.platform === 'win32'
       ? `${LEGACY_WINDOWS_PIPE_PATH}-${sanitizePipeSegment(getCurrentUsername())}`
-      : resolve(homedir(), '.agentic-mesh', 'mesh.sock'));
+      : resolve(homedir(), '.hivemind-os/collective', 'mesh.sock'));
 }
 
 export function getDefaultPidFile(): string {
-  return process.env.MESH_PID_FILE ?? resolve(homedir(), '.agentic-mesh', 'daemon.pid');
+  return process.env.COLLECTIVE_PID_FILE ?? resolve(homedir(), '.hivemind-os/collective', 'daemon.pid');
 }
 
 export function resolveDaemonBin(): string {
-  if (process.env.MESH_DAEMON_BIN) {
-    return process.env.MESH_DAEMON_BIN;
+  if (process.env.COLLECTIVE_DAEMON_BIN) {
+    return process.env.COLLECTIVE_DAEMON_BIN;
   }
 
   try {
-    return require.resolve('@agentic-mesh/daemon');
+    return require.resolve('@hivemind-os/collective-daemon');
   } catch {
     if (commandExists('mesh-daemon')) {
       return 'mesh-daemon';

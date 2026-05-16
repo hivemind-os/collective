@@ -3,7 +3,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import net from 'node:net';
 import { resolve } from 'node:path';
 
-import { PaymentRail, SpendingPolicyEngine } from '@agentic-mesh/core';
+import { PaymentRail, SpendingPolicyEngine } from '@hivemind-os/collective-core';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { AuditEvent } from '../src/audit.js';
@@ -132,8 +132,8 @@ async function createTestDir(): Promise<string> {
 
 function createIpcPath(dir: string): string {
   return process.platform === 'win32'
-    ? `\\\\.\\pipe\\agentic-mesh-test-${randomUUID()}`
-    : resolve(dir, 'agentic-mesh.sock');
+    ? `\\\\.\\pipe\\hivemind-collective-test-${randomUUID()}`
+    : resolve(dir, 'hivemind-collective.sock');
 }
 
 async function startServer(
@@ -283,7 +283,7 @@ describe('multi-app daemon support', () => {
       id: 'mesh-status',
       method: 'tools/call',
       params: {
-        name: 'mesh_status',
+        name: 'collective_status',
         arguments: {},
       },
     });
@@ -313,7 +313,7 @@ describe('multi-app daemon support', () => {
       id: 'audit-status',
       method: 'tools/call',
       params: {
-        name: 'mesh_status',
+        name: 'collective_status',
         arguments: {},
       },
     });
@@ -323,7 +323,7 @@ describe('multi-app daemon support', () => {
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ event: 'app_connected', appName: 'audit-app', appPid: 303 }),
-        expect.objectContaining({ event: 'tool_call', appName: 'audit-app', tool: 'mesh_status' }),
+        expect.objectContaining({ event: 'tool_call', appName: 'audit-app', tool: 'collective_status' }),
         expect.objectContaining({ event: 'app_disconnected', appName: 'audit-app' }),
       ]),
     );

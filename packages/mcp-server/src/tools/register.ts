@@ -1,4 +1,4 @@
-import { PaymentRail, type Capability } from '@agentic-mesh/types';
+import { PaymentRail, type Capability } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 import { hexToBytes } from '../encryption.js';
@@ -15,7 +15,7 @@ export interface MeshRegisterParams {
 }
 
 export const meshRegisterTool = {
-  name: 'mesh_register',
+  name: 'collective_register',
   description: 'Register the current daemon identity as a provider',
   inputSchema: {
     type: 'object' as const,

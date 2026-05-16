@@ -1,8 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-import { createDID, generateKeypair, keypairFromSecretKey, signString, type SimpleKeypair } from '@agentic-mesh/core';
-import type { DID } from '@agentic-mesh/types';
+import { createDID, generateKeypair, keypairFromSecretKey, signString, type SimpleKeypair } from '@hivemind-os/collective-core';
+import type { DID } from '@hivemind-os/collective-types';
 
 export class RelayIdentity {
   readonly did: DID;

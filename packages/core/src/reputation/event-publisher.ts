@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import type { ReputationEvent, ReputationEventType } from '@agentic-mesh/types';
+import type { ReputationEvent, ReputationEventType } from '@hivemind-os/collective-types';
 
 import type { AuthProvider } from '../auth/types.js';
 import type { BlobStore } from '../blobstore/interface.js';

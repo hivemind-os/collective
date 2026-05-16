@@ -4,14 +4,14 @@ Community relays are staked routing nodes that register on Sui, advertise an end
 
 ## Prerequisites
 
-- A funded mesh wallet with a relay stake position (`mesh stake deposit <amount-sui> --type relay`)
-- A deployed package ID in `~/.agentic-mesh/config.yaml`
+- A funded mesh wallet with a relay stake position (`collective stake deposit <amount-sui> --type relay`)
+- A deployed package ID in `~/.hivemind-os/collective/config.yaml`
 - A reachable relay endpoint such as `wss://relay.example.com/ws`
 
 ## Register a relay
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh relay register \
+pnpm --filter @hivemind-os/collective-cli exec collective relay register \
   --endpoint wss://relay.example.com/ws \
   --stake-id 0x<relay-stake-object> \
   --region us-east \
@@ -24,7 +24,7 @@ This writes the relay registration on-chain, ties it to the relay stake position
 ## List active relays
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh relay list
+pnpm --filter @hivemind-os/collective-cli exec collective relay list
 ```
 
 The list view prints the relay id, region, fee, stake, and endpoint so operators can verify discoverability.
@@ -34,8 +34,8 @@ The list view prints the relay id, region, fee, stake, and endpoint so operators
 Relay servers can self-register and send periodic heartbeats automatically through `packages/relay` when `relayRegistry.enabled=true` is configured. For manual maintenance:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh relay heartbeat --relay-id 0x<relay-id>
-pnpm --filter @agentic-mesh/cli exec mesh relay deactivate --relay-id 0x<relay-id>
+pnpm --filter @hivemind-os/collective-cli exec collective relay heartbeat --relay-id 0x<relay-id>
+pnpm --filter @hivemind-os/collective-cli exec collective relay deactivate --relay-id 0x<relay-id>
 ```
 
 ## Relay server configuration

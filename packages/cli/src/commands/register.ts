@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { createDID, ed25519ToX25519, loadOrCreateKeypair, MeshSuiClient, RegistryClient } from '@agentic-mesh/core';
-import { PaymentRail, type Capability } from '@agentic-mesh/types';
+import { createDID, ed25519ToX25519, loadOrCreateKeypair, MeshSuiClient, RegistryClient } from '@hivemind-os/collective-core';
+import { PaymentRail, type Capability } from '@hivemind-os/collective-types';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import yaml from 'js-yaml';
 

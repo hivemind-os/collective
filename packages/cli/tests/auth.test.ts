@@ -8,7 +8,7 @@ import { buildDefaultConfig, saveMeshConfig } from '../src/commands/config.js';
 import { handleAuth, type AuthCommandDeps } from '../src/commands/auth.js';
 
 const createdPaths: string[] = [];
-const originalDataDir = process.env.MESH_DATA_DIR;
+const originalDataDir = process.env.COLLECTIVE_DATA_DIR;
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -19,9 +19,9 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks();
   if (originalDataDir === undefined) {
-    delete process.env.MESH_DATA_DIR;
+    delete process.env.COLLECTIVE_DATA_DIR;
   } else {
-    process.env.MESH_DATA_DIR = originalDataDir;
+    process.env.COLLECTIVE_DATA_DIR = originalDataDir;
   }
   await Promise.all(createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -68,7 +68,7 @@ function createDeps(overrides: Partial<AuthCommandDeps> = {}): AuthCommandDeps {
 describe('mesh auth', () => {
   it('prints daemon auth status', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
     saveMeshConfig(buildDefaultConfig(dataDir));
 
     const deps = createDeps();
@@ -80,7 +80,7 @@ describe('mesh auth', () => {
 
   it('triggers daemon reauth and prints the portal url', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
     saveMeshConfig(buildDefaultConfig(dataDir));
 
     const deps = createDeps();

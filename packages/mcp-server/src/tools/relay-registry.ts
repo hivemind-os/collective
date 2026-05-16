@@ -1,4 +1,4 @@
-import { RelayRegistryClient } from '@agentic-mesh/core';
+import { RelayRegistryClient } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -12,7 +12,7 @@ export interface MeshRelayRegistryParams {
 }
 
 export const meshRelayRegistryTool = {
-  name: 'mesh_relay_registry',
+  name: 'collective_relay_registry',
   description: 'List registered community relays or register this node as a relay operator',
   inputSchema: {
     type: 'object' as const,

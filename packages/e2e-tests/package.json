@@ -1,5 +1,5 @@
 {
-  "name": "@agentic-mesh/e2e-tests",
+  "name": "@hivemind-os/collective-e2e-tests",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,11 +9,11 @@
     "clean": "rimraf dist .vitest"
   },
   "dependencies": {
-    "@agentic-mesh/core": "workspace:*",
-    "@agentic-mesh/daemon": "workspace:*",
-    "@agentic-mesh/indexer": "workspace:*",
-    "@agentic-mesh/relay": "workspace:*",
-    "@agentic-mesh/types": "workspace:*",
+    "@hivemind-os/collective-core": "workspace:*",
+    "@hivemind-os/collective-daemon": "workspace:*",
+    "@hivemind-os/collective-indexer": "workspace:*",
+    "@hivemind-os/collective-relay": "workspace:*",
+    "@hivemind-os/collective-types": "workspace:*",
     "@mysten/sui": "^1.30.0",
     "ws": "^8.0.0"
   },

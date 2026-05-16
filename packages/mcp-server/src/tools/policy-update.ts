@@ -1,4 +1,4 @@
-import { PaymentRail, type SpendingPolicy } from '@agentic-mesh/types';
+import { PaymentRail, type SpendingPolicy } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -9,7 +9,7 @@ export interface MeshPolicyUpdateParams {
 }
 
 export const meshPolicyUpdateTool = {
-  name: 'mesh_policy_update',
+  name: 'collective_policy_update',
   description: 'Update local spending policy limits',
   inputSchema: {
     type: 'object' as const,

@@ -10,8 +10,8 @@ import {
   RegistryClient,
   SqliteCursorStore,
   TaskClient,
-} from '@agentic-mesh/core';
-import { PaymentRail, TaskStatus, type NetworkConfig } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import { PaymentRail, TaskStatus, type NetworkConfig } from '@hivemind-os/collective-types';
 import type { SuiEvent } from '@mysten/sui/client';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';

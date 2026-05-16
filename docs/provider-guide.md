@@ -21,7 +21,7 @@ capabilities:
 Register it with:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh register --config capabilities.yaml
+pnpm --filter @hivemind-os/collective-cli exec collective register --config capabilities.yaml
 ```
 
 ## Built-in adapters
@@ -136,19 +136,19 @@ Behaviour:
 
 1. Initialize your profile:
    ```bash
-   pnpm --filter @agentic-mesh/cli exec mesh init
+   pnpm --filter @hivemind-os/collective-cli exec collective init
    ```
 2. Fund the wallet:
    ```bash
-   pnpm --filter @agentic-mesh/cli exec mesh wallet fund
+   pnpm --filter @hivemind-os/collective-cli exec collective wallet fund
    ```
 3. Start the daemon:
    ```bash
-   pnpm --filter @agentic-mesh/cli exec mesh daemon start
+   pnpm --filter @hivemind-os/collective-cli exec collective daemon start
    ```
 4. Register your provider definition:
    ```bash
-   pnpm --filter @agentic-mesh/cli exec mesh register --config capabilities.yaml
+   pnpm --filter @hivemind-os/collective-cli exec collective register --config capabilities.yaml
    ```
 
 ## Monitoring and logs
@@ -156,19 +156,19 @@ Behaviour:
 Check whether the daemon is healthy:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh daemon status
+pnpm --filter @hivemind-os/collective-cli exec collective daemon status
 ```
 
 Tail the daemon logs:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh logs --follow
+pnpm --filter @hivemind-os/collective-cli exec collective logs --follow
 ```
 
 Inspect wallet state:
 
 ```bash
-pnpm --filter @agentic-mesh/cli exec mesh wallet balance
+pnpm --filter @hivemind-os/collective-cli exec collective wallet balance
 ```
 
 ## Pricing strategies
@@ -177,7 +177,7 @@ A few practical defaults:
 
 - Start with a low fixed MIST price for testing and discovery.
 - Price high-latency or high-cost capabilities above simple echo-style actions.
-- Use `mesh policy set --daily` and `mesh policy set --per-task` to cap risk while you iterate.
+- Use `collective policy set --daily` and `collective policy set --per-task` to cap risk while you iterate.
 - Keep the capability name stable and use `version` to communicate contract changes.
 
 For early-stage testing, predictable flat pricing is easier to reason about than dynamic quoting. Once you understand execution cost and demand, you can raise prices or split capabilities into premium tiers.

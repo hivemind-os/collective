@@ -4,7 +4,7 @@ import type { BlobMetadata, BlobStore, StoredBlob } from './interface.js';
 import { FilesystemBlobStore } from './fs-store.js';
 import { parseWalrusBlobReference, type WalrusBlobStore } from './walrus-store.js';
 
-const logger = pino({ name: '@agentic-mesh/core:blobstore:hybrid' });
+const logger = pino({ name: '@hivemind-os/collective-core:blobstore:hybrid' });
 
 export interface HybridBlobStoreOptions {
   preferWalrus?: boolean;

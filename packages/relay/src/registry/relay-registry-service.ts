@@ -1,6 +1,6 @@
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
-import { MeshSuiClient, RelayNodeStatus, RelayRegistryClient, type RelayNode } from '@agentic-mesh/core';
+import { MeshSuiClient, RelayNodeStatus, RelayRegistryClient, type RelayNode } from '@hivemind-os/collective-core';
 
 import type { RelayConfig } from '../config.js';
 import { RelayIdentity } from '../identity/relay-identity.js';

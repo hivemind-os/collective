@@ -1,6 +1,6 @@
 import bs58 from 'bs58';
 
-import type { DID } from '@agentic-mesh/types';
+import type { DID } from '@hivemind-os/collective-types';
 
 const DID_PREFIX = 'did:mesh:';
 

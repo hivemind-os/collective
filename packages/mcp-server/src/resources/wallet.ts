@@ -1,4 +1,4 @@
-import { PaymentRail } from '@agentic-mesh/types';
+import { PaymentRail } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 import { formatMistToSui } from '../tools/balance.js';

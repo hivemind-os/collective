@@ -81,8 +81,8 @@ async function createTestDir(): Promise<string> {
 
 function createIpcPath(dir: string): string {
   return process.platform === 'win32'
-    ? `\\\\.\\pipe\\agentic-mesh-test-${randomUUID()}`
-    : resolve(dir, 'agentic-mesh.sock');
+    ? `\\\\.\\pipe\\hivemind-collective-test-${randomUUID()}`
+    : resolve(dir, 'hivemind-collective.sock');
 }
 
 async function startServer(options: IpcServerOptions = {}): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {
@@ -215,7 +215,7 @@ describe('ipc server', () => {
       id: 'status',
       method: 'tools/call',
       params: {
-        name: 'mesh_status',
+        name: 'collective_status',
         arguments: {},
       },
     });
@@ -240,7 +240,7 @@ describe('ipc server', () => {
       id: 'status-2',
       method: 'tools/call',
       params: {
-        name: 'mesh_status',
+        name: 'collective_status',
         arguments: {},
       },
     });
@@ -277,7 +277,7 @@ describe('ipc server', () => {
       id: 'metadata-status',
       method: 'tools/call',
       params: {
-        name: 'mesh_status',
+        name: 'collective_status',
         arguments: {},
       },
     });

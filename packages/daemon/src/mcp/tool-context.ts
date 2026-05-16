@@ -8,14 +8,14 @@ import {
   ReputationEventPublisher,
   ReputationStore,
   StakingClient,
-} from '@agentic-mesh/core';
-import type { MeshToolContext } from '@agentic-mesh/mcp-server';
+} from '@hivemind-os/collective-core';
+import type { MeshToolContext } from '@hivemind-os/collective-mcp-server';
 
 import type { DaemonState } from '../state.js';
 
 /**
  * Build a {@link MeshToolContext} from daemon state so the
- * `@agentic-mesh/mcp-server` tool handlers can run inside the daemon.
+ * `@hivemind-os/collective-mcp-server` tool handlers can run inside the daemon.
  *
  * Optional clients are lazily instantiated on first access to avoid
  * allocating resources (SQLite databases, objects) that may never be used.

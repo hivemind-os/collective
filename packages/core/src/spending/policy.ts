@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 
-import type { PaymentRail, SpendingPolicy } from '@agentic-mesh/types';
+import type { PaymentRail, SpendingPolicy } from '@hivemind-os/collective-types';
 
 export interface SpendingPolicyDecision {
   approved: boolean;

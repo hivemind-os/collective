@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import type { AuthProvider } from '@agentic-mesh/core';
+import type { AuthProvider } from '@hivemind-os/collective-core';
 
 const wsState = vi.hoisted(() => {
   type Listener = (...args: unknown[]) => void;

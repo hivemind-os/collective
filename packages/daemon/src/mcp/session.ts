@@ -12,14 +12,14 @@ import {
   type CallToolResult,
   type JSONRPCMessage as SdkJsonRpcMessage,
 } from '@modelcontextprotocol/sdk/types.js';
-import { SessionExpiredError } from '@agentic-mesh/core';
+import { SessionExpiredError } from '@hivemind-os/collective-core';
 import {
   meshToolDefinitions,
   meshToolHandlers,
   registerResourceHandlers,
   type MeshToolContext,
-} from '@agentic-mesh/mcp-server';
-import { PaymentRail, TaskStatus } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-mcp-server';
+import { PaymentRail, TaskStatus } from '@hivemind-os/collective-types';
 
 import { logAuditEvent } from '../audit.js';
 import type { ConnectedApp } from '../ipc/connection-registry.js';
@@ -109,7 +109,7 @@ export class McpSession {
     this.getAppName = params.getAppName;
     this.toolContext = params.toolContext;
     this.server = new Server(
-      { name: '@agentic-mesh/daemon', version: '0.1.0' },
+      { name: '@hivemind-os/collective-daemon', version: '0.1.0' },
       {
         capabilities: {
           tools: {},
@@ -206,19 +206,19 @@ export class McpSession {
   private registerTools(): void {
     const daemonToolDefs = [
       {
-        name: 'mesh_balance',
+        name: 'collective_balance',
         description: 'Return the daemon wallet SUI balance, address, and DID.',
         inputSchema: { type: 'object' as const, properties: {} },
       },
       {
-        name: 'mesh_status',
+        name: 'collective_status',
         description: 'Return daemon identity, uptime, and connected apps.',
         inputSchema: { type: 'object' as const, properties: {} },
       },
     ];
 
     const daemonToolHandlers: Record<string, () => Promise<unknown>> = {
-      mesh_balance: async () => {
+      collective_balance: async () => {
         const balanceMist = await this.state.suiClient.getBalance(this.state.address);
         return {
           did: this.state.did,
@@ -226,7 +226,7 @@ export class McpSession {
           balanceMist: balanceMist.toString(),
         };
       },
-      mesh_status: async () => {
+      collective_status: async () => {
         const status = this.getStatus();
         return {
           ...status,
@@ -235,12 +235,12 @@ export class McpSession {
       },
     };
 
-    // Merge: daemon-specific tools + mcp-server tools (skip mcp-server's mesh_balance)
+    // Merge: daemon-specific tools + mcp-server tools (skip mcp-server's collective_balance)
     const allToolDefs = [
       ...daemonToolDefs,
       ...meshToolDefinitions.filter((def) => !daemonToolHandlers[def.name]).map((def) => {
-        // Annotate mesh_execute with task support hint for task-capable clients
-        if (def.name === 'mesh_execute') {
+        // Annotate collective_execute with task support hint for task-capable clients
+        if (def.name === 'collective_execute') {
           return { ...def, execution: { taskSupport: 'optional' as const } };
         }
         return def;
@@ -272,9 +272,9 @@ export class McpSession {
       // mcp-server handlers
       const meshHandler = meshToolHandlers[toolName];
       if (meshHandler && context) {
-        // For mesh_execute: use MCP Tasks (async) only if the client advertises tasks support;
+        // For collective_execute: use MCP Tasks (async) only if the client advertises tasks support;
         // otherwise default to blocking (standard CallToolResult) for maximum compatibility.
-        if (toolName === 'mesh_execute' && this.clientSupportsTasks()) {
+        if (toolName === 'collective_execute' && this.clientSupportsTasks()) {
           try {
             return await this.handleExecuteAsTask(request.params.arguments as Record<string, unknown>, context, progressToken);
           } catch (error) {
@@ -321,7 +321,7 @@ export class McpSession {
   }
 
   /**
-   * Handle mesh_execute as an MCP Task: post the on-chain task, return immediately
+   * Handle collective_execute as an MCP Task: post the on-chain task, return immediately
    * with a task handle, and track completion in the background.
    */
   private async handleExecuteAsTask(
@@ -330,9 +330,9 @@ export class McpSession {
     progressToken?: string | number,
   ): Promise<{ task: McpTaskEntry } & Record<string, unknown>> {
     const callContext = { ...context, originAppName: this.getAppName() };
-    const executeAsyncHandler = meshToolHandlers['mesh_execute_async'];
+    const executeAsyncHandler = meshToolHandlers['collective_execute_async'];
     if (!executeAsyncHandler) {
-      throw new Error('mesh_execute_async handler not found');
+      throw new Error('collective_execute_async handler not found');
     }
 
     // Post the task on chain (calls prepareMeshExecution under the hood)

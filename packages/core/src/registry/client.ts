@@ -1,6 +1,6 @@
 import pino from 'pino';
 
-import type { AgentCard, Capability, NetworkConfig, ReputationScore } from '@agentic-mesh/types';
+import type { AgentCard, Capability, NetworkConfig, ReputationScore } from '@hivemind-os/collective-types';
 import type { Signer } from '@mysten/sui/cryptography';
 
 import { parseAgentCardFields } from '../internal/parsing.js';
@@ -17,7 +17,7 @@ import {
   buildUpdateCapabilitiesTx,
 } from '../sui/tx-helpers.js';
 
-const logger = pino({ name: '@agentic-mesh/core:registry' });
+const logger = pino({ name: '@hivemind-os/collective-core:registry' });
 
 export class RegistryClient {
   private readonly scoreCalculator = new ReputationScoreCalculator();

@@ -5,7 +5,7 @@ import type { EventId as EventID, SuiEvent } from '@mysten/sui/client';
 
 import { MeshSuiClient } from '../sui/client.js';
 
-const logger = pino({ name: '@agentic-mesh/core:events' });
+const logger = pino({ name: '@hivemind-os/collective-core:events' });
 
 export interface CursorStore {
   getCursor(eventType: string): Promise<EventID | null>;

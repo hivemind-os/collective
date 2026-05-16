@@ -10,7 +10,7 @@ import {
   generateKeypair,
   sign,
   type SimpleKeypair,
-} from '@agentic-mesh/core';
+} from '@hivemind-os/collective-core';
 import {
   createAuthPayload,
   createRelayServer,
@@ -21,8 +21,8 @@ import {
   type RelayConfig,
   type RelayServer,
   type TaskRequestMessage,
-} from '@agentic-mesh/relay';
-import { PaymentRail, type DID } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-relay';
+import { PaymentRail, type DID } from '@hivemind-os/collective-types';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import WebSocket, { type RawData } from 'ws';
 

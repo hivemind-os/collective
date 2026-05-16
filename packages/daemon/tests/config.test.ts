@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { configIo, getDefaultConfig, getDefaultIpcPath, loadConfig, saveConfig } from '../src/config.js';
 
 const createdPaths: string[] = [];
-const envKeys = ['MESH_RPC_URL', 'MESH_PACKAGE_ID', 'MESH_REGISTRY_ID', 'MESH_LOG_LEVEL', 'MESH_DATA_DIR'] as const;
+const envKeys = ['COLLECTIVE_RPC_URL', 'COLLECTIVE_PACKAGE_ID', 'COLLECTIVE_REGISTRY_ID', 'COLLECTIVE_LOG_LEVEL', 'COLLECTIVE_DATA_DIR'] as const;
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
 
 afterEach(async () => {
@@ -42,7 +42,7 @@ describe('config', () => {
 
     if (process.platform === 'win32') {
       expect(config.daemon.ipcPath).toBe(getDefaultIpcPath(config.daemon.dataDir));
-      expect(config.daemon.ipcPath.startsWith('\\\\.\\pipe\\agentic-mesh-')).toBe(true);
+      expect(config.daemon.ipcPath.startsWith('\\\\.\\pipe\\hivemind-collective-')).toBe(true);
     } else {
       expect(config.daemon.ipcPath.endsWith('mesh.sock')).toBe(true);
     }
@@ -186,11 +186,11 @@ describe('config', () => {
       'utf8',
     );
 
-    process.env.MESH_RPC_URL = 'http://127.0.0.1:9999';
-    process.env.MESH_PACKAGE_ID = '0xaaa';
-    process.env.MESH_REGISTRY_ID = '0xbbb';
-    process.env.MESH_LOG_LEVEL = 'error';
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_RPC_URL = 'http://127.0.0.1:9999';
+    process.env.COLLECTIVE_PACKAGE_ID = '0xaaa';
+    process.env.COLLECTIVE_REGISTRY_ID = '0xbbb';
+    process.env.COLLECTIVE_LOG_LEVEL = 'error';
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
 
     const config = loadConfig(configPath);
 
@@ -203,10 +203,10 @@ describe('config', () => {
     expect(config.blobstore.filesystem?.dataDir).toBe(resolve(dataDir, 'blobs'));
   });
 
-  it('preserves an explicit IPC path when MESH_DATA_DIR is overridden', async () => {
+  it('preserves an explicit IPC path when COLLECTIVE_DATA_DIR is overridden', async () => {
     const dir = await createTestDir();
     const configPath = resolve(dir, 'config.yaml');
-    const explicitIpcPath = process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : resolve(dir, 'custom.sock');
+    const explicitIpcPath = process.platform === 'win32' ? '\\\\.\\pipe\\hivemind-collective' : resolve(dir, 'custom.sock');
     const overrideDataDir = resolve(dir, 'override-data');
 
     await writeFile(
@@ -220,7 +220,7 @@ describe('config', () => {
       'utf8',
     );
 
-    process.env.MESH_DATA_DIR = overrideDataDir;
+    process.env.COLLECTIVE_DATA_DIR = overrideDataDir;
 
     const config = loadConfig(configPath);
 

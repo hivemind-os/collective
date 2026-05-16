@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { createDID, generateKeypair, signString } from '@agentic-mesh/core';
-import type { DID } from '@agentic-mesh/types';
+import { createDID, generateKeypair, signString } from '@hivemind-os/collective-core';
+import type { DID } from '@hivemind-os/collective-types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type WebSocket from 'ws';
 

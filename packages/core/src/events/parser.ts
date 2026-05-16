@@ -1,4 +1,4 @@
-import { BidStatus, PaymentScheme, RelayNodeStatus, TaskStatus, type MeshEvent } from '@agentic-mesh/types';
+import { BidStatus, PaymentScheme, RelayNodeStatus, TaskStatus, type MeshEvent } from '@hivemind-os/collective-types';
 import type { SuiEvent } from '@mysten/sui/client';
 
 import { isRecord, parseAgentCardFields, parseBidFields, parseRelayNodeFields, parseTaskFields } from '../internal/parsing.js';

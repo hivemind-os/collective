@@ -1,5 +1,5 @@
-import { MeshSuiClient, TaskClient } from '@agentic-mesh/core';
-import { TaskStatus } from '@agentic-mesh/types';
+import { MeshSuiClient, TaskClient } from '@hivemind-os/collective-core';
+import { TaskStatus } from '@hivemind-os/collective-types';
 
 import { loadMeshConfig } from './config.js';
 import { formatMistToSui } from './wallet.js';

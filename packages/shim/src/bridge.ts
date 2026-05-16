@@ -188,8 +188,8 @@ export async function createBridge(options: BridgeOptions = {}): Promise<BridgeH
 }
 
 async function guessAppName(): Promise<string> {
-  if (process.env.MESH_APP_NAME) {
-    return process.env.MESH_APP_NAME;
+  if (process.env.COLLECTIVE_APP_NAME) {
+    return process.env.COLLECTIVE_APP_NAME;
   }
 
   const arg = process.argv

@@ -22,8 +22,8 @@ import {
   generateX25519KeyPair,
   parseEncryptedPayload,
   serializeEncryptedPayload,
-} from '@agentic-mesh/core';
-import { BidStatus, DisputeStatus, TaskStatus, type AgentCard, type DID, type NetworkConfig, type ReputationEvent } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import { BidStatus, DisputeStatus, TaskStatus, type AgentCard, type DID, type NetworkConfig, type ReputationEvent } from '@hivemind-os/collective-types';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import type { TestWallet } from '../harness/index.js';

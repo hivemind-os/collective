@@ -1,5 +1,5 @@
 {
-  "name": "@agentic-mesh/cli",
+  "name": "@hivemind-os/collective-cli",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -8,7 +8,7 @@
     "dist"
   ],
   "bin": {
-    "mesh": "./dist/index.js"
+    "collective": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup",
@@ -16,10 +16,10 @@
     "lint": "eslint src/ tests/ vitest.config.ts tsup.config.ts"
   },
   "dependencies": {
-    "@agentic-mesh/core": "workspace:*",
-    "@agentic-mesh/daemon": "workspace:*",
-    "@agentic-mesh/mcp-server": "workspace:*",
-    "@agentic-mesh/types": "workspace:*",
+    "@hivemind-os/collective-core": "workspace:*",
+    "@hivemind-os/collective-daemon": "workspace:*",
+    "@hivemind-os/collective-mcp-server": "workspace:*",
+    "@hivemind-os/collective-types": "workspace:*",
     "@mysten/sui": "^1.30.0",
     "js-yaml": "^4.1.0",
     "pino": "^9.0.0"

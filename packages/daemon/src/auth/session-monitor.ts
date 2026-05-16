@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events';
 
-import type { AuthMode, StoredZkLoginSession } from '@agentic-mesh/core';
+import type { AuthMode, StoredZkLoginSession } from '@hivemind-os/collective-core';
 
 export type DaemonAuthState = 'authenticated' | 'expiring' | 'expired' | 'reauth_required';
 

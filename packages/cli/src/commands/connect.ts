@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 export async function handleConnect(args: string[]): Promise<number> {
   const shimCommand = resolveShimCommand();
   if (!shimCommand) {
-    warn('@agentic-mesh/shim is not available in this environment.');
+    warn('@hivemind-os/collective-shim is not available in this environment.');
     info('Build or install the shim package, then configure your MCP app to run `mesh connect`.');
     info('In the meantime, start the background service with `mesh daemon start`.');
     return 1;
@@ -33,7 +33,7 @@ export async function handleConnect(args: string[]): Promise<number> {
 
 function resolveShimCommand(): { command: string; args: string[] } | undefined {
   try {
-    const packageJsonPath = require.resolve('@agentic-mesh/shim/package.json');
+    const packageJsonPath = require.resolve('@hivemind-os/collective-shim/package.json');
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { bin?: string | Record<string, string> };
     const binField =
       typeof packageJson.bin === 'string'

@@ -1,4 +1,4 @@
-import type { HashChainProof, Task } from '@agentic-mesh/types';
+import type { HashChainProof, Task } from '@hivemind-os/collective-types';
 
 import { DEFAULT_METERING_CHUNK_SIZE, HashChain, createMeteringSeed, splitIntoMeteringUnits } from './hash-chain.js';
 

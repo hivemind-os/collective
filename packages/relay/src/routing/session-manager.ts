@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 
-import { parseDID, verify } from '@agentic-mesh/core';
-import type { DID } from '@agentic-mesh/types';
+import { parseDID, verify } from '@hivemind-os/collective-core';
+import type { DID } from '@hivemind-os/collective-types';
 import type WebSocket from 'ws';
 
 import { createAuthPayload, normalizeCapability, type AuthMessage } from './message-types.js';

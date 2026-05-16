@@ -6,7 +6,7 @@ import {
   HybridBlobStore,
   WalrusBlobStore,
   parseWalrusBlobReference,
-} from '@agentic-mesh/core';
+} from '@hivemind-os/collective-core';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { MockWalrusServer, PortAllocator } from '../harness/index.js';

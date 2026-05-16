@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { ReputationEvent } from '@agentic-mesh/types';
+import type { ReputationEvent } from '@hivemind-os/collective-types';
 
 import { serializeReputationEvent } from './serialization.js';
 

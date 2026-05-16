@@ -1,4 +1,4 @@
-import { createDID, loadOrCreateKeypair, MeshSuiClient } from '@agentic-mesh/core';
+import { createDID, loadOrCreateKeypair, MeshSuiClient } from '@hivemind-os/collective-core';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { loadMeshConfig } from './config.js';

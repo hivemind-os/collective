@@ -1,6 +1,6 @@
 import pino from 'pino';
 
-import type { NetworkConfig, Task } from '@agentic-mesh/types';
+import type { NetworkConfig, Task } from '@hivemind-os/collective-types';
 import type { Signer } from '@mysten/sui/cryptography';
 
 import { parseTaskFields } from '../internal/parsing.js';
@@ -18,7 +18,7 @@ import {
   buildReleasePaymentTx,
 } from '../sui/tx-helpers.js';
 
-const logger = pino({ name: '@agentic-mesh/core:task' });
+const logger = pino({ name: '@hivemind-os/collective-core:task' });
 
 export class TaskClient {
   constructor(

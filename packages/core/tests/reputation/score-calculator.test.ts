@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PaymentRail, type AgentCard, type ReputationEvent } from '@agentic-mesh/types';
+import { PaymentRail, type AgentCard, type ReputationEvent } from '@hivemind-os/collective-types';
 
 import { ReputationScoreCalculator } from '../../src/index.js';
 

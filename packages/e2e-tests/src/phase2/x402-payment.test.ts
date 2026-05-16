@@ -2,9 +2,9 @@ import { spawn, spawnSync } from 'node:child_process';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { EvmWallet, X402Client, deriveEvmKey } from '@agentic-mesh/core';
-import { PaymentGate } from '@agentic-mesh/relay';
-import { PaymentRail } from '@agentic-mesh/types';
+import { EvmWallet, X402Client, deriveEvmKey } from '@hivemind-os/collective-core';
+import { PaymentGate } from '@hivemind-os/collective-relay';
+import { PaymentRail } from '@hivemind-os/collective-types';
 
 import { PortAllocator } from '../harness/index.js';
 import { createArtifactRoot, removeDirectoryWithRetries, waitForCondition } from '../phase1/test-helpers.js';

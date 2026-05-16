@@ -1,5 +1,5 @@
-import { FilesystemBlobStore, MeshSuiClient, RegistryClient, TaskClient } from '@agentic-mesh/core';
-import { TaskStatus, type AgentCard, type NetworkConfig } from '@agentic-mesh/types';
+import { FilesystemBlobStore, MeshSuiClient, RegistryClient, TaskClient } from '@hivemind-os/collective-core';
+import { TaskStatus, type AgentCard, type NetworkConfig } from '@hivemind-os/collective-types';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { ECHO_CAPABILITY_NAME } from './agent-a.js';

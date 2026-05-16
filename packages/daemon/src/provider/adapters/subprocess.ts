@@ -50,8 +50,8 @@ export class SubprocessAdapter implements ExecutionAdapter {
         env: {
           ...process.env,
           ...this.env,
-          MESH_TASK_ID: params.taskId,
-          MESH_CAPABILITY: params.capability,
+          COLLECTIVE_TASK_ID: params.taskId,
+          COLLECTIVE_CAPABILITY: params.capability,
         },
       });
 

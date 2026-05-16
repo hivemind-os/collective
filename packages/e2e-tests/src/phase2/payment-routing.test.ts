@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
-import { PaymentRailSelector } from '@agentic-mesh/core';
-import { PaymentRail, TaskStatus, type AgentCard } from '@agentic-mesh/types';
+import { PaymentRailSelector } from '@hivemind-os/collective-core';
+import { PaymentRail, TaskStatus, type AgentCard } from '@hivemind-os/collective-types';
 
 import { PortAllocator } from '../harness/index.js';
 import { createArtifactRoot, removeDirectoryWithRetries } from '../phase1/test-helpers.js';
@@ -87,7 +87,7 @@ describe('Phase 2 E2E: Payment Rail Selection', () => {
     ).toThrow('No compatible payment rail is available for this task.');
   });
 
-  it('mesh_execute selects relay sync flow when provider capabilities support it', async () => {
+  it('collective_execute selects relay sync flow when provider capabilities support it', async () => {
     artifactRoot ??= await createArtifactRoot('phase2-payment-routing');
     const relayServer = await startTestRelay({ artifactRoot, name: 'routing-sync' });
     const provider = await connectTestProvider({

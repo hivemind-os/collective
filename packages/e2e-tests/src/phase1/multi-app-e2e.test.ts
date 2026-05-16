@@ -3,10 +3,10 @@ import { mkdir, rm } from 'node:fs/promises';
 import net from 'node:net';
 import { resolve } from 'node:path';
 
-import type { DaemonFullConfig } from '@agentic-mesh/daemon/config';
-import { getDefaultConfig } from '@agentic-mesh/daemon/config';
-import { IpcServer } from '@agentic-mesh/daemon/ipc/server';
-import { DaemonState } from '@agentic-mesh/daemon/state';
+import type { DaemonFullConfig } from '@hivemind-os/collective-daemon/config';
+import { getDefaultConfig } from '@hivemind-os/collective-daemon/config';
+import { IpcServer } from '@hivemind-os/collective-daemon/ipc/server';
+import { DaemonState } from '@hivemind-os/collective-daemon/state';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const createdPaths: string[] = [];
@@ -149,13 +149,13 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
         jsonrpc: '2.0',
         id: 'first-status',
         method: 'tools/call',
-        params: { name: 'mesh_status', arguments: {} },
+        params: { name: 'collective_status', arguments: {} },
       }),
       second.request<MeshStatusToolResponse>({
         jsonrpc: '2.0',
         id: 'second-status',
         method: 'tools/call',
-        params: { name: 'mesh_status', arguments: {} },
+        params: { name: 'collective_status', arguments: {} },
       }),
     ]);
 
@@ -188,7 +188,7 @@ describe('Phase 1 E2E: Multi-app IPC', () => {
       jsonrpc: '2.0',
       id: 'remaining-status',
       method: 'tools/call',
-      params: { name: 'mesh_status', arguments: {} },
+      params: { name: 'collective_status', arguments: {} },
     });
 
     expect(server.getConnectedApps()).toMatchObject([{ appName: 'vscode', appPid: secondPid }]);
@@ -254,7 +254,7 @@ async function createTestDir(): Promise<string> {
 }
 
 function createIpcPath(dir: string): string {
-  return process.platform === 'win32' ? `\\\\.\\pipe\\agentic-mesh-e2e-${randomUUID()}` : resolve(dir, 'agentic-mesh.sock');
+  return process.platform === 'win32' ? `\\\\.\\pipe\\hivemind-collective-e2e-${randomUUID()}` : resolve(dir, 'hivemind-collective.sock');
 }
 
 async function startServer(): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {

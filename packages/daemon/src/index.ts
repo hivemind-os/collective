@@ -28,7 +28,7 @@ export async function main(): Promise<void> {
   const destination = config.daemon.logFile ? pino.destination(config.daemon.logFile) : undefined;
   const logger = pino(
     {
-      name: '@agentic-mesh/daemon',
+      name: '@hivemind-os/collective-daemon',
       level: config.daemon.logLevel,
     },
     destination,
@@ -251,7 +251,7 @@ async function openPortalUrl(
 }
 
 function isHeadlessEnvironment(): boolean {
-  if (process.env.MESH_HEADLESS === '1' || process.env.CI === 'true') {
+  if (process.env.COLLECTIVE_HEADLESS === '1' || process.env.CI === 'true') {
     return true;
   }
 

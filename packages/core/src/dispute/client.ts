@@ -1,4 +1,4 @@
-import type { Dispute, NetworkConfig } from '@agentic-mesh/types';
+import type { Dispute, NetworkConfig } from '@hivemind-os/collective-types';
 import type { SuiEvent, SuiTransactionBlockResponse } from '@mysten/sui/client';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 

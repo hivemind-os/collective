@@ -1,7 +1,7 @@
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 
-import { SessionExpiredError } from '@agentic-mesh/core';
+import { SessionExpiredError } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 import { meshAnalyticsTool, runMeshAnalytics } from './analytics.js';

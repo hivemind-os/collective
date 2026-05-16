@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseRawEvent } from '@agentic-mesh/core';
+import { parseRawEvent } from '@hivemind-os/collective-core';
 
 import {
   PROTOCOL_VERSION,

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 
-import type { AgentCard, Capability, ReputationScore } from '@agentic-mesh/types';
+import type { AgentCard, Capability, ReputationScore } from '@hivemind-os/collective-types';
 
 import { ReputationScoreCalculator } from '../reputation/score-calculator.js';
 

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PaymentRail, TaskStatus, type AgentCard } from '@agentic-mesh/types';
+import { PaymentRail, TaskStatus, type AgentCard } from '@hivemind-os/collective-types';
 
 const relayExecuteMock = vi.fn();
 
-vi.mock('@agentic-mesh/core', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@agentic-mesh/core')>();
+vi.mock('@hivemind-os/collective-core', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hivemind-os/collective-core')>();
   return {
     ...actual,
     PaymentRailSelector: class {

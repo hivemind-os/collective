@@ -7,9 +7,9 @@ import {
   parseRawEvent,
   SqliteCursorStore,
   TaskClient,
-} from '@agentic-mesh/core';
-import type { MeshEvent } from '@agentic-mesh/types';
-import { TaskStatus } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import type { MeshEvent } from '@hivemind-os/collective-types';
+import { TaskStatus } from '@hivemind-os/collective-types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { SuiTestNetwork } from '../harness/index.js';

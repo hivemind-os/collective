@@ -1,5 +1,5 @@
-import { decodeMeteredResult, getMeteredResultUnits, parseMeteredResultEnvelope, ResultVerifier } from '@agentic-mesh/core';
-import { PaymentRail, PaymentScheme, TaskStatus } from '@agentic-mesh/types';
+import { decodeMeteredResult, getMeteredResultUnits, parseMeteredResultEnvelope, ResultVerifier } from '@hivemind-os/collective-core';
+import { PaymentRail, PaymentScheme, TaskStatus } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 import { fetchMeshBlob, hexToBytes, supportsEncryptedBlobs } from '../encryption.js';
@@ -26,7 +26,7 @@ export interface MeshVerifyResultParams {
 }
 
 export const meshMeteredExecuteTool = {
-  name: 'mesh_metered_execute',
+  name: 'collective_metered_execute',
   description: 'Execute a metered mesh task with capped escrow and result verification',
   inputSchema: {
     type: 'object' as const,
@@ -43,7 +43,7 @@ export const meshMeteredExecuteTool = {
 };
 
 export const meshVerifyResultTool = {
-  name: 'mesh_verify_result',
+  name: 'collective_verify_result',
   description: 'Verify a metered task result blob against its on-chain hash chain root',
   inputSchema: {
     type: 'object' as const,

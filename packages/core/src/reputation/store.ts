@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 
-import type { ReputationEvent } from '@agentic-mesh/types';
+import type { ReputationEvent } from '@hivemind-os/collective-types';
 
 import { assertValidReputationEvent, parseReputationEvent } from './validation.js';
 

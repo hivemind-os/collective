@@ -15,7 +15,7 @@ export interface IndexerConfig {
   };
 }
 
-export function getDefaultIndexerConfig(baseDir = resolve(homedir(), '.agentic-mesh', 'indexer')): IndexerConfig {
+export function getDefaultIndexerConfig(baseDir = resolve(homedir(), '.hivemind-os/collective', 'indexer')): IndexerConfig {
   return {
     rpcUrl: 'http://127.0.0.1:9000',
     packageId: '',
@@ -30,23 +30,23 @@ export function getDefaultIndexerConfig(baseDir = resolve(homedir(), '.agentic-m
 }
 
 export function loadIndexerConfig(overrides: Partial<IndexerConfig> = {}): IndexerConfig {
-  const baseDir = process.env.MESH_INDEXER_DATA_DIR ? resolve(process.env.MESH_INDEXER_DATA_DIR) : undefined;
+  const baseDir = process.env.COLLECTIVE_INDEXER_DATA_DIR ? resolve(process.env.COLLECTIVE_INDEXER_DATA_DIR) : undefined;
   const defaults = getDefaultIndexerConfig(baseDir);
   const config: IndexerConfig = {
-    rpcUrl: process.env.MESH_RPC_URL ?? process.env.MESH_INDEXER_RPC_URL ?? overrides.rpcUrl ?? defaults.rpcUrl,
-    packageId: process.env.MESH_PACKAGE_ID ?? process.env.MESH_INDEXER_PACKAGE_ID ?? overrides.packageId ?? defaults.packageId,
-    sqlitePath: resolve(overrides.sqlitePath ?? process.env.MESH_INDEXER_SQLITE_PATH ?? defaults.sqlitePath),
+    rpcUrl: process.env.COLLECTIVE_RPC_URL ?? process.env.COLLECTIVE_INDEXER_RPC_URL ?? overrides.rpcUrl ?? defaults.rpcUrl,
+    packageId: process.env.COLLECTIVE_PACKAGE_ID ?? process.env.COLLECTIVE_INDEXER_PACKAGE_ID ?? overrides.packageId ?? defaults.packageId,
+    sqlitePath: resolve(overrides.sqlitePath ?? process.env.COLLECTIVE_INDEXER_SQLITE_PATH ?? defaults.sqlitePath),
     pollingIntervalMs:
-      readNumber(process.env.MESH_INDEXER_POLLING_INTERVAL_MS) ?? overrides.pollingIntervalMs ?? defaults.pollingIntervalMs,
+      readNumber(process.env.COLLECTIVE_INDEXER_POLLING_INTERVAL_MS) ?? overrides.pollingIntervalMs ?? defaults.pollingIntervalMs,
     server: {
-      host: overrides.server?.host ?? process.env.MESH_INDEXER_HOST ?? defaults.server.host,
-      port: readNumber(process.env.MESH_INDEXER_PORT) ?? overrides.server?.port ?? defaults.server.port,
+      host: overrides.server?.host ?? process.env.COLLECTIVE_INDEXER_HOST ?? defaults.server.host,
+      port: readNumber(process.env.COLLECTIVE_INDEXER_PORT) ?? overrides.server?.port ?? defaults.server.port,
     },
     backfill:
-      overrides.backfill || process.env.MESH_INDEXER_START_CHECKPOINT
+      overrides.backfill || process.env.COLLECTIVE_INDEXER_START_CHECKPOINT
         ? {
             fromCheckpoint:
-              overrides.backfill?.fromCheckpoint ?? readNumber(process.env.MESH_INDEXER_START_CHECKPOINT),
+              overrides.backfill?.fromCheckpoint ?? readNumber(process.env.COLLECTIVE_INDEXER_START_CHECKPOINT),
           }
         : defaults.backfill,
   };

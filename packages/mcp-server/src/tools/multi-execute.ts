@@ -3,13 +3,13 @@ import {
   ProviderSelectionStrategy,
   type AgentCard,
   type MultiProviderRequest,
-} from '@agentic-mesh/types';
+} from '@hivemind-os/collective-types';
 import {
   CircuitBreaker,
   FanOutExecutor,
   PerformanceTracker,
   ProviderSelector,
-} from '@agentic-mesh/core';
+} from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 import { discoverAgentsByCapability } from './discover.js';
@@ -33,7 +33,7 @@ export interface MeshMultiExecuteParams {
 }
 
 export const meshMultiExecuteTool = {
-  name: 'mesh_multi_execute',
+  name: 'collective_multi_execute',
   description: 'Execute a mesh task across multiple providers and aggregate the results',
   inputSchema: {
     type: 'object' as const,

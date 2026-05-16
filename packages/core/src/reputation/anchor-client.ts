@@ -1,4 +1,4 @@
-import type { ReputationAnchor, ReputationEvent } from '@agentic-mesh/types';
+import type { ReputationAnchor, ReputationEvent } from '@hivemind-os/collective-types';
 import type { Signer } from '@mysten/sui/cryptography';
 
 import type { BlobStore } from '../blobstore/interface.js';

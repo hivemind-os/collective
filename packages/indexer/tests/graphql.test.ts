@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { PaymentRail, TaskStatus, type AgentCard, type Task } from '@agentic-mesh/types';
+import { PaymentRail, TaskStatus, type AgentCard, type Task } from '@hivemind-os/collective-types';
 
 import { AnalyticsEngine } from '../src/analytics.js';
 import { createIndexerGraphQLServer } from '../src/graphql/server.js';

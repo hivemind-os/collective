@@ -1,4 +1,4 @@
-# Agentic Mesh — Technical Architecture
+# HiveMind Collective — Technical Architecture
 
 **Document Type:** Architecture & Tech Stack Analysis
 **Date:** 2026-05-14
@@ -8,12 +8,12 @@
 
 ## 1. Core Architectural Insight
 
-**The Agentic Mesh presents itself as a local MCP (Model Context Protocol) server, but the mesh itself is a dual-chain, NAT-friendly network.** Any MCP-compatible agent - Claude, GPT, local LLMs, custom agents - connects by adding a single MCP server. Behind the scenes, the server handles discovery, task coordination, reputation, storage, and payment routing across Sui and Base.
+**The HiveMind Collective presents itself as a local MCP (Model Context Protocol) server, but the mesh itself is a dual-chain, NAT-friendly network.** Any MCP-compatible agent - Claude, GPT, local LLMs, custom agents - connects by adding a single MCP server. Behind the scenes, the server handles discovery, task coordination, reputation, storage, and payment routing across Sui and Base.
 
 The agent sees tools. The mesh handles everything else.
 
 ```
-AI Agent <-> Agentic Mesh MCP Server (local process)
+AI Agent <-> HiveMind Collective MCP Server (local process)
 
 Inside the local MCP server:
 - Service Layer: discovery, task lifecycle, scheduling, reputation
@@ -41,7 +41,7 @@ MCP is becoming the universal standard for tool integration:
 ### What MCP Gives Us
 | MCP Primitive | Mesh Use |
 |---|---|
-| **Tools** | `mesh_discover`, `mesh_execute`, `mesh_register`, etc. |
+| **Tools** | `collective_discover`, `collective_execute`, `collective_register`, etc. |
 | **Resources** | Browseable capability directory, agent profiles, task status |
 | **Prompts** | Guided workflows ("find an agent to do X") |
 | **Sampling** | Provider mode — mesh asks local agent to perform work |
@@ -73,7 +73,7 @@ MCP is the **integration layer**, not the mesh protocol. The actual mesh protoco
 Consumer mode and provider mode still have different operational concerns, but the architectural pivot is that **desktop and laptop users can participate on both sides of the mesh without exposing inbound HTTP ports**. Canonical state lives on Sui. Async coordination happens through Sui transactions + Walrus. Low-latency work uses outbound relay connections.
 
 ```
-Shared Core Library (@agentic-mesh/core)
+Shared Core Library (@hivemind-os/collective-core)
 - identity
 - discovery
 - payment routing
@@ -113,14 +113,14 @@ Optional Relay Node
 ### Consumer-Only Flow (Default, Zero-Config)
 
 ```
-1. User installs: npm install -g @agentic-mesh/cli
+1. User installs: npm install -g @hivemind-os/collective-cli
 2. Adds MCP config: { "command": "mesh", "args": ["connect"] }
 3. First tool call triggers setup:
    a. Shim starts daemon automatically
    b. Daemon opens browser for OAuth (zkLogin)
    c. User clicks "Sign in with Google" + sets spending limit
    d. Mesh Identity Key generated + stored in OS keychain; Sui wallet and EVM payment key derived
-4. Agent retries → mesh_execute works
+4. Agent retries → collective_execute works
 5. All subsequent apps connect instantly (daemon already running)
 ```
 
@@ -137,7 +137,7 @@ No Docker, no config files, no port forwarding. Just `npm install`, add MCP conf
 // DISCOVERY
 // ═══════════════════════════════════════════
 
-mesh_discover({
+collective_discover({
   query: string,              // natural language: "weather forecast agent"
   capabilities?: string[],    // structured tags: ["weather.forecast"]
   filters?: {
@@ -154,7 +154,7 @@ mesh_discover({
 // EXECUTION (the "easy button")
 // ═══════════════════════════════════════════
 
-mesh_execute({
+collective_execute({
   capability: string,         // "get-weather" or natural language
   input: object,              // capability-specific input
   preferences?: {
@@ -170,17 +170,17 @@ mesh_execute({
 // TASK MANAGEMENT
 // ═══════════════════════════════════════════
 
-mesh_task_status({ taskId: string })
+collective_task_status({ taskId: string })
 // Returns: { status, progress, estimatedCompletion }
 
-mesh_task_cancel({ taskId: string })
+collective_task_cancel({ taskId: string })
 // Returns: { cancelled, refundAmount }
 
 // ═══════════════════════════════════════════
 // REGISTRATION (Provider Mode)
 // ═══════════════════════════════════════════
 
-mesh_register({
+collective_register({
   capabilities: [{
     id: string,
     description: string,
@@ -225,7 +225,7 @@ mesh_reputation({ agentId: string })
 mesh_policy_get()
 // Returns: { maxSpendPerTask, dailyBudget, allowedChains, autoApproveBelow }
 
-mesh_policy_update({
+collective_policy_update({
   maxSpendPerTask?: string,
   dailyBudget?: string,
   allowedChains?: string[],
@@ -273,7 +273,7 @@ mesh_onboard:
 ### 5.1 Component Diagram
 
 ```
-Agentic Mesh MCP Server
+HiveMind Collective MCP Server
 
 1. MCP Transport Layer
    - stdio for local clients
@@ -393,7 +393,7 @@ Provider Runtime
 The consumer now chooses between **two payment rails**, and the choice depends on execution mode:
 
 ```
-Agent calls mesh_execute({ capability: "translate", input: {...} })
+Agent calls collective_execute({ capability: "translate", input: {...} })
   -> Policy Engine checks approval threshold
   -> Payment Service selects settlement rail
 
@@ -422,7 +422,7 @@ Finally:
 
 ### 6.3 zkLogin Onboarding & Cross-Chain Key Derivation
 
-Sui's **zkLogin** enables frictionless onboarding: a user signs in with Google, Apple, or another OAuth provider and receives a Sui address — no seed phrases, no browser extensions. The Agentic Mesh extends this onboarding flow with a local, persistent mesh identity so the user ends up with a stable identity layer plus the right payment keys for both chains.
+Sui's **zkLogin** enables frictionless onboarding: a user signs in with Google, Apple, or another OAuth provider and receives a Sui address — no seed phrases, no browser extensions. The HiveMind Collective extends this onboarding flow with a local, persistent mesh identity so the user ends up with a stable identity layer plus the right payment keys for both chains.
 
 #### Key Hierarchy Created During Onboarding
 
@@ -444,7 +444,7 @@ User clicks "Sign in with Google"
   → Sui verifies ZK proof + ephemeral signature → tx authorized
 ```
 
-The **user_salt** (128-bit, persistent) + **OAuth `sub` claim** (stable user ID) deterministically produce the Sui address. Agentic Mesh keeps a separate persistent Ed25519 identity key locally, and uses that identity key to bind mesh-level signing and EVM key derivation to the device/profile.
+The **user_salt** (128-bit, persistent) + **OAuth `sub` claim** (stable user ID) deterministically produce the Sui address. HiveMind Collective keeps a separate persistent Ed25519 identity key locally, and uses that identity key to bind mesh-level signing and EVM key derivation to the device/profile.
 
 #### Deriving an EVM Key from Mesh Identity + zkLogin Secrets
 
@@ -472,7 +472,7 @@ This way, even if the Mysten salt service is compromised, the attacker also need
 - **Deterministic:** The same mesh identity + zkLogin account always produces the same EVM address
 - **One-way:** The EVM key cannot be reversed to reveal the identity private key or user_salt
 - **Local-secret bound:** Remote salt custody alone is insufficient to derive the EVM key
-- **Domain-separated:** The `info` parameter ensures this key is unique to Agentic Mesh
+- **Domain-separated:** The `info` parameter ensures this key is unique to HiveMind Collective
 - **Standard:** HKDF-SHA256 per RFC 5869 — auditable, well-understood
 
 #### v1 Salt Custody: Mysten Salt Service
@@ -610,7 +610,7 @@ For complex production search queries, the roadmap can add Sui indexer services 
 ### 8.1 Package Structure
 
 ```
-@agentic-mesh/
+@hivemind-os/collective-
 +-- core/                    # Shared protocol library
 |   +-- identity/            # DID, keys, signing
 |   +-- discovery/           # Sui RPC queries, cache, ranking
@@ -720,7 +720,7 @@ For complex production search queries, the roadmap can add Sui indexer services 
 
 | Threat | Attack Vector | Mitigation |
 |---|---|---|
-| **Wallet drain** | Prompt injection causes agent to call mesh_execute with large spend | Policy engine, spending limits, human approval above threshold |
+| **Wallet drain** | Prompt injection causes agent to call collective_execute with large spend | Policy engine, spending limits, human approval above threshold |
 | **Key theft** | Malware reads keystore file | OS keychain, encrypted at rest, memory-safe operations |
 | **Malicious provider** | Provider accepts payment, returns garbage | Reputation system, Sui escrow for async tasks, dispute mechanism |
 | **Malicious relay** | Relay censors, delays, or tampers with real-time traffic | End-to-end task signatures, multiple relay options, fall back to async Sui path |
@@ -774,9 +774,9 @@ CREATE TABLE audit_log (
 Users run the mesh on desktops/laptops with multiple AI apps (Claude Desktop, GPT, VS Code, custom agents). A single **daemon** process owns all shared state, while lightweight **shims** are what each app spawns.
 
 ```
-Claude Desktop → stdio → mesh-shim ─┐
-GPT client     → stdio → mesh-shim ─┼── IPC ──→  mesh daemon (single process)
-VS Code agent  → stdio → mesh-shim ─┤                │
+Claude Desktop → stdio → collective-shim ─┐
+GPT client     → stdio → collective-shim ─┼── IPC ──→  mesh daemon (single process)
+VS Code agent  → stdio → collective-shim ─┤                │
 Custom agent   → HTTP/SSE ──────────┘                │
                                                       ├── Identity & keys (OS keychain)
                                                       ├── Wallet (single nonce sequence)
@@ -788,13 +788,13 @@ Custom agent   → HTTP/SSE ──────────┘                │
                                                       └── Local web portal (:PORT)
 ```
 
-**The shim** (`mesh connect`) is the binary that apps spawn. It:
+**The shim** (`collective connect`) is the binary that apps spawn. It:
 - Is tiny (~50 lines) — pipes MCP stdio to the daemon's local socket
 - Auto-starts the daemon if it's not running
 - Passes app metadata (app name, PID, requested profile)
 - Looks like a normal MCP server to the host app
 
-**The daemon** (`mesh daemon`) is the real mesh node. It:
+**The daemon** (`collective daemon`) is the real mesh node. It:
 - Runs as a background service (auto-started, or launched at login)
 - Manages identity, keys, wallet, Sui subscriptions, relay connections
 - Serves multiple MCP connections simultaneously
@@ -802,7 +802,7 @@ Custom agent   → HTTP/SSE ──────────┘                │
 - Hosts the local web portal for settings and auth flows
 - Coordinates wallet nonces (prevents double-spend race conditions)
 
-**IPC transport:** Named pipe (Windows) or Unix domain socket (macOS/Linux) at a well-known path (`~/.agentic-mesh/mesh.sock` / `\\.\pipe\agentic-mesh`).
+**IPC transport:** Named pipe (Windows) or Unix domain socket (macOS/Linux) at a well-known path (`~/.hivemind-os/collective/mesh.sock` / `\\.\pipe\hivemind-collective`).
 
 ### 10.2 Onboarding & Authentication UX
 
@@ -839,7 +839,7 @@ The daemon handles all auth flows. Apps never deal with OAuth directly.
 **Headless/remote fallback (Device Code Flow, RFC 8628):**
 ```
 1. Daemon detects no browser available ($DISPLAY unset, SSH session)
-2. Returns device code to agent: "Visit https://auth.agentic-mesh.org/device
+2. Returns device code to agent: "Visit https://auth.hivemind-collective.org/device
    and enter code: WOLF-3847"
 3. User authenticates on any device (phone works)
 4. Daemon polls for completion → keys derived → ready
@@ -880,7 +880,7 @@ interface GlobalSpendingPolicy {
 By default, all apps share one identity — you are one agent on the mesh. For users who need separation:
 
 ```yaml
-# ~/.agentic-mesh/config.yaml
+# ~/.hivemind-os/collective/config.yaml
 defaultProfile: personal
 
 profiles:
@@ -923,7 +923,7 @@ The daemon uses this for:
 
 ```bash
 # Install (gets daemon + shim + CLI + web portal)
-npm install -g @agentic-mesh/cli
+npm install -g @hivemind-os/collective-cli
 
 # First-time init (starts daemon, opens browser for OAuth)
 mesh init
@@ -931,7 +931,7 @@ mesh init
 # All MCP-compatible apps use the same config:
 {
   "mcpServers": {
-    "agentic-mesh": {
+    "hivemind-collective": {
       "command": "mesh",
       "args": ["connect"]
     }
@@ -946,7 +946,7 @@ mesh daemon stop      # graceful shutdown
 # Settings available via:
 mesh config           # CLI
 localhost:PORT        # web portal (always running with daemon)
-mesh_policy_update()  # any connected agent via MCP tool
+collective_policy_update()  # any connected agent via MCP tool
 ```
 
 ---
@@ -1168,7 +1168,7 @@ function selectChain(ctx: ExecutionContext): ChainId {
 
 ---
 
-## 12. Data Flow: Complete mesh_execute Example
+## 12. Data Flow: Complete collective_execute Example
 
 ### Flow A: Async Task (Sui-native, fully decentralized)
 
@@ -1270,12 +1270,12 @@ This path is optimized for streaming and low-latency execution, while still rema
 
 ```bash
 # Install (daemon + shim + CLI + web portal)
-npm install -g @agentic-mesh/cli
+npm install -g @hivemind-os/collective-cli
 
 # Add to Claude Desktop MCP config (same for any MCP app):
 {
   "mcpServers": {
-    "agentic-mesh": {
+    "hivemind-collective": {
       "command": "mesh",
       "args": ["connect"]
     }
@@ -1337,7 +1337,7 @@ open http://localhost:PORT     # GUI for wallet, settings, logs, task history
 
 # Via any connected agent (conversational)
 "Hey Claude, set my daily mesh spending limit to $20"
-→ Claude calls mesh_policy_update({ dailyBudget: "$20.00" })
+→ Claude calls collective_policy_update({ dailyBudget: "$20.00" })
 ```
 
 ---

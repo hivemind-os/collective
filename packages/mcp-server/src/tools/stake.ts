@@ -1,4 +1,4 @@
-import { StakingClient, STAKING_COOLDOWN_MS } from '@agentic-mesh/core';
+import { StakingClient, STAKING_COOLDOWN_MS } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -9,7 +9,7 @@ export interface MeshStakeParams {
 }
 
 export const meshStakeTool = {
-  name: 'mesh_stake',
+  name: 'collective_stake',
   description: 'Manage stake deposits, status, and withdrawals for the local Agentic Mesh identity',
   inputSchema: {
     type: 'object' as const,

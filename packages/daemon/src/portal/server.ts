@@ -3,8 +3,8 @@ import { randomBytes } from 'node:crypto';
 import cors from '@fastify/cors';
 import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 
-import type { AuthProvider, OAuthConfig, StoredZkLoginSession } from '@agentic-mesh/core';
-import { createPkcePair, type ZkLoginPendingSession } from '@agentic-mesh/core';
+import type { AuthProvider, OAuthConfig, StoredZkLoginSession } from '@hivemind-os/collective-core';
+import { createPkcePair, type ZkLoginPendingSession } from '@hivemind-os/collective-core';
 
 import { saveConfig, type DaemonFullConfig } from '../config.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';

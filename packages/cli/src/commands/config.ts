@@ -2,8 +2,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-import { getDefaultIpcPath as getDaemonDefaultIpcPath } from '@agentic-mesh/daemon/config';
-import { PaymentRail, type NetworkConfig, type SpendingPolicy } from '@agentic-mesh/types';
+import { getDefaultIpcPath as getDaemonDefaultIpcPath } from '@hivemind-os/collective-daemon/config';
+import { PaymentRail, type NetworkConfig, type SpendingPolicy } from '@hivemind-os/collective-types';
 import yaml from 'js-yaml';
 
 import { success } from '../utils/output.js';
@@ -65,7 +65,7 @@ export async function handleConfig(args: string[]): Promise<number> {
 }
 
 export function getMeshDataDir(): string {
-  return normalizePath(process.env.MESH_DATA_DIR ?? join(homedir(), '.agentic-mesh'));
+  return normalizePath(process.env.COLLECTIVE_DATA_DIR ?? join(homedir(), '.hivemind-os/collective'));
 }
 
 export function getConfigPath(configPath?: string): string {
@@ -76,10 +76,10 @@ export function buildDefaultConfig(dataDir = getMeshDataDir()): MeshCliConfig {
   const resolvedDataDir = normalizePath(dataDir);
   return {
     network: {
-      rpcUrl: process.env.MESH_RPC_URL ?? 'http://127.0.0.1:9000',
+      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? 'http://127.0.0.1:9000',
       faucetUrl: 'http://127.0.0.1:9123',
-      packageId: process.env.MESH_PACKAGE_ID ?? '',
-      registryId: process.env.MESH_REGISTRY_ID ?? '',
+      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? '',
+      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? '',
     },
     identity: {
       dataDir: join(resolvedDataDir, 'identity'),
@@ -92,7 +92,7 @@ export function buildDefaultConfig(dataDir = getMeshDataDir()): MeshCliConfig {
       ipcPath: getDaemonDefaultIpcPath(resolvedDataDir),
       dataDir: resolvedDataDir,
       pidFile: join(resolvedDataDir, 'daemon.pid'),
-      logLevel: normalizeLogLevel(process.env.MESH_LOG_LEVEL, 'info'),
+      logLevel: normalizeLogLevel(process.env.COLLECTIVE_LOG_LEVEL, 'info'),
       logFile: join(resolvedDataDir, 'daemon.log'),
     },
     blobstore: {
@@ -100,8 +100,8 @@ export function buildDefaultConfig(dataDir = getMeshDataDir()): MeshCliConfig {
       baseDir: join(resolvedDataDir, 'blobs'),
     },
     indexer: {
-      enabled: Boolean(process.env.MESH_INDEXER_URL),
-      url: process.env.MESH_INDEXER_URL,
+      enabled: Boolean(process.env.COLLECTIVE_INDEXER_URL),
+      url: process.env.COLLECTIVE_INDEXER_URL,
     },
   };
 }
@@ -110,7 +110,7 @@ export function loadMeshConfig(configPath?: string): MeshCliConfig {
   const resolvedConfigPath = getConfigPath(configPath);
   const parsed = loadConfigFile(resolvedConfigPath);
   const baseDataDir = normalizePath(
-    process.env.MESH_DATA_DIR ?? readString(getNestedValue(parsed, 'daemon', 'dataDir')) ?? dirname(resolvedConfigPath),
+    process.env.COLLECTIVE_DATA_DIR ?? readString(getNestedValue(parsed, 'daemon', 'dataDir')) ?? dirname(resolvedConfigPath),
   );
   const defaults = buildDefaultConfig(baseDataDir);
   const hasExplicitIpcPath = readString(getNestedValue(parsed, 'daemon', 'ipcPath')) !== undefined;
@@ -212,7 +212,7 @@ function applyEnvironmentOverrides(
   config: MeshCliConfig,
   options: { hasExplicitIpcPath: boolean } = { hasExplicitIpcPath: false },
 ): MeshCliConfig {
-  const envDataDir = process.env.MESH_DATA_DIR ? normalizePath(process.env.MESH_DATA_DIR) : undefined;
+  const envDataDir = process.env.COLLECTIVE_DATA_DIR ? normalizePath(process.env.COLLECTIVE_DATA_DIR) : undefined;
   const withDataDir = envDataDir
     ? {
         ...config,
@@ -235,17 +235,17 @@ function applyEnvironmentOverrides(
     ...withDataDir,
     network: {
       ...withDataDir.network,
-      rpcUrl: process.env.MESH_RPC_URL ?? withDataDir.network.rpcUrl,
-      packageId: process.env.MESH_PACKAGE_ID ?? withDataDir.network.packageId,
-      registryId: process.env.MESH_REGISTRY_ID ?? withDataDir.network.registryId,
+      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? withDataDir.network.rpcUrl,
+      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? withDataDir.network.packageId,
+      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? withDataDir.network.registryId,
     },
     daemon: {
       ...withDataDir.daemon,
-      logLevel: normalizeLogLevel(process.env.MESH_LOG_LEVEL, withDataDir.daemon.logLevel),
+      logLevel: normalizeLogLevel(process.env.COLLECTIVE_LOG_LEVEL, withDataDir.daemon.logLevel),
     },
     indexer: {
-      enabled: process.env.MESH_INDEXER_URL ? true : withDataDir.indexer.enabled,
-      url: process.env.MESH_INDEXER_URL ?? withDataDir.indexer.url,
+      enabled: process.env.COLLECTIVE_INDEXER_URL ? true : withDataDir.indexer.enabled,
+      url: process.env.COLLECTIVE_INDEXER_URL ?? withDataDir.indexer.url,
     },
   };
 }

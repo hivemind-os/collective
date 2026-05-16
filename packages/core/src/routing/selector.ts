@@ -1,4 +1,4 @@
-import { type AgentCard, type ProviderScore, ProviderSelectionStrategy, type ReputationScore } from '@agentic-mesh/types';
+import { type AgentCard, type ProviderScore, ProviderSelectionStrategy, type ReputationScore } from '@hivemind-os/collective-types';
 
 import { ReputationScoreCalculator } from '../reputation/score-calculator.js';
 

@@ -1,7 +1,7 @@
 import pino from 'pino';
 
-import type { Bid, BidRecommendation, NetworkConfig, Task } from '@agentic-mesh/types';
-import { BidStatus, TaskStatus } from '@agentic-mesh/types';
+import type { Bid, BidRecommendation, NetworkConfig, Task } from '@hivemind-os/collective-types';
+import { BidStatus, TaskStatus } from '@hivemind-os/collective-types';
 import type { SuiEvent, SuiTransactionBlockResponse } from '@mysten/sui/client';
 import type { Signer } from '@mysten/sui/cryptography';
 
@@ -12,7 +12,7 @@ import { MeshSuiClient } from '../sui/client.js';
 import { buildAcceptBidTx, buildPlaceBidTx, buildRejectBidTx, buildWithdrawBidTx } from '../sui/tx-helpers.js';
 import { TaskClient } from '../task/client.js';
 
-const logger = pino({ name: '@agentic-mesh/core:marketplace' });
+const logger = pino({ name: '@hivemind-os/collective-core:marketplace' });
 const DEFAULT_REPUTATION_WEIGHT = 1_000_000n;
 const DEFAULT_PRICE_WEIGHT = 1n;
 const DEFAULT_BROWSE_LIMIT = 20;

@@ -1,4 +1,4 @@
-import type { BlobStore } from '@agentic-mesh/core';
+import type { BlobStore } from '@hivemind-os/collective-core';
 
 export interface EncryptedBlobStoreLike extends BlobStore {
   storeEncrypted(data: Uint8Array, recipientPublicKey: Uint8Array): Promise<{ blobId: string; hash: string }>;

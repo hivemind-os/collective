@@ -1,4 +1,4 @@
-import type { ReputationEvent } from '@agentic-mesh/types';
+import type { ReputationEvent } from '@hivemind-os/collective-types';
 
 const encoder = new TextEncoder();
 

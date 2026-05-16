@@ -33,7 +33,7 @@ import {
   IndexerStore,
   MeshIndexer,
 } from './test-helpers.js';
-import { BidStatus } from '@agentic-mesh/types';
+import { BidStatus } from '@hivemind-os/collective-types';
 
 let artifactRoot: string;
 let network: SuiTestNetwork;

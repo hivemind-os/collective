@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ZkLoginProvider } from '@agentic-mesh/core';
+import { ZkLoginProvider } from '@hivemind-os/collective-core';
 
 import type { DaemonFullConfig } from '../src/config.js';
 import { getDefaultConfig, loadConfig } from '../src/config.js';

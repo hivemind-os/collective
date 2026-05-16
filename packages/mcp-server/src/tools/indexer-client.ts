@@ -1,4 +1,4 @@
-import type { AgentCard, Capability } from '@agentic-mesh/types';
+import type { AgentCard, Capability } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -124,7 +124,7 @@ export async function queryIndexerAgents(
 }
 
 export function resolveIndexerUrl(context: Pick<MeshToolContext, 'indexer'>): string | null {
-  const value = context.indexer?.graphqlUrl ?? process.env.MESH_INDEXER_URL;
+  const value = context.indexer?.graphqlUrl ?? process.env.COLLECTIVE_INDEXER_URL;
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 

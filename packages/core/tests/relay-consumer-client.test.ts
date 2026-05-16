@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { PaymentRail } from '@agentic-mesh/types';
+import { PaymentRail } from '@hivemind-os/collective-types';
 
 import type { AuthProvider, X402Client } from '../src/index.js';
 import { RelayConsumerClient } from '../src/relay/consumer-client.js';

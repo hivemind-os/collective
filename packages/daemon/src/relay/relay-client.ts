@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import type { AuthProvider } from '@agentic-mesh/core';
+import type { AuthProvider } from '@hivemind-os/collective-core';
 import {
   createAuthPayload,
   parseRelayMessage,
   type TaskRequest,
   type TaskResponse,
-} from '@agentic-mesh/relay';
+} from '@hivemind-os/collective-relay';
 import WebSocket from 'ws';
 
 const encoder = new TextEncoder();

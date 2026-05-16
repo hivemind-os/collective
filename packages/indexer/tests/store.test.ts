@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { PaymentRail, BidStatus, DisputeStatus, TaskStatus, type AgentCard, type Bid, type Dispute, type Task } from '@agentic-mesh/types';
+import { PaymentRail, BidStatus, DisputeStatus, TaskStatus, type AgentCard, type Bid, type Dispute, type Task } from '@hivemind-os/collective-types';
 
 import { IndexerStore, encodeCursor } from '../src/store.js';
 

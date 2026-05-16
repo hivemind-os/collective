@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 
-import type { StreamingPaymentState } from '@agentic-mesh/types';
+import type { StreamingPaymentState } from '@hivemind-os/collective-types';
 
 interface StreamRow {
   task_id: string;

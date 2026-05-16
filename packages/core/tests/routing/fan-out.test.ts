@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AggregationMode, ProviderSelectionStrategy, type MultiProviderRequest, type ProviderScore } from '@agentic-mesh/types';
+import { AggregationMode, ProviderSelectionStrategy, type MultiProviderRequest, type ProviderScore } from '@hivemind-os/collective-types';
 
 import { CircuitBreaker, FanOutExecutor, PerformanceTracker } from '../../src/index.js';
 

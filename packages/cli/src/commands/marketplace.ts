@@ -7,7 +7,7 @@ import {
   MarketplaceClient,
   MeshSuiClient,
   WalrusBlobStore,
-} from '@agentic-mesh/core';
+} from '@hivemind-os/collective-core';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { loadMeshConfig, type MeshCliConfig } from './config.js';
@@ -173,8 +173,8 @@ async function resolveInputBlobId(args: string[], deps: MarketplaceCommandDeps):
   }
 
   const blobStore = deps.createBlobStore?.() ?? new WalrusBlobStore({
-    publisherUrl: process.env.MESH_WALRUS_PUBLISHER_URL ?? DEFAULT_WALRUS_PUBLISHER_URL,
-    aggregatorUrl: process.env.MESH_WALRUS_AGGREGATOR_URL ?? DEFAULT_WALRUS_AGGREGATOR_URL,
+    publisherUrl: process.env.COLLECTIVE_WALRUS_PUBLISHER_URL ?? DEFAULT_WALRUS_PUBLISHER_URL,
+    aggregatorUrl: process.env.COLLECTIVE_WALRUS_AGGREGATOR_URL ?? DEFAULT_WALRUS_AGGREGATOR_URL,
   });
   const stored = await blobStore.store(new TextEncoder().encode(contents));
   return stored.blobId;

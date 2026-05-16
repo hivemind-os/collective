@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { DisputeStatus } from '@agentic-mesh/types';
+import { DisputeStatus } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../src/context.js';
 import { runMeshDispute } from '../src/tools/dispute.js';

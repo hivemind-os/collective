@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PaymentRail, type AgentCard } from '@agentic-mesh/types';
+import { PaymentRail, type AgentCard } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../src/context.js';
 import { runMeshDiscover } from '../src/tools/discover.js';

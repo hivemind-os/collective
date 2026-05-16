@@ -148,7 +148,7 @@ async function createTestDir(): Promise<string> {
 }
 
 function createIpcPath(dir: string): string {
-  return process.platform === 'win32' ? `\\\\.\\pipe\\agentic-mesh-shim-${randomUUID()}` : resolve(dir, 'mesh.sock');
+  return process.platform === 'win32' ? `\\\\.\\pipe\\hivemind-collective-shim-${randomUUID()}` : resolve(dir, 'mesh.sock');
 }
 
 describe('bridge', () => {

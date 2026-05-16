@@ -1,4 +1,4 @@
-import { BidStatus, PaymentRail, PaymentScheme, RelayNodeStatus, TaskStatus, type AgentCard, type Bid, type Capability, type Dispute, type RelayNode, type StakePosition, type Task } from '@agentic-mesh/types';
+import { BidStatus, PaymentRail, PaymentScheme, RelayNodeStatus, TaskStatus, type AgentCard, type Bid, type Capability, type Dispute, type RelayNode, type StakePosition, type Task } from '@hivemind-os/collective-types';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

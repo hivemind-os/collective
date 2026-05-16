@@ -1,5 +1,5 @@
-import type { AgentCard, Capability } from '@agentic-mesh/types';
-import { ReputationScoreCalculator } from '@agentic-mesh/core';
+import type { AgentCard, Capability } from '@hivemind-os/collective-types';
+import { ReputationScoreCalculator } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 import { queryIndexerAgents, resolveIndexerUrl } from './indexer-client.js';
@@ -14,7 +14,7 @@ export interface MeshDiscoverParams {
 }
 
 export const meshDiscoverTool = {
-  name: 'mesh_discover',
+  name: 'collective_discover',
   description: 'Find agents by capability on the Agentic Mesh network',
   inputSchema: {
     type: 'object' as const,

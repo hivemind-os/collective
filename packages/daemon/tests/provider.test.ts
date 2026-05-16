@@ -18,8 +18,8 @@ const providerMocks = vi.hoisted(() => ({
   cursorStores: [] as Array<{ dbPath: string; closed: boolean }>,
 }));
 
-vi.mock('@agentic-mesh/core', async () => {
-  const actual = await vi.importActual<typeof import('@agentic-mesh/core')>('@agentic-mesh/core');
+vi.mock('@hivemind-os/collective-core', async () => {
+  const actual = await vi.importActual<typeof import('@hivemind-os/collective-core')>('@hivemind-os/collective-core');
 
   class MockEventSubscription {
     readonly params: {
@@ -84,8 +84,8 @@ vi.mock('@agentic-mesh/core', async () => {
   };
 });
 
-import { parseMeteredResultEnvelope } from '@agentic-mesh/core';
-import { PaymentScheme, type DID } from '@agentic-mesh/types';
+import { parseMeteredResultEnvelope } from '@hivemind-os/collective-core';
+import { PaymentScheme, type DID } from '@hivemind-os/collective-types';
 
 import type { DaemonFullConfig } from '../src/config.js';
 import { getDefaultConfig } from '../src/config.js';

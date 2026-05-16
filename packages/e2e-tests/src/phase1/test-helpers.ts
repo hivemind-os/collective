@@ -2,8 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { FilesystemBlobStore, MeshSuiClient, SqliteCursorStore, TaskClient } from '@agentic-mesh/core';
-import { PaymentRail, TaskStatus, type Capability, type NetworkConfig, type Task } from '@agentic-mesh/types';
+import { FilesystemBlobStore, MeshSuiClient, SqliteCursorStore, TaskClient } from '@hivemind-os/collective-core';
+import { PaymentRail, TaskStatus, type Capability, type NetworkConfig, type Task } from '@hivemind-os/collective-types';
 import type { SuiEvent } from '@mysten/sui/client';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 

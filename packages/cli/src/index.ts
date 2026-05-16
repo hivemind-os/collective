@@ -2,7 +2,7 @@
 
 import { pathToFileURL } from 'node:url';
 
-import { SessionExpiredError } from '@agentic-mesh/core';
+import { SessionExpiredError } from '@hivemind-os/collective-core';
 
 import { handleAnalytics } from './commands/analytics.js';
 import { handleAuth } from './commands/auth.js';

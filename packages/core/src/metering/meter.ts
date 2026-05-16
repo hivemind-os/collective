@@ -1,4 +1,4 @@
-import type { HashChainProof, MeteringReport } from '@agentic-mesh/types';
+import type { HashChainProof, MeteringReport } from '@hivemind-os/collective-types';
 
 import { HashChain, createMeteringSeed } from './hash-chain.js';
 

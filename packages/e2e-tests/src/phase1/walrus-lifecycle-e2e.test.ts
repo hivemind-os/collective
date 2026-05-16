@@ -8,8 +8,8 @@ import {
   WalrusBlobStore,
   WalrusBlobTooLargeError,
   parseWalrusBlobReference,
-} from '@agentic-mesh/core';
-import { TaskStatus } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import { TaskStatus } from '@hivemind-os/collective-types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { MockWalrusServer, PortAllocator, SuiTestNetwork } from '../harness/index.js';

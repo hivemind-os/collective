@@ -7,8 +7,8 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { MeshSuiClient } from '@agentic-mesh/core';
-import type { NetworkConfig } from '@agentic-mesh/types';
+import { MeshSuiClient } from '@hivemind-os/collective-core';
+import type { NetworkConfig } from '@hivemind-os/collective-types';
 import { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 

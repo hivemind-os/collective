@@ -12,7 +12,7 @@ import {
 describe('pipe security', () => {
   it('builds a per-user Windows pipe path', () => {
     expect(getDefaultIpcPath('C:\\mesh', { platform: 'win32', username: 'DOMAIN\\Alice Smith' })).toBe(
-      '\\\\.\\pipe\\agentic-mesh-alice-smith',
+      '\\\\.\\pipe\\hivemind-collective-alice-smith',
     );
   });
 
@@ -34,7 +34,7 @@ describe('pipe security', () => {
     );
 
     await expect(
-      verifyPipeSecurity('\\\\.\\pipe\\agentic-mesh-alice', { platform: 'win32', runPowerShell }),
+      verifyPipeSecurity('\\\\.\\pipe\\hivemind-collective-alice', { platform: 'win32', runPowerShell }),
     ).resolves.toMatchObject({
       transport: 'windows-pipe',
       userScoped: true,

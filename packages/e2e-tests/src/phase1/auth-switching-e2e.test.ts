@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
-import { FilesystemBlobStore, MeshSuiClient, RegistryClient, TaskClient, ZkLoginProvider, ZkLoginSessionStore } from '@agentic-mesh/core';
+import { FilesystemBlobStore, MeshSuiClient, RegistryClient, TaskClient, ZkLoginProvider, ZkLoginSessionStore } from '@hivemind-os/collective-core';
 import type { SuiClient } from '@mysten/sui/client';
-import { type DaemonFullConfig, getDefaultConfig, saveConfig } from '@agentic-mesh/daemon/config';
-import { type PortalAuthProvider, PortalServer } from '@agentic-mesh/daemon/portal/server';
-import { DaemonState, buildOAuthConfig, createDaemonIdentityContext } from '@agentic-mesh/daemon/state';
-import { TaskStatus } from '@agentic-mesh/types';
+import { type DaemonFullConfig, getDefaultConfig, saveConfig } from '@hivemind-os/collective-daemon/config';
+import { type PortalAuthProvider, PortalServer } from '@hivemind-os/collective-daemon/portal/server';
+import { DaemonState, buildOAuthConfig, createDaemonIdentityContext } from '@hivemind-os/collective-daemon/state';
+import { TaskStatus } from '@hivemind-os/collective-types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { PortAllocator, SuiTestNetwork } from '../harness/index.js';
@@ -111,7 +111,7 @@ describe('Phase 1 Beta E2E: Auth mode switching', () => {
       googleClientId: 'zklogin-beta-client',
     });
 
-    const configPath = join(baseDir, 'agentic-mesh.config.yaml');
+    const configPath = join(baseDir, 'hivemind-collective.config.yaml');
     await saveConfig(config, configPath);
 
     const authProvider = new ZkLoginProvider({
@@ -177,7 +177,7 @@ function createDaemonConfig(
       ...defaults.daemon,
       dataDir: join(baseDir, 'daemon'),
       pidFile: join(baseDir, 'daemon.pid'),
-      ipcPath: `\\\\.\\pipe\\agentic-mesh-${randomUUID()}`,
+      ipcPath: `\\\\.\\pipe\\hivemind-collective-${randomUUID()}`,
     },
     blobstore: {
       mode: 'filesystem',

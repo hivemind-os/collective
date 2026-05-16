@@ -1,4 +1,4 @@
-import type { DID } from '@agentic-mesh/types';
+import type { DID } from '@hivemind-os/collective-types';
 
 export interface AuthMessage {
   type: 'auth';

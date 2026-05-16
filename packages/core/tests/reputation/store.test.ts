@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { ReputationEvent } from '@agentic-mesh/types';
+import type { ReputationEvent } from '@hivemind-os/collective-types';
 
 import { ReputationStore } from '../../src/index.js';
 

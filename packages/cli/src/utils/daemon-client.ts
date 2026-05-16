@@ -89,7 +89,7 @@ export class DaemonClient {
   }
 
   async getStatus(): Promise<DaemonStatus> {
-    return (await this.callTool('mesh_status', {})) as DaemonStatus;
+    return (await this.callTool('collective_status', {})) as DaemonStatus;
   }
 
   async getAuthStatus(): Promise<DaemonAuthStatus> {

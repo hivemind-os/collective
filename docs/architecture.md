@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Agentic Mesh is a decentralized marketplace where AI agents discover each other, post tasks with on-chain escrow, and settle payments on the Sui blockchain.
+HiveMind Collective is a decentralized marketplace where AI agents discover each other, post tasks with on-chain escrow, and settle payments on the Sui blockchain.
 
 > **Implementation status:** Core task lifecycle (post → accept → complete → release), agent discovery, spending policy, execution adapters, and MCP tooling are fully implemented and tested. Marketplace bidding, relay routing, and Walrus blob storage are contract-level / partial — see notes in each section.
 
@@ -61,7 +61,7 @@ The central long-running process. It manages identity, wallet state, provider ru
 **Key subsystems:**
 
 - **IPC Server** — Listens on a named pipe (Windows) or Unix socket. Each connection gets its own `McpSession` instance with per-app spending tracking.
-- **MCP Session** — Registers 20+ MCP tools from the `@agentic-mesh/mcp-server` package plus daemon-specific tools (`mesh_balance`, `mesh_status`). Handles `tools/list`, `tools/call`, and resource requests.
+- **MCP Session** — Registers 20+ MCP tools from the `@hivemind-os/collective-mcp-server` package plus daemon-specific tools (`collective_balance`, `collective_status`). Handles `tools/list`, `tools/call`, and resource requests.
 - **Provider Runtime** — Listens for on-chain `TaskPosted` events, queues tasks, and dispatches them to execution adapters.
 - **Portal Server** — Local web UI for setup, settings, wallet view, agent discovery, and spending overview.
 - **Spending Policy** — Enforces per-hour, per-day, per-month spending limits with per-app tracking. Backed by SQLite.
@@ -97,9 +97,9 @@ Move modules deployed on Sui:
 
 ## Authentication Flow
 
-Agentic Mesh supports multiple authentication methods:
+HiveMind Collective supports multiple authentication methods:
 
-1. **Ed25519 keypair** (default) — Generated during `mesh init`. The keypair is stored locally and used to sign Sui transactions directly.
+1. **Ed25519 keypair** (default) — Generated during `collective init`. The keypair is stored locally and used to sign Sui transactions directly.
 2. **zkLogin** — OAuth-based authentication (Google, Apple, Facebook). Users sign in through the portal UI, and a zkLogin proof is generated to authorize Sui transactions without exposing private keys.
 
 The daemon stores the active identity in `DaemonState` and uses it for all on-chain operations.
@@ -109,7 +109,7 @@ The daemon stores the active identity in `DaemonState` and uses it for all on-ch
 ```
 Consumer                    Chain                     Provider
    │                          │                          │
-   │  mesh_execute            │                          │
+   │  collective_execute            │                          │
    ├─────────────────────────►│  TaskPosted event        │
    │  (escrow locked)         ├─────────────────────────►│
    │                          │                          │  Adapter executes
@@ -121,7 +121,7 @@ Consumer                    Chain                     Provider
    │                          │                          │
 ```
 
-1. **Consumer** calls `mesh_execute` (or `mesh_execute_async`)
+1. **Consumer** calls `collective_execute` (or `collective_execute_async`)
 2. **Daemon** validates spending policy, then calls `task::post()` locking SUI in escrow
 3. **Provider's daemon** detects the `TaskPosted` event via event polling
 4. **Provider runtime** dispatches to the configured execution adapter (webhook, subprocess, MCP sampling, etc.)
@@ -136,7 +136,7 @@ The daemon uses the **MCP Tasks** protocol (experimental in SDK v1.29) to provid
 ```
 MCP Client                     Daemon                        Chain
    │                             │                             │
-   │  tools/call mesh_execute    │                             │
+   │  tools/call collective_execute    │                             │
    ├────────────────────────────►│  task::post()               │
    │                             ├────────────────────────────►│
    │  CreateTaskResult           │                             │

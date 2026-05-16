@@ -1,7 +1,7 @@
 import type { MeshToolContext } from '../context.js';
 
 export const meshBalanceTool = {
-  name: 'mesh_balance',
+  name: 'collective_balance',
   description: 'Get the current wallet balance in MIST and SUI',
   inputSchema: {
     type: 'object' as const,

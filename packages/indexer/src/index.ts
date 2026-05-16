@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 import pino from 'pino';
 
-import { MeshSuiClient } from '@agentic-mesh/core';
+import { MeshSuiClient } from '@hivemind-os/collective-core';
 
 import { AnalyticsEngine } from './analytics.js';
 import { loadIndexerConfig } from './config.js';
@@ -20,7 +20,7 @@ export * from './store.js';
 
 export async function startIndexerService() {
   const config = loadIndexerConfig();
-  const logger = pino({ name: '@agentic-mesh/indexer', level: 'info' });
+  const logger = pino({ name: '@hivemind-os/collective-indexer', level: 'info' });
 
   await mkdir(dirname(config.sqlitePath), { recursive: true });
 

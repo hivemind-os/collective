@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PaymentRail, ProviderSelectionStrategy, type AgentCard, type ProviderScore } from '@agentic-mesh/types';
+import { PaymentRail, ProviderSelectionStrategy, type AgentCard, type ProviderScore } from '@hivemind-os/collective-types';
 
 import { CircuitBreaker, ProviderSelector } from '../../src/index.js';
 

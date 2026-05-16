@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TaskStatus, DisputeStatus } from '@agentic-mesh/types';
+import { TaskStatus, DisputeStatus } from '@hivemind-os/collective-types';
 import type { SuiEvent } from '@mysten/sui/client';
 
 import { MeshIndexer } from '../src/indexer.js';

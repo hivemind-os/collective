@@ -1,4 +1,4 @@
-import { MarketplaceClient } from '@agentic-mesh/core';
+import { MarketplaceClient } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -10,7 +10,7 @@ export interface MeshMarketplaceBidParams {
 }
 
 export const meshMarketplaceBidTool = {
-  name: 'mesh_marketplace_bid',
+  name: 'collective_marketplace_bid',
   description: 'Place a marketplace bid on an open task',
   inputSchema: {
     type: 'object' as const,

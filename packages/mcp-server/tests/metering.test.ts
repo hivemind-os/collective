@@ -1,7 +1,7 @@
-import { createMeteredResultEnvelope, serializeMeteredResultEnvelope, UsageMeter } from '@agentic-mesh/core';
+import { createMeteredResultEnvelope, serializeMeteredResultEnvelope, UsageMeter } from '@hivemind-os/collective-core';
 import { describe, expect, it, vi } from 'vitest';
 
-import { PaymentRail, PaymentScheme, TaskStatus, type AgentCard } from '@agentic-mesh/types';
+import { PaymentRail, PaymentScheme, TaskStatus, type AgentCard } from '@hivemind-os/collective-types';
 
 import { runMeshMeteredExecute, runMeshVerifyResult } from '../src/tools/metering.js';
 

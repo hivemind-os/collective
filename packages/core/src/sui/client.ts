@@ -1,6 +1,6 @@
 import pino from 'pino';
 
-import type { NetworkConfig } from '@agentic-mesh/types';
+import type { NetworkConfig } from '@hivemind-os/collective-types';
 import {
   SuiClient,
   type EventId as EventID,
@@ -13,7 +13,7 @@ import { Transaction } from '@mysten/sui/transactions';
 
 import { isRecord, normalizeMoveValue, normalizeObjectOwner } from '../internal/parsing.js';
 
-const logger = pino({ name: '@agentic-mesh/core:sui' });
+const logger = pino({ name: '@hivemind-os/collective-core:sui' });
 const MAX_TRANSACTION_ATTEMPTS = 3;
 
 export interface ExecuteTransactionOptions {

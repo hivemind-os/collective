@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { ReputationEvent } from '@agentic-mesh/types';
+import type { ReputationEvent } from '@hivemind-os/collective-types';
 
 import { buildMerkleTree, verifyMerkleProof } from '../../src/index.js';
 

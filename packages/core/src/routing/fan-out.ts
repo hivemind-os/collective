@@ -1,4 +1,4 @@
-import { AggregationMode, type MultiProviderRequest, type MultiProviderResult, type ProviderScore } from '@agentic-mesh/types';
+import { AggregationMode, type MultiProviderRequest, type MultiProviderResult, type ProviderScore } from '@hivemind-os/collective-types';
 
 import type { CircuitBreaker } from './circuit-breaker.js';
 import type { PerformanceTracker } from './performance.js';

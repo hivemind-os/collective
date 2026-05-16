@@ -10,7 +10,7 @@ const { mockCreateDID, mockIdentityKeyExists, mockLoadOrCreateKeypair } = vi.hoi
   mockLoadOrCreateKeypair: vi.fn<() => Promise<{ publicKey: Uint8Array; secretKey: Uint8Array }>>(),
 }));
 
-vi.mock('@agentic-mesh/core', () => ({
+vi.mock('@hivemind-os/collective-core', () => ({
   createDID: mockCreateDID,
   identityKeyExists: mockIdentityKeyExists,
   loadOrCreateKeypair: mockLoadOrCreateKeypair,
@@ -19,7 +19,7 @@ vi.mock('@agentic-mesh/core', () => ({
 import { handleInit } from '../src/commands/init.js';
 
 const createdPaths: string[] = [];
-const originalDataDir = process.env.MESH_DATA_DIR;
+const originalDataDir = process.env.COLLECTIVE_DATA_DIR;
 const mockIdentity = {
   publicKey: new Uint8Array(32).fill(1),
   secretKey: Uint8Array.from({ length: 32 }, (_, index) => index + 1),
@@ -37,9 +37,9 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks();
   if (originalDataDir === undefined) {
-    delete process.env.MESH_DATA_DIR;
+    delete process.env.COLLECTIVE_DATA_DIR;
   } else {
-    process.env.MESH_DATA_DIR = originalDataDir;
+    process.env.COLLECTIVE_DATA_DIR = originalDataDir;
   }
   await Promise.all(createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -54,7 +54,7 @@ async function createTestDir(): Promise<string> {
 describe('mesh init', () => {
   it('creates directory structure', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
 
     await expect(handleInit([])).resolves.toBe(0);
     await expect(access(dataDir)).resolves.toBeUndefined();
@@ -63,7 +63,7 @@ describe('mesh init', () => {
 
   it('reports when a new identity key is generated', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
 
     await handleInit([]);
 
@@ -74,7 +74,7 @@ describe('mesh init', () => {
 
   it('creates config.yaml with defaults', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
 
     await handleInit([]);
 
@@ -87,7 +87,7 @@ describe('mesh init', () => {
 
   it('reports when an existing identity key is loaded', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
     mockIdentityKeyExists.mockResolvedValue(true);
 
     await handleInit([]);

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
-import { FilesystemBlobStore, MeshSuiClient, TaskClient } from '@agentic-mesh/core';
-import { TaskStatus } from '@agentic-mesh/types';
+import { FilesystemBlobStore, MeshSuiClient, TaskClient } from '@hivemind-os/collective-core';
+import { TaskStatus } from '@hivemind-os/collective-types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { SuiTestNetwork } from '../harness/index.js';

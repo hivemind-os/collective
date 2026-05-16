@@ -5,7 +5,7 @@ export interface MeshExecuteAsyncParams
   extends Pick<MeshExecuteParams, 'capability' | 'provider_did' | 'input' | 'max_price_mist'> {}
 
 export const meshExecuteAsyncTool = {
-  name: 'mesh_execute_async',
+  name: 'collective_execute_async',
   description: 'Submit a mesh task and return immediately',
   inputSchema: {
     type: 'object' as const,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { EvmWallet, X402Client } from '@agentic-mesh/core';
-import { PaymentRail } from '@agentic-mesh/types';
+import { EvmWallet, X402Client } from '@hivemind-os/collective-core';
+import { PaymentRail } from '@hivemind-os/collective-types';
 import { hexToBytes } from 'viem';
 
 import { PaymentGate } from '../src/payment/payment-gate.js';

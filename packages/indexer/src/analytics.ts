@@ -1,4 +1,4 @@
-import { BidStatus } from '@agentic-mesh/types';
+import { BidStatus } from '@hivemind-os/collective-types';
 
 import type { IndexerStore, ProviderStatsRecord } from './store.js';
 

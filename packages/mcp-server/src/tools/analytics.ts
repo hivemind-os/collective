@@ -10,7 +10,7 @@ export interface MeshAnalyticsParams {
 }
 
 export const meshAnalyticsTool = {
-  name: 'mesh_analytics',
+  name: 'collective_analytics',
   description: 'Query task volume, top providers, and marketplace analytics from the Agentic Mesh indexer',
   inputSchema: {
     type: 'object' as const,

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 
-import { DEFAULT_WALRUS_AGGREGATOR_URL, DEFAULT_WALRUS_PUBLISHER_URL, DisputeClient, MeshSuiClient, WalrusBlobStore, loadOrCreateKeypair } from '@agentic-mesh/core';
-import { DisputeStatus, type Dispute } from '@agentic-mesh/types';
+import { DEFAULT_WALRUS_AGGREGATOR_URL, DEFAULT_WALRUS_PUBLISHER_URL, DisputeClient, MeshSuiClient, WalrusBlobStore, loadOrCreateKeypair } from '@hivemind-os/collective-core';
+import { DisputeStatus, type Dispute } from '@hivemind-os/collective-types';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { loadMeshConfig, type MeshCliConfig } from './config.js';
@@ -184,8 +184,8 @@ async function resolveEvidenceBlobId(args: string[], deps: DisputeCommandDeps): 
   }
 
   const blobStore = deps.createBlobStore?.() ?? new WalrusBlobStore({
-    publisherUrl: process.env.MESH_WALRUS_PUBLISHER_URL ?? DEFAULT_WALRUS_PUBLISHER_URL,
-    aggregatorUrl: process.env.MESH_WALRUS_AGGREGATOR_URL ?? DEFAULT_WALRUS_AGGREGATOR_URL,
+    publisherUrl: process.env.COLLECTIVE_WALRUS_PUBLISHER_URL ?? DEFAULT_WALRUS_PUBLISHER_URL,
+    aggregatorUrl: process.env.COLLECTIVE_WALRUS_AGGREGATOR_URL ?? DEFAULT_WALRUS_AGGREGATOR_URL,
   });
   const stored = await blobStore.store(new TextEncoder().encode(contents));
   return stored.blobId;

@@ -1,4 +1,4 @@
-import { MeshSuiClient, RegistryClient } from '@agentic-mesh/core';
+import { MeshSuiClient, RegistryClient } from '@hivemind-os/collective-core';
 
 import { loadMeshConfig } from './config.js';
 import { formatMistToSui } from './wallet.js';

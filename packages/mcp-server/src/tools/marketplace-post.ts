@@ -1,4 +1,4 @@
-import { MarketplaceClient } from '@agentic-mesh/core';
+import { MarketplaceClient } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -17,7 +17,7 @@ export interface MeshMarketplacePostParams {
 }
 
 export const meshMarketplacePostTool = {
-  name: 'mesh_marketplace_post',
+  name: 'collective_marketplace_post',
   description: 'Post an open marketplace task with category metadata',
   inputSchema: {
     type: 'object' as const,

@@ -6,7 +6,7 @@ export interface MeshTaskHistoryParams {
 }
 
 export const meshTaskHistoryTool = {
-  name: 'mesh_task_history',
+  name: 'collective_task_history',
   description: 'Query locally persisted task history',
   inputSchema: {
     type: 'object' as const,

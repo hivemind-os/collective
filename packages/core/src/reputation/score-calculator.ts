@@ -1,4 +1,4 @@
-import type { AgentCard, ReputationEvent, ReputationScore } from '@agentic-mesh/types';
+import type { AgentCard, ReputationEvent, ReputationScore } from '@hivemind-os/collective-types';
 
 interface CapabilityAccumulator {
   successes: number;

@@ -103,8 +103,8 @@ async function createTestDir(): Promise<string> {
 
 function createIpcPath(dir: string): string {
   return process.platform === 'win32'
-    ? `\\\\.\\pipe\\agentic-mesh-test-${randomUUID()}`
-    : resolve(dir, 'agentic-mesh.sock');
+    ? `\\\\.\\pipe\\hivemind-collective-test-${randomUUID()}`
+    : resolve(dir, 'hivemind-collective.sock');
 }
 
 async function startServer(): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {

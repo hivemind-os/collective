@@ -122,7 +122,7 @@ jobs:
           "PACKAGE_ID=$packageId" >> $env:GITHUB_ENV
           "REGISTRY_ID=$registryId" >> $env:GITHUB_ENV
       - name: Run lifecycle smoke test
-        run: pnpm --filter @agentic-mesh/e2e-tests test -- --run src/smoke/lifecycle.test.ts
+        run: pnpm --filter @hivemind-os/collective-e2e-tests test -- --run src/smoke/lifecycle.test.ts
       - name: Note bootstrap smoke mode
         if: steps.move-package.outputs.present == 'false'
         run: echo "contracts/agentic_mesh is not bootstrapped yet, so the workflow currently validates the e2e harness scaffold only."

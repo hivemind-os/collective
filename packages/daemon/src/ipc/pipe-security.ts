@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 
-export const LEGACY_WINDOWS_PIPE_PATH = '\\\\.\\pipe\\agentic-mesh';
+export const LEGACY_WINDOWS_PIPE_PATH = '\\\\.\\pipe\\hivemind-collective';
 
 export interface PipeSecurityRuntime {
   platform?: NodeJS.Platform;

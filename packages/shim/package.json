@@ -1,11 +1,11 @@
 {
-  "name": "@agentic-mesh/shim",
+  "name": "@hivemind-os/collective-shim",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "mesh-shim": "./dist/index.js"
+    "collective-shim": "./dist/index.js"
   },
   "scripts": {
     "build": "tsup",

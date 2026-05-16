@@ -25,7 +25,7 @@ export function registerMeshTools(server: Server, context: MeshToolContext): voi
 export function createMeshMcpServer(context: MeshToolContext): Server {
   const server = new Server(
     {
-      name: '@agentic-mesh/mcp-server',
+      name: '@hivemind-os/collective-mcp-server',
       version: '0.1.0',
     },
     {

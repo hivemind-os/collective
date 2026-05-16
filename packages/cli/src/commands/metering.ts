@@ -1,13 +1,13 @@
-import { loadConfig as loadDaemonConfig, type DaemonFullConfig } from '@agentic-mesh/daemon/config';
-import { DaemonState } from '@agentic-mesh/daemon/state';
+import { loadConfig as loadDaemonConfig, type DaemonFullConfig } from '@hivemind-os/collective-daemon/config';
+import { DaemonState } from '@hivemind-os/collective-daemon/state';
 import {
   runMeshMeteredExecute,
   runMeshVerifyResult,
   type MeshMeteredExecuteParams,
   type MeshToolContext,
-} from '@agentic-mesh/mcp-server';
-import { MeshSuiClient, TaskClient } from '@agentic-mesh/core';
-import { PaymentScheme, TaskStatus } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-mcp-server';
+import { MeshSuiClient, TaskClient } from '@hivemind-os/collective-core';
+import { PaymentScheme, TaskStatus } from '@hivemind-os/collective-types';
 
 import { loadMeshConfig } from './config.js';
 import { formatMistToSui } from './wallet.js';

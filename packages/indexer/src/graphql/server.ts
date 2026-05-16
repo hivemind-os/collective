@@ -1,7 +1,7 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 
 import { createSchema, createYoga } from 'graphql-yoga';
-import { BidStatus, DisputeStatus, PaymentScheme, TaskStatus, type AgentCard, type Capability } from '@agentic-mesh/types';
+import { BidStatus, DisputeStatus, PaymentScheme, TaskStatus, type AgentCard, type Capability } from '@hivemind-os/collective-types';
 
 import { AnalyticsEngine, type ProviderSortField, type TimePeriod } from '../analytics.js';
 import { type AgentQueryFilters, encodeCursor, type IndexedTask, type IndexerStore } from '../store.js';

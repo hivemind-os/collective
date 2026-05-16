@@ -4,8 +4,8 @@ import {
   decodeRelaySuiPaymentProof,
   verifyRelaySuiPaymentProof,
   USDC_ADDRESS,
-} from '@agentic-mesh/core';
-import { PaymentRail } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import { PaymentRail } from '@hivemind-os/collective-types';
 import {
   decodePaymentSignatureHeader,
   encodePaymentRequiredHeader,
@@ -214,7 +214,7 @@ export class PaymentGate {
     const paymentAddress = this.options.evmPaymentAddress ?? DEFAULT_EVM_PAYMENT_ADDRESS;
     const paymentRequiredHeader = encodePaymentRequiredHeader({
       x402Version: 2,
-      resource: { url: 'https://relay.agentic-mesh.local/execute' },
+      resource: { url: 'https://relay.hivemind-collective.local/execute' },
       accepts: [
         {
           scheme: 'exact',

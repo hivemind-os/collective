@@ -1,6 +1,6 @@
 import { sha256 } from '@noble/hashes/sha256';
 
-import type { HashChainProof } from '@agentic-mesh/types';
+import type { HashChainProof } from '@hivemind-os/collective-types';
 
 const encoder = new TextEncoder();
 const DEFAULT_SEED_PREFIX = 'agentic-mesh:metering:v1';

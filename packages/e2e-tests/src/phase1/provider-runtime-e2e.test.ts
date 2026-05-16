@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 
-import { FilesystemBlobStore, MeshSuiClient, RegistryClient, TaskClient } from '@agentic-mesh/core';
-import { ProviderRuntime, type ProviderConfig } from '@agentic-mesh/daemon/provider';
-import type { DaemonState } from '@agentic-mesh/daemon/state';
-import { TaskStatus } from '@agentic-mesh/types';
+import { FilesystemBlobStore, MeshSuiClient, RegistryClient, TaskClient } from '@hivemind-os/collective-core';
+import { ProviderRuntime, type ProviderConfig } from '@hivemind-os/collective-daemon/provider';
+import type { DaemonState } from '@hivemind-os/collective-daemon/state';
+import { TaskStatus } from '@hivemind-os/collective-types';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { SuiTestNetwork } from '../harness/index.js';

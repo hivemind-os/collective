@@ -61,7 +61,7 @@ const DEFAULT_REFRESH_POLICY: Required<SessionRefreshPolicy> = {
   backoffMs: [1_000, 2_000, 4_000],
   maxConsecutiveFailures: 3,
 };
-const logger = pino({ name: '@agentic-mesh/core:auth:session-store' });
+const logger = pino({ name: '@hivemind-os/collective-core:auth:session-store' });
 
 export class ZkLoginSessionStore {
   private readonly encryptionKey: Buffer;

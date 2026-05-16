@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 
-import { createDID, identityKeyExists, loadOrCreateKeypair } from '@agentic-mesh/core';
+import { createDID, identityKeyExists, loadOrCreateKeypair } from '@hivemind-os/collective-core';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { buildDefaultConfig, getConfigPath, getMeshDataDir, saveMeshConfig } from './config.js';

@@ -11,8 +11,8 @@ import {
   parseRawEvent,
   serializeMeteredResultEnvelope,
   splitIntoMeteringUnits,
-} from '@agentic-mesh/core';
-import { PaymentRail, PaymentScheme, type Capability, type RelayEndpoint, type Task, type TaskPostedEvent } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import { PaymentRail, PaymentScheme, type Capability, type RelayEndpoint, type Task, type TaskPostedEvent } from '@hivemind-os/collective-types';
 import type { SuiEvent } from '@mysten/sui/client';
 
 import type { DaemonFullConfig } from '../config.js';
@@ -27,7 +27,7 @@ import { WebhookAdapter } from './adapters/webhook.js';
 import type { ProviderCapabilityConfig, ProviderConfig } from './capabilities.js';
 import { TaskQueue } from './task-queue.js';
 
-const logger = pino({ name: '@agentic-mesh/daemon:provider' });
+const logger = pino({ name: '@hivemind-os/collective-daemon:provider' });
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 

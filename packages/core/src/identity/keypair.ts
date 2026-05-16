@@ -5,9 +5,9 @@ import { etc, getPublicKey, utils } from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 import pino from 'pino';
 
-const logger = pino({ name: '@agentic-mesh/core:identity' });
+const logger = pino({ name: '@hivemind-os/collective-core:identity' });
 const IDENTITY_KEY_FILENAME = 'identity.key';
-const KEYCHAIN_SERVICE = 'agentic-mesh';
+const KEYCHAIN_SERVICE = 'hivemind-collective';
 const KEYCHAIN_ACCOUNT = 'identity-key';
 
 interface KeytarModule {

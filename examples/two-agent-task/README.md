@@ -1,6 +1,6 @@
 # Two-agent task demo
 
-This standalone example publishes the Agentic Mesh contracts, funds two wallets, and shows an end-to-end task flow:
+This standalone example publishes the HiveMind Collective contracts, funds two wallets, and shows an end-to-end task flow:
 
 1. Agent A registers on-chain as an `echo` provider
 2. Agent B discovers Agent A by capability lookup
@@ -67,7 +67,7 @@ On Windows (PowerShell):
 $env:SUI_NETWORK="devnet"; pnpm start
 ```
 
-The `start` script builds the local `@agentic-mesh/types` and `@agentic-mesh/core` workspace packages first, then runs the demo with `tsx`.
+The `start` script builds the local `@hivemind-os/collective-types` and `@hivemind-os/collective-core` workspace packages first, then runs the demo with `tsx`.
 
 ## What it demonstrates
 
@@ -83,7 +83,7 @@ The `start` script builds the local `@agentic-mesh/types` and `@agentic-mesh/cor
 
 ```text
 ========================================================================
-🤖 Agentic Mesh two-agent demo
+🤖 HiveMind Collective two-agent demo
 Agent A discovers work. Agent B discovers Agent A. SUI moves on-chain.
     Network: devnet (set SUI_NETWORK=local|devnet|testnet to change)
 ========================================================================

@@ -1,5 +1,5 @@
-import { loadOrCreateKeypair, MeshSuiClient, RelayRegistryClient } from '@agentic-mesh/core';
-import type { RelayNode } from '@agentic-mesh/types';
+import { loadOrCreateKeypair, MeshSuiClient, RelayRegistryClient } from '@hivemind-os/collective-core';
+import type { RelayNode } from '@hivemind-os/collective-types';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
 import { loadMeshConfig, type MeshCliConfig } from './config.js';

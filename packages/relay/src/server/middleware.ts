@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
-import { PaymentRail, type DID } from '@agentic-mesh/types';
+import { PaymentRail, type DID } from '@hivemind-os/collective-types';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
-import { isValidDID } from '@agentic-mesh/core';
+import { isValidDID } from '@hivemind-os/collective-core';
 
 export interface MeshRequestContext {
   requestId: string;

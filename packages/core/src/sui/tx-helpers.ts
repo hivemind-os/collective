@@ -1,4 +1,4 @@
-import type { Capability } from '@agentic-mesh/types';
+import type { Capability } from '@hivemind-os/collective-types';
 import { Transaction } from '@mysten/sui/transactions';
 
 import { stringToBytes } from '../internal/parsing.js';

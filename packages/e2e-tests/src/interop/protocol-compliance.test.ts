@@ -1,5 +1,5 @@
-import { createDID, parseDID, parseRawEvent } from '@agentic-mesh/core';
-import { RelayNodeStatus } from '@agentic-mesh/types';
+import { createDID, parseDID, parseRawEvent } from '@hivemind-os/collective-core';
+import { RelayNodeStatus } from '@hivemind-os/collective-types';
 import { describe, expect, it } from 'vitest';
 
 import { PROTOCOL_VERSION, createRelayRegisteredEvent, isProtocolVersionCompatible } from './test-helpers.js';

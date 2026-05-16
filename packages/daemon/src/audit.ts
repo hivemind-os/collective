@@ -1,6 +1,6 @@
 import pino from 'pino';
 
-const logger = pino({ name: '@agentic-mesh/daemon:audit' });
+const logger = pino({ name: '@hivemind-os/collective-daemon:audit' });
 
 export type AuditEvent =
   | {

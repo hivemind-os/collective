@@ -1,6 +1,6 @@
-import type { NetworkConfig } from '@agentic-mesh/types';
+import type { NetworkConfig } from '@hivemind-os/collective-types';
 import type { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
-import type { MeshSuiClient } from '@agentic-mesh/core';
+import type { MeshSuiClient } from '@hivemind-os/collective-core';
 
 export interface DemoWallet {
   name: string;

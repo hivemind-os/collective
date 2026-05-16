@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { RelayNodeStatus, type RelayNode } from '@agentic-mesh/types';
+import { RelayNodeStatus, type RelayNode } from '@hivemind-os/collective-types';
 import type { SuiEvent } from '@mysten/sui/client';
 
 export const PROTOCOL_VERSION = '1.0.0';

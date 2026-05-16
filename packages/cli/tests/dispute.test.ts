@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { DisputeStatus } from '@agentic-mesh/types';
+import { DisputeStatus } from '@hivemind-os/collective-types';
 
 import { handleDispute } from '../src/commands/dispute.js';
 

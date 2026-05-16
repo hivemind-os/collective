@@ -49,7 +49,7 @@ export class IpcClient {
         params: {
           appName,
           pid: process.pid,
-          ...(process.env.MESH_PROFILE ? { profile: process.env.MESH_PROFILE } : {}),
+          ...(process.env.COLLECTIVE_PROFILE ? { profile: process.env.COLLECTIVE_PROFILE } : {}),
         },
       });
     });

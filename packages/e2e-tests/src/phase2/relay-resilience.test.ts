@@ -1,9 +1,9 @@
 import WebSocket, { type RawData } from 'ws';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { RelayClient } from '@agentic-mesh/daemon/relay';
-import { createAuthPayload, parseRelayMessage } from '@agentic-mesh/relay';
-import { PaymentRail } from '@agentic-mesh/types';
+import { RelayClient } from '@hivemind-os/collective-daemon/relay';
+import { createAuthPayload, parseRelayMessage } from '@hivemind-os/collective-relay';
+import { PaymentRail } from '@hivemind-os/collective-types';
 
 import { createArtifactRoot, removeDirectoryWithRetries, waitForCondition } from '../phase1/test-helpers.js';
 import {

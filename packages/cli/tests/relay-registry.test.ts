@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { RelayNodeStatus } from '@agentic-mesh/types';
+import { RelayNodeStatus } from '@hivemind-os/collective-types';
 
 import { handleRelayRegistry } from '../src/commands/relay-registry.js';
 

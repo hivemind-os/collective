@@ -14,8 +14,8 @@ import type {
   SpendingPolicyEngine,
   TaskClient,
   X402Client,
-} from '@agentic-mesh/core';
-import type { DID, NetworkConfig } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import type { DID, NetworkConfig } from '@hivemind-os/collective-types';
 import type { Signer } from '@mysten/sui/cryptography';
 
 export interface MeshToolContext {

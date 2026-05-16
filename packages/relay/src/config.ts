@@ -38,7 +38,7 @@ export interface RelayConfig {
   };
 }
 
-export function getDefaultRelayConfig(baseDir = resolve(homedir(), '.agentic-mesh', 'relay')): RelayConfig {
+export function getDefaultRelayConfig(baseDir = resolve(homedir(), '.hivemind-os/collective', 'relay')): RelayConfig {
   return {
     host: '0.0.0.0',
     port: 8080,
@@ -64,78 +64,78 @@ export function getDefaultRelayConfig(baseDir = resolve(homedir(), '.agentic-mes
 }
 
 export function loadRelayConfig(overrides: Partial<RelayConfig> = {}): RelayConfig {
-  const dataDir = process.env.MESH_RELAY_DATA_DIR ? resolve(process.env.MESH_RELAY_DATA_DIR) : undefined;
+  const dataDir = process.env.COLLECTIVE_RELAY_DATA_DIR ? resolve(process.env.COLLECTIVE_RELAY_DATA_DIR) : undefined;
   const defaults = getDefaultRelayConfig(dataDir);
 
   const config: RelayConfig = {
-    host: process.env.MESH_RELAY_HOST ?? overrides.host ?? defaults.host,
-    port: readNumber(process.env.MESH_RELAY_PORT) ?? overrides.port ?? defaults.port,
+    host: process.env.COLLECTIVE_RELAY_HOST ?? overrides.host ?? defaults.host,
+    port: readNumber(process.env.COLLECTIVE_RELAY_PORT) ?? overrides.port ?? defaults.port,
     identity: {
-      keyPath: resolve(overrides.identity?.keyPath ?? process.env.MESH_RELAY_KEY_PATH ?? defaults.identity.keyPath),
+      keyPath: resolve(overrides.identity?.keyPath ?? process.env.COLLECTIVE_RELAY_KEY_PATH ?? defaults.identity.keyPath),
     },
     fees: {
       basePercentage:
-        readNumber(process.env.MESH_RELAY_FEE_PERCENT) ?? overrides.fees?.basePercentage ?? defaults.fees.basePercentage,
+        readNumber(process.env.COLLECTIVE_RELAY_FEE_PERCENT) ?? overrides.fees?.basePercentage ?? defaults.fees.basePercentage,
       minimumMist:
-        readBigInt(process.env.MESH_RELAY_MINIMUM_MIST) ?? overrides.fees?.minimumMist ?? defaults.fees.minimumMist,
+        readBigInt(process.env.COLLECTIVE_RELAY_MINIMUM_MIST) ?? overrides.fees?.minimumMist ?? defaults.fees.minimumMist,
     },
     limits: {
       maxConnections:
-        readNumber(process.env.MESH_RELAY_MAX_CONNECTIONS) ??
+        readNumber(process.env.COLLECTIVE_RELAY_MAX_CONNECTIONS) ??
         overrides.limits?.maxConnections ??
         defaults.limits.maxConnections,
       maxRequestsPerSecond:
-        readNumber(process.env.MESH_RELAY_MAX_RPS) ??
+        readNumber(process.env.COLLECTIVE_RELAY_MAX_RPS) ??
         overrides.limits?.maxRequestsPerSecond ??
         defaults.limits.maxRequestsPerSecond,
       taskTimeoutMs:
-        readNumber(process.env.MESH_RELAY_TASK_TIMEOUT_MS) ??
+        readNumber(process.env.COLLECTIVE_RELAY_TASK_TIMEOUT_MS) ??
         overrides.limits?.taskTimeoutMs ??
         defaults.limits.taskTimeoutMs,
       heartbeatIntervalMs:
-        readNumber(process.env.MESH_RELAY_HEARTBEAT_INTERVAL_MS) ??
+        readNumber(process.env.COLLECTIVE_RELAY_HEARTBEAT_INTERVAL_MS) ??
         overrides.limits?.heartbeatIntervalMs ??
         defaults.limits.heartbeatIntervalMs,
       heartbeatTimeoutMs:
-        readNumber(process.env.MESH_RELAY_HEARTBEAT_TIMEOUT_MS) ??
+        readNumber(process.env.COLLECTIVE_RELAY_HEARTBEAT_TIMEOUT_MS) ??
         overrides.limits?.heartbeatTimeoutMs ??
         defaults.limits.heartbeatTimeoutMs,
       authNonceTtlMs:
-        readNumber(process.env.MESH_RELAY_AUTH_NONCE_TTL_MS) ??
+        readNumber(process.env.COLLECTIVE_RELAY_AUTH_NONCE_TTL_MS) ??
         overrides.limits?.authNonceTtlMs ??
         defaults.limits.authNonceTtlMs,
     },
     cors: {
       allowedOrigins:
         overrides.cors?.allowedOrigins ??
-        readStringList(process.env.MESH_RELAY_ALLOWED_ORIGINS) ??
+        readStringList(process.env.COLLECTIVE_RELAY_ALLOWED_ORIGINS) ??
         defaults.cors?.allowedOrigins ??
         [],
     },
     sui:
-      overrides.sui || process.env.MESH_RELAY_SUI_RPC_URL || process.env.MESH_RELAY_SUI_PACKAGE_ID
+      overrides.sui || process.env.COLLECTIVE_RELAY_SUI_RPC_URL || process.env.COLLECTIVE_RELAY_SUI_PACKAGE_ID
         ? {
-            rpcUrl: overrides.sui?.rpcUrl ?? process.env.MESH_RELAY_SUI_RPC_URL ?? '',
-            packageId: overrides.sui?.packageId ?? process.env.MESH_RELAY_SUI_PACKAGE_ID ?? '',
+            rpcUrl: overrides.sui?.rpcUrl ?? process.env.COLLECTIVE_RELAY_SUI_RPC_URL ?? '',
+            packageId: overrides.sui?.packageId ?? process.env.COLLECTIVE_RELAY_SUI_PACKAGE_ID ?? '',
           }
         : undefined,
     relayRegistry:
       overrides.relayRegistry ||
-      process.env.MESH_RELAY_REGISTRY_ENABLED ||
-      process.env.MESH_RELAY_REGISTRY_STAKE_ID ||
-      process.env.MESH_RELAY_REGISTRY_RELAY_ID
+      process.env.COLLECTIVE_RELAY_REGISTRY_ENABLED ||
+      process.env.COLLECTIVE_RELAY_REGISTRY_STAKE_ID ||
+      process.env.COLLECTIVE_RELAY_REGISTRY_RELAY_ID
         ? {
-            enabled: readBoolean(process.env.MESH_RELAY_REGISTRY_ENABLED) ?? overrides.relayRegistry?.enabled ?? true,
-            relayId: overrides.relayRegistry?.relayId ?? process.env.MESH_RELAY_REGISTRY_RELAY_ID,
-            stakePositionId: overrides.relayRegistry?.stakePositionId ?? process.env.MESH_RELAY_REGISTRY_STAKE_ID,
-            endpoint: overrides.relayRegistry?.endpoint ?? process.env.MESH_RELAY_REGISTRY_ENDPOINT,
+            enabled: readBoolean(process.env.COLLECTIVE_RELAY_REGISTRY_ENABLED) ?? overrides.relayRegistry?.enabled ?? true,
+            relayId: overrides.relayRegistry?.relayId ?? process.env.COLLECTIVE_RELAY_REGISTRY_RELAY_ID,
+            stakePositionId: overrides.relayRegistry?.stakePositionId ?? process.env.COLLECTIVE_RELAY_REGISTRY_STAKE_ID,
+            endpoint: overrides.relayRegistry?.endpoint ?? process.env.COLLECTIVE_RELAY_REGISTRY_ENDPOINT,
             capabilities:
-              overrides.relayRegistry?.capabilities ?? readStringList(process.env.MESH_RELAY_REGISTRY_CAPABILITIES) ?? [],
-            region: overrides.relayRegistry?.region ?? process.env.MESH_RELAY_REGISTRY_REGION,
+              overrides.relayRegistry?.capabilities ?? readStringList(process.env.COLLECTIVE_RELAY_REGISTRY_CAPABILITIES) ?? [],
+            region: overrides.relayRegistry?.region ?? process.env.COLLECTIVE_RELAY_REGISTRY_REGION,
             routingFeeBps:
-              readNumber(process.env.MESH_RELAY_REGISTRY_FEE_BPS) ?? overrides.relayRegistry?.routingFeeBps,
+              readNumber(process.env.COLLECTIVE_RELAY_REGISTRY_FEE_BPS) ?? overrides.relayRegistry?.routingFeeBps,
             heartbeatIntervalMs:
-              readNumber(process.env.MESH_RELAY_REGISTRY_HEARTBEAT_INTERVAL_MS) ??
+              readNumber(process.env.COLLECTIVE_RELAY_REGISTRY_HEARTBEAT_INTERVAL_MS) ??
               overrides.relayRegistry?.heartbeatIntervalMs ??
               defaults.limits.heartbeatIntervalMs,
           }

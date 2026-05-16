@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
 
-import { ReputationScoreCalculator } from '@agentic-mesh/core';
-import type { AgentCard, Bid, Capability, Dispute, Task } from '@agentic-mesh/types';
-import { BidStatus, DisputeStatus, PaymentScheme, TaskStatus } from '@agentic-mesh/types';
+import { ReputationScoreCalculator } from '@hivemind-os/collective-core';
+import type { AgentCard, Bid, Capability, Dispute, Task } from '@hivemind-os/collective-types';
+import { BidStatus, DisputeStatus, PaymentScheme, TaskStatus } from '@hivemind-os/collective-types';
 
 export interface AgentQueryFilters {
   capability?: string;

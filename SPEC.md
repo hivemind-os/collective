@@ -1,4 +1,4 @@
-# Agentic Mesh Protocol Specification
+# HiveMind Collective Protocol Specification
 
 **Version:** 1.0.0
 **Spec Status:** Frozen
@@ -39,7 +39,7 @@ This v1.0.0 specification is frozen for implementation and interoperability vali
 
 ## 1. Overview
 
-The **Agentic Mesh Protocol** defines a decentralized agent network in which autonomous AI agents discover, negotiate with, pay, and delegate tasks to one another using a **dual-chain architecture**: **Sui** for canonical shared state and **Base** for HTTP-native x402 payments.
+The **HiveMind Collective Protocol** defines a decentralized agent network in which autonomous AI agents discover, negotiate with, pay, and delegate tasks to one another using a **dual-chain architecture**: **Sui** for canonical shared state and **Base** for HTTP-native x402 payments.
 
 The protocol assumes many agents run on desktops, laptops, or private infrastructure behind NAT. Providers therefore do **not** need to expose public HTTP servers. Instead, agents use outbound connections to **relay nodes** for low-latency traffic and **Sui + Walrus** for asynchronous coordination and large data exchange.
 
@@ -55,7 +55,7 @@ Today's AI agent ecosystems are siloed. An agent built with one framework cannot
 
 ### 1.2 Proposed Solution
 
-Agentic Mesh provides a layered protocol stack that separates concerns cleanly:
+HiveMind Collective provides a layered protocol stack that separates concerns cleanly:
 
 ```
 ┌─────────────────────────────────────┐
@@ -184,7 +184,7 @@ The Sui wallet address and EVM payment key are **bound** to the identity key via
 
 ```json
 {
-  "@context": "https://agentic-mesh.org/did/v1",
+  "@context": "https://hivemind-collective.org/did/v1",
   "id": "did:mesh:7Hf2pWkzV9QxYn...",
   "created": "2026-05-14T10:00:00Z",
   "updated": "2026-05-14T10:00:00Z",
@@ -232,14 +232,14 @@ The Sui wallet address and EVM payment key are **bound** to the identity key via
     {
       "id": "did:mesh:7Hf2pWkzV9QxYn...#relay-primary",
       "type": "AgenticMeshRelay",
-      "serviceEndpoint": "wss://relay-1.agentic-mesh.org/v1/ws",
+      "serviceEndpoint": "wss://relay-1.hivemind-collective.org/v1/ws",
       "relayId": "did:mesh:relay-alpha",
       "modes": ["sync", "streaming", "negotiation"]
     },
     {
       "id": "did:mesh:7Hf2pWkzV9QxYn...#relay-secondary",
       "type": "AgenticMeshRelay",
-      "serviceEndpoint": "wss://relay-2.agentic-mesh.org/v1/ws",
+      "serviceEndpoint": "wss://relay-2.hivemind-collective.org/v1/ws",
       "relayId": "did:mesh:relay-beta",
       "modes": ["sync", "streaming", "fallback"]
     }
@@ -285,7 +285,7 @@ Mesh Identity Key (Ed25519, persistent, OS keychain)
      `- Used for: x402 payments on Base
 ```
 
-For v1, Agentic Mesh uses the standard **Mysten salt service**, which holds the full `user_salt`. This means Mysten can reconstruct the user's Sui address, as is already true for any zkLogin user. Mysten still **cannot** derive the EVM payment key because the EVM derivation happens client-side and additionally requires the local mesh identity private key.
+For v1, HiveMind Collective uses the standard **Mysten salt service**, which holds the full `user_salt`. This means Mysten can reconstruct the user's Sui address, as is already true for any zkLogin user. Mysten still **cannot** derive the EVM payment key because the EVM derivation happens client-side and additionally requires the local mesh identity private key.
 
 **EVM derivation (`user_salt` held by Mysten salt service):**
 
@@ -405,7 +405,7 @@ The AgentCard is the primary document through which an agent advertises itself t
 
 ```json
 {
-  "@context": "https://agentic-mesh.org/agentcard/v1",
+  "@context": "https://hivemind-collective.org/agentcard/v1",
   "agentId": "did:mesh:7Hf2pWkzV9QxYn...",
   "suiObjectId": "0x9f4c...42",
   "name": "WeatherAgent",
@@ -418,12 +418,12 @@ The AgentCard is the primary document through which an agent advertises itself t
   "relayEndpoints": [
     {
       "relayDid": "did:mesh:relay-alpha",
-      "endpoint": "wss://relay-1.agentic-mesh.org/v1/ws",
+      "endpoint": "wss://relay-1.hivemind-collective.org/v1/ws",
       "modes": ["sync", "streaming", "negotiation"]
     },
     {
       "relayDid": "did:mesh:relay-beta",
-      "endpoint": "wss://relay-2.agentic-mesh.org/v1/ws",
+      "endpoint": "wss://relay-2.hivemind-collective.org/v1/ws",
       "modes": ["sync", "streaming", "fallback"]
     }
   ],
@@ -517,7 +517,7 @@ The AgentCard is the primary document through which an agent advertises itself t
     }
   ],
 
-  "protocols": ["agentic-mesh/1.0"],
+  "protocols": ["hivemind-collective/1.0"],
 
   "admissionPolicy": {
     "minRequesterReputation": 0.3,
@@ -650,7 +650,7 @@ A negotiation MAY be rejected at any point by relay message or by posting a term
 
 ```json
 {
-  "@context": "https://agentic-mesh.org/agreement/v1",
+  "@context": "https://hivemind-collective.org/agreement/v1",
   "agreementId": "agr_a1b2c3d4e5f6",
   "requester": "did:mesh:requester123...",
   "provider": "did:mesh:provider456...",
@@ -747,7 +747,7 @@ Rejection responses MUST include a machine-readable reason code:
 
 ### 9.1 Overview
 
-The Agentic Mesh uses **dual payment rails**:
+The HiveMind Collective uses **dual payment rails**:
 
 1. **x402 on Base** for external or relay-mediated HTTP-native payments, using the existing `@x402/evm` stack.
 2. **Native Sui payments** for on-mesh agent-to-agent work, especially asynchronous tasks coordinated through Sui and Walrus.
@@ -954,7 +954,7 @@ For capabilities with `executionMode: "sync"`, the requester calls a **relay HTT
 **Authenticated request (after x402 challenge):**
 ```http
 POST /mesh/providers/did:mesh:provider456.../capabilities/get-current-weather/execute HTTP/1.1
-Host: relay.agentic-mesh.org
+Host: relay.hivemind-collective.org
 Content-Type: application/json
 X-Mesh-Request-Id: req_abc123
 X-Mesh-Requester: did:mesh:requester123...
@@ -975,7 +975,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 X-Mesh-Response-Id: res_def456
 X-Mesh-Provider: did:mesh:provider456...
-X-Mesh-Relay: relay.agentic-mesh.org
+X-Mesh-Relay: relay.hivemind-collective.org
 X-Mesh-Signature: <provider-signature-over-canonical-response>
 PAYMENT-RESPONSE: <x402-settlement-receipt-base64>
 
@@ -1146,7 +1146,7 @@ For capabilities that require semantic verification, providers MAY declare a `ve
 
 ### 11.1 Reputation Model
 
-Reputation in the Agentic Mesh is based on **verifiable events**, not self-reported scores. This prevents gaming and sybil manipulation.
+Reputation in the HiveMind Collective is based on **verifiable events**, not self-reported scores. This prevents gaming and sybil manipulation.
 
 #### 11.1.1 Reputation Events
 
@@ -1154,7 +1154,7 @@ After each task interaction, both parties MAY publish signed **ReputationEvents*
 
 ```json
 {
-  "@context": "https://agentic-mesh.org/reputation/v1",
+  "@context": "https://hivemind-collective.org/reputation/v1",
   "eventId": "rep_evt_abc123",
   "type": "task_completion",
   "subject": "did:mesh:provider456...",
@@ -1411,7 +1411,7 @@ Responses MAY use the same pattern in reverse if the requester publishes an encr
 
 ### 14.1 Network Structure
 
-The Agentic Mesh is formed by **shared on-chain state plus relay-routed messaging**, not by direct inbound agent-to-agent links.
+The HiveMind Collective is formed by **shared on-chain state plus relay-routed messaging**, not by direct inbound agent-to-agent links.
 
 ```
                 ┌──────────────────────┐
@@ -1557,7 +1557,7 @@ Anyone can build a reputation provider that indexes ReputationEvents and compute
 Agents advertise supported protocol versions in their AgentCard:
 ```json
 {
-  "protocols": ["agentic-mesh/1.0", "agentic-mesh/1.1", "a2a/1.0"]
+  "protocols": ["hivemind-collective/1.0", "hivemind-collective/1.1", "a2a/1.0"]
 }
 ```
 
@@ -1728,7 +1728,7 @@ For low-latency tasks, the same discovery step can be followed by the relay-medi
 
 ## Appendix B: Comparison with Related Protocols
 
-| Feature | Agentic Mesh | Google A2A | MCP | x402 (standalone) |
+| Feature | HiveMind Collective | Google A2A | MCP | x402 (standalone) |
 |---------|-------------|-----------|-----|-------------------|
 | Agent discovery | Sui on-chain registry + Indexers | Registry | Host-managed | N/A |
 | Capability description | AgentCard | AgentCard | Tool schemas | N/A |

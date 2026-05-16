@@ -1,4 +1,4 @@
-import type { AgentCard } from '@agentic-mesh/types';
+import type { AgentCard } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 

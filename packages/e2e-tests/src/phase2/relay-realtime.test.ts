@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
-import { RelayConsumerClient } from '@agentic-mesh/core';
-import { PaymentRail, type DID } from '@agentic-mesh/types';
-import type { PaymentChallenge } from '@agentic-mesh/relay';
+import { RelayConsumerClient } from '@hivemind-os/collective-core';
+import { PaymentRail, type DID } from '@hivemind-os/collective-types';
+import type { PaymentChallenge } from '@hivemind-os/collective-relay';
 
 import { createArtifactRoot, removeDirectoryWithRetries, waitForCondition } from '../phase1/test-helpers.js';
 import {

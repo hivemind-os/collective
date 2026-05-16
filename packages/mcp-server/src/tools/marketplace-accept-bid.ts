@@ -1,4 +1,4 @@
-import { MarketplaceClient } from '@agentic-mesh/core';
+import { MarketplaceClient } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -9,7 +9,7 @@ export interface MeshMarketplaceAcceptBidParams {
 }
 
 export const meshMarketplaceAcceptBidTool = {
-  name: 'mesh_marketplace_accept_bid',
+  name: 'collective_marketplace_accept_bid',
   description: 'Accept a marketplace bid and optionally reject competing bids',
   inputSchema: {
     type: 'object' as const,

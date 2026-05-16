@@ -31,8 +31,8 @@ import {
   X402Client,
   ZkLoginProvider,
   ZkLoginSessionStore,
-} from '@agentic-mesh/core';
-import { PaymentRail, type DID } from '@agentic-mesh/types';
+} from '@hivemind-os/collective-core';
+import { PaymentRail, type DID } from '@hivemind-os/collective-types';
 import type { Signer } from '@mysten/sui/cryptography';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
@@ -56,7 +56,7 @@ export interface DaemonIdentityContext {
   identitySecretKey: Uint8Array;
 }
 
-const logger = pino({ name: '@agentic-mesh/daemon:state' });
+const logger = pino({ name: '@hivemind-os/collective-daemon:state' });
 
 export class DaemonState {
   readonly keypair: Signer;
@@ -388,7 +388,7 @@ async function createBlobStore(config: DaemonFullConfig): Promise<BlobStore> {
 function deriveSessionEncryptionKey(secretKey: Uint8Array): Uint8Array {
   return createHash('sha256')
     .update(Buffer.from(secretKey))
-    .update('agentic-mesh:zklogin-session:v1')
+    .update('hivemind-collective:zklogin-session:v1')
     .digest();
 }
 

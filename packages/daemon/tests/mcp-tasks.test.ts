@@ -194,8 +194,8 @@ async function createTestDir(): Promise<string> {
 
 function createIpcPath(dir: string): string {
   return process.platform === 'win32'
-    ? `\\\\.\\pipe\\agentic-mesh-test-${randomUUID()}`
-    : resolve(dir, 'agentic-mesh.sock');
+    ? `\\\\.\\pipe\\hivemind-collective-test-${randomUUID()}`
+    : resolve(dir, 'hivemind-collective.sock');
 }
 
 async function startServer(): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {
@@ -385,7 +385,7 @@ describe('MCP Task Protocol Integration', () => {
     expect((msg2.params as Record<string, unknown>).capability).toBe('summarize');
   });
 
-  it('mesh_execute uses blocking path for clients without tasks capability', async () => {
+  it('collective_execute uses blocking path for clients without tasks capability', async () => {
     const { ipcPath } = await startServer();
     // Client does NOT advertise tasks capability
     const client = await connectAndHandshake(ipcPath);
@@ -395,7 +395,7 @@ describe('MCP Task Protocol Integration', () => {
       id: 20,
       method: 'tools/call',
       params: {
-        name: 'mesh_execute',
+        name: 'collective_execute',
         arguments: {
           capability: 'nonexistent-capability',
           input: 'test input',
@@ -411,7 +411,7 @@ describe('MCP Task Protocol Integration', () => {
     expect(content[0].text).toContain('error');
   });
 
-  it('mesh_execute uses async task path for clients WITH tasks capability', async () => {
+  it('collective_execute uses async task path for clients WITH tasks capability', async () => {
     const { ipcPath } = await startServer();
     // Client DOES advertise tasks capability
     const client = await connectAndHandshake(ipcPath, 'task-client', { tasks: true });
@@ -424,7 +424,7 @@ describe('MCP Task Protocol Integration', () => {
       id: 21,
       method: 'tools/call',
       params: {
-        name: 'mesh_execute',
+        name: 'collective_execute',
         arguments: {
           capability: 'nonexistent-capability',
           input: 'test input',
@@ -455,9 +455,9 @@ describe('MCP Task Protocol Integration', () => {
     const result = resp.result as { tools: Array<{ name: string }> };
     expect(result.tools.length).toBeGreaterThan(5);
     const names = result.tools.map((t) => t.name);
-    expect(names).toContain('mesh_execute');
-    expect(names).toContain('mesh_execute_async');
-    expect(names).toContain('mesh_balance');
-    expect(names).toContain('mesh_status');
+    expect(names).toContain('collective_execute');
+    expect(names).toContain('collective_execute_async');
+    expect(names).toContain('collective_balance');
+    expect(names).toContain('collective_status');
   });
 });

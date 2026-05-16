@@ -7,7 +7,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 
-import { SessionState } from '@agentic-mesh/core';
+import { SessionState } from '@hivemind-os/collective-core';
 
 import { registerMeshTools, type MeshToolContext } from '../src/index.js';
 
@@ -71,7 +71,7 @@ describe('MeshToolContext and registration', () => {
     const listTemplates = await handlers.get(ListResourceTemplatesRequestSchema)?.();
 
     expect(listTools.tools).toHaveLength(20);
-    expect(listTools.tools.map((tool: { name: string }) => tool.name)).toContain('mesh_relay_registry');
+    expect(listTools.tools.map((tool: { name: string }) => tool.name)).toContain('collective_relay_registry');
     expect(listResources.resources).toHaveLength(2);
     expect(listTemplates.resourceTemplates).toHaveLength(2);
   });
@@ -98,7 +98,7 @@ describe('MeshToolContext and registration', () => {
 
     const callTool = await handlers.get(CallToolRequestSchema)?.({
       params: {
-        name: 'mesh_balance',
+        name: 'collective_balance',
         arguments: {},
       },
     });

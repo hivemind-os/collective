@@ -1,5 +1,5 @@
-import { PaymentRail, TaskStatus, type AgentCard, type Capability, type Task } from '@agentic-mesh/types';
-import { PaymentRailSelector, RelayConsumerClient, ReputationEventPublisher, type SelectedPaymentRail } from '@agentic-mesh/core';
+import { PaymentRail, TaskStatus, type AgentCard, type Capability, type Task } from '@hivemind-os/collective-types';
+import { PaymentRailSelector, RelayConsumerClient, ReputationEventPublisher, type SelectedPaymentRail } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 import { fetchMeshBlob, hexToBytes, supportsEncryptedBlobs } from '../encryption.js';
@@ -21,7 +21,7 @@ export interface MeshExecuteParams {
 }
 
 export const meshExecuteTool = {
-  name: 'mesh_execute',
+  name: 'collective_execute',
   description: 'Execute a mesh task. Returns a task handle (async) if the client supports MCP Tasks, otherwise blocks until completion.',
   inputSchema: {
     type: 'object' as const,

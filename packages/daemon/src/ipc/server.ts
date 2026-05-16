@@ -7,7 +7,7 @@ import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import type { DaemonStatusBase, DaemonState } from '../state.js';
 import { Connection } from './connection.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import type { MeshToolContext } from '@agentic-mesh/mcp-server';
+import type { MeshToolContext } from '@hivemind-os/collective-mcp-server';
 import { ConnectionRegistry, type ConnectedApp, type ConnectedAppMetadata } from './connection-registry.js';
 import {
   validateClientProcessOwnership,
@@ -16,7 +16,7 @@ import {
   type PipeSecurityStatus,
 } from './pipe-security.js';
 
-const logger = pino({ name: '@agentic-mesh/daemon:ipc-server' });
+const logger = pino({ name: '@hivemind-os/collective-daemon:ipc-server' });
 
 export interface DaemonStatusSnapshot extends DaemonStatusBase {
   connectedApps: ConnectedApp[];

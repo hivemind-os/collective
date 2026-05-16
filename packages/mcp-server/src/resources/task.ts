@@ -1,4 +1,4 @@
-import { TaskStatus } from '@agentic-mesh/types';
+import { TaskStatus } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 import { fetchMeshBlob } from '../encryption.js';

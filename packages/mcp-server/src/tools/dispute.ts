@@ -1,4 +1,4 @@
-import { DisputeClient } from '@agentic-mesh/core';
+import { DisputeClient } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -13,7 +13,7 @@ export interface MeshDisputeParams {
 }
 
 export const meshDisputeTool = {
-  name: 'mesh_dispute',
+  name: 'collective_dispute',
   description: 'Open, respond to, accept, or inspect on-chain task disputes',
   inputSchema: {
     type: 'object' as const,

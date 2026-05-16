@@ -1,13 +1,13 @@
 import pino from 'pino';
 
-import { MeshSuiClient, parseRawEvent } from '@agentic-mesh/core';
-import type { Dispute, MeshEvent, ReputationAnchor } from '@agentic-mesh/types';
-import { DisputeStatus, TaskStatus } from '@agentic-mesh/types';
+import { MeshSuiClient, parseRawEvent } from '@hivemind-os/collective-core';
+import type { Dispute, MeshEvent, ReputationAnchor } from '@hivemind-os/collective-types';
+import { DisputeStatus, TaskStatus } from '@hivemind-os/collective-types';
 import type { SuiEvent, SuiTransactionBlockResponse } from '@mysten/sui/client';
 
 import type { IndexerStore } from './store.js';
 
-const logger = pino({ name: '@agentic-mesh/indexer' });
+const logger = pino({ name: '@hivemind-os/collective-indexer' });
 
 const EVENT_NAMES = {
   agentRegistered: 'registry::AgentRegistered',

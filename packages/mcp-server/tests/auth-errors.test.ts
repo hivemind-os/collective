@@ -2,7 +2,7 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it, vi } from 'vitest';
 
-import { SessionExpiredError } from '@agentic-mesh/core';
+import { SessionExpiredError } from '@hivemind-os/collective-core';
 
 import { registerMeshTools, type MeshToolContext } from '../src/index.js';
 
@@ -60,7 +60,7 @@ describe('MCP auth errors', () => {
     const callTool = handlers.get(CallToolRequestSchema);
     const result = await callTool?.({
       params: {
-        name: 'mesh_balance',
+        name: 'collective_balance',
         arguments: {},
       },
     });

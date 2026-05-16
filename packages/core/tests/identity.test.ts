@@ -94,7 +94,7 @@ describe('identity', () => {
     expect(Buffer.from(second.secretKey)).toEqual(Buffer.from(first.secretKey));
     expect(Buffer.from(second.publicKey)).toEqual(Buffer.from(first.publicKey));
     expect(await fileExists(keyPath)).toBe(false);
-    expect(secrets.get('agentic-mesh:identity-key')).toBe(Buffer.from(first.secretKey).toString('hex'));
+    expect(secrets.get('hivemind-collective:identity-key')).toBe(Buffer.from(first.secretKey).toString('hex'));
   });
 
   it('migrates legacy file-based keys into the OS keychain', async () => {
@@ -110,7 +110,7 @@ describe('identity', () => {
 
     expect(Buffer.from(loaded.secretKey)).toEqual(Buffer.from(legacyKeypair.secretKey));
     expect(await fileExists(keyPath)).toBe(false);
-    expect(secrets.get('agentic-mesh:identity-key')).toBe(Buffer.from(legacyKeypair.secretKey).toString('hex'));
+    expect(secrets.get('hivemind-collective:identity-key')).toBe(Buffer.from(legacyKeypair.secretKey).toString('hex'));
   });
 
   it('falls back to file storage when keychain support is unavailable', async () => {

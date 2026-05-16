@@ -11,7 +11,7 @@ import {
   parseDID,
   pollDeviceFlow,
   startDeviceFlow,
-} from '@agentic-mesh/core';
+} from '@hivemind-os/collective-core';
 import type { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { jwtToAddress } from '@mysten/sui/zklogin';

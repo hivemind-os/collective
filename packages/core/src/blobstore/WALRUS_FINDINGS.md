@@ -111,7 +111,7 @@ Renewal findings:
 
 Implication for M8:
 
-- If Agentic Mesh only stores a blob ID string today, renewal is not enough by itself.
+- If HiveMind Collective only stores a blob ID string today, renewal is not enough by itself.
 - If long-lived blobs matter, M8 should also persist the returned Walrus blob object ID and define who owns it.
 - The HTTP `send_object_to=<SUI_ADDRESS>` option is likely important once wallet ownership is designed.
 
@@ -190,7 +190,7 @@ Known concerns from docs/SDK README:
 ## M8 recommendation
 
 1. Implement M8 on top of the HTTP publisher/aggregator API first.
-2. Keep the underlying Walrus storage IDs as Walrus base64url strings, but wrap them in an Agentic Mesh blob reference (`walrus:<walrus-blob-id>:<sha256>`) when integrity metadata needs to travel with the task.
+2. Keep the underlying Walrus storage IDs as Walrus base64url strings, but wrap them in an HiveMind Collective blob reference (`walrus:<walrus-blob-id>:<sha256>`) when integrity metadata needs to travel with the task.
 3. Keep Move blob IDs as `vector<u8>` containing the decoded 32-byte value.
 4. Persist additional metadata for future lifecycle management:
    - `blobId`
@@ -202,13 +202,13 @@ Known concerns from docs/SDK README:
 
 ## Production configuration
 
-Agentic Mesh now exposes three blob store modes in daemon config:
+HiveMind Collective now exposes three blob store modes in daemon config:
 
 ```yaml
 blobstore:
   mode: filesystem | walrus | hybrid
   filesystem:
-    dataDir: ~/.agentic-mesh/blobs
+    dataDir: ~/.hivemind-os/collective/blobs
   walrus:
     publisherUrl: https://publisher.walrus-testnet.walrus.space
     aggregatorUrl: https://aggregator.walrus-testnet.walrus.space
@@ -225,7 +225,7 @@ blobstore:
 ### Mode selection
 
 - `filesystem`: content-addressed local storage only.
-- `walrus`: stores payloads in Walrus and returns Agentic Mesh blob references in the form `walrus:<walrus-blob-id>:<sha256>` so downstream fetches can verify integrity.
+- `walrus`: stores payloads in Walrus and returns HiveMind Collective blob references in the form `walrus:<walrus-blob-id>:<sha256>` so downstream fetches can verify integrity.
 - `hybrid`: stores in Walrus first, falls back to filesystem if Walrus is unavailable, and can cache Walrus payloads locally for faster reads.
 
 ### Switching between filesystem and Walrus
@@ -236,7 +236,7 @@ blobstore:
 blobstore:
   mode: filesystem
   filesystem:
-    dataDir: ~/.agentic-mesh/blobs
+    dataDir: ~/.hivemind-os/collective/blobs
 ```
 
 **Walrus only**
@@ -256,7 +256,7 @@ blobstore:
 blobstore:
   mode: hybrid
   filesystem:
-    dataDir: ~/.agentic-mesh/blobs
+    dataDir: ~/.hivemind-os/collective/blobs
   walrus:
     publisherUrl: https://publisher.walrus-testnet.walrus.space
     aggregatorUrl: https://aggregator.walrus-testnet.walrus.space

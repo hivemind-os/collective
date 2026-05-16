@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { PaymentRail, SpendingPolicyEngine } from '@agentic-mesh/core';
+import { PaymentRail, SpendingPolicyEngine } from '@hivemind-os/collective-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createdPaths: string[] = [];

@@ -14,7 +14,7 @@ import {
   type PaymentConfig,
   type SpendingLimit,
   type SpendingPolicy,
-} from '@agentic-mesh/types';
+} from '@hivemind-os/collective-types';
 import yaml from 'js-yaml';
 
 import { getDefaultIpcPath } from './ipc/pipe-security.js';
@@ -88,11 +88,11 @@ export const configIo = {
 };
 
 export function getDefaultConfig(): DaemonFullConfig {
-  return buildDefaultConfig(resolve(homedir(), '.agentic-mesh'));
+  return buildDefaultConfig(resolve(homedir(), '.hivemind-os/collective'));
 }
 
 export function getConfigPath(configPath?: string): string {
-  return resolve(expandHome(configPath ?? join(getEnvDataDir() ?? resolve(homedir(), '.agentic-mesh'), 'config.yaml')));
+  return resolve(expandHome(configPath ?? join(getEnvDataDir() ?? resolve(homedir(), '.hivemind-os/collective'), 'config.yaml')));
 }
 
 export { getDefaultIpcPath };
@@ -165,7 +165,7 @@ function loadConfigFile(configPath: string): LooseRecord {
 
 function buildResolvedConfig(parsed: LooseRecord): DaemonFullConfig {
   const baseDataDir = normalizePath(
-    getEnvDataDir() ?? readString(getNestedValue(parsed, 'daemon', 'dataDir')) ?? resolve(homedir(), '.agentic-mesh'),
+    getEnvDataDir() ?? readString(getNestedValue(parsed, 'daemon', 'dataDir')) ?? resolve(homedir(), '.hivemind-os/collective'),
   );
   const hasExplicitIpcPath = readString(getNestedValue(parsed, 'daemon', 'ipcPath')) !== undefined;
 
@@ -408,13 +408,13 @@ function applyEnvironmentOverrides(
     ...withDataDir,
     network: {
       ...withDataDir.network,
-      rpcUrl: process.env.MESH_RPC_URL ?? withDataDir.network.rpcUrl,
-      packageId: process.env.MESH_PACKAGE_ID ?? withDataDir.network.packageId,
-      registryId: process.env.MESH_REGISTRY_ID ?? withDataDir.network.registryId,
+      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? withDataDir.network.rpcUrl,
+      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? withDataDir.network.packageId,
+      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? withDataDir.network.registryId,
     },
     daemon: {
       ...withDataDir.daemon,
-      logLevel: normalizeLogLevel(process.env.MESH_LOG_LEVEL, withDataDir.daemon.logLevel),
+      logLevel: normalizeLogLevel(process.env.COLLECTIVE_LOG_LEVEL, withDataDir.daemon.logLevel),
     },
   };
 }
@@ -806,7 +806,7 @@ function parseBigInt(value: unknown, field: string): bigint {
 }
 
 function getEnvDataDir(): string | undefined {
-  return process.env.MESH_DATA_DIR ? normalizePath(process.env.MESH_DATA_DIR) : undefined;
+  return process.env.COLLECTIVE_DATA_DIR ? normalizePath(process.env.COLLECTIVE_DATA_DIR) : undefined;
 }
 
 function getNestedValue(record: LooseRecord, ...keys: string[]): unknown {

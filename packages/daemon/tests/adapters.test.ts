@@ -132,10 +132,10 @@ describe('SubprocessAdapter', () => {
     expect(decoder.decode(result.resultData)).toBe('HELLO');
   });
 
-  it('passes MESH_TASK_ID and MESH_CAPABILITY env vars', async () => {
+  it('passes COLLECTIVE_TASK_ID and COLLECTIVE_CAPABILITY env vars', async () => {
     const adapter = new SubprocessAdapter({
       command: 'node',
-      args: ['-e', 'process.stdout.write(JSON.stringify({ tid: process.env.MESH_TASK_ID, cap: process.env.MESH_CAPABILITY }))'],
+      args: ['-e', 'process.stdout.write(JSON.stringify({ tid: process.env.COLLECTIVE_TASK_ID, cap: process.env.COLLECTIVE_CAPABILITY }))'],
     });
 
     const result = await adapter.execute({

@@ -1,5 +1,5 @@
-import { decodeMeteredResult, parseMeteredResultEnvelope } from '@agentic-mesh/core';
-import { TaskStatus } from '@agentic-mesh/types';
+import { decodeMeteredResult, parseMeteredResultEnvelope } from '@hivemind-os/collective-core';
+import { TaskStatus } from '@hivemind-os/collective-types';
 
 import type { MeshToolContext } from '../context.js';
 import { fetchMeshBlob } from '../encryption.js';
@@ -11,7 +11,7 @@ export interface MeshTaskStatusParams {
 }
 
 export const meshTaskStatusTool = {
-  name: 'mesh_task_status',
+  name: 'collective_task_status',
   description: 'Get task status and fetch the result if available',
   inputSchema: {
     type: 'object' as const,

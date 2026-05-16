@@ -5,7 +5,7 @@ export interface MeshDeactivateParams {
 }
 
 export const meshDeactivateTool = {
-  name: 'mesh_deactivate',
+  name: 'collective_deactivate',
   description: 'Deactivate an existing agent card',
   inputSchema: {
     type: 'object' as const,

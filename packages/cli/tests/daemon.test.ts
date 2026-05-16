@@ -8,7 +8,7 @@ import { buildDefaultConfig, saveMeshConfig } from '../src/commands/config.js';
 import { handleDaemon, type DaemonCommandDeps } from '../src/commands/daemon.js';
 
 const createdPaths: string[] = [];
-const originalDataDir = process.env.MESH_DATA_DIR;
+const originalDataDir = process.env.COLLECTIVE_DATA_DIR;
 
 beforeEach(() => {
   vi.spyOn(console, 'log').mockImplementation(() => undefined);
@@ -19,9 +19,9 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks();
   if (originalDataDir === undefined) {
-    delete process.env.MESH_DATA_DIR;
+    delete process.env.COLLECTIVE_DATA_DIR;
   } else {
-    process.env.MESH_DATA_DIR = originalDataDir;
+    process.env.COLLECTIVE_DATA_DIR = originalDataDir;
   }
   await Promise.all(createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
@@ -53,7 +53,7 @@ function createDeps(overrides: Partial<DaemonCommandDeps> = {}): DaemonCommandDe
 describe('mesh daemon', () => {
   it('status returns not-running when no PID file exists', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
     saveMeshConfig(buildDefaultConfig(dataDir));
 
     await expect(handleDaemon('status')).resolves.toBe(1);
@@ -61,7 +61,7 @@ describe('mesh daemon', () => {
 
   it('start spawns the daemon process', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
     saveMeshConfig(buildDefaultConfig(dataDir));
 
     const deps = createDeps();
@@ -75,7 +75,7 @@ describe('mesh daemon', () => {
 
   it('stop kills the daemon process', async () => {
     const dataDir = await createTestDir();
-    process.env.MESH_DATA_DIR = dataDir;
+    process.env.COLLECTIVE_DATA_DIR = dataDir;
     const config = buildDefaultConfig(dataDir);
     saveMeshConfig(config);
     await writeFile(config.daemon.pidFile, '4242\n', 'utf8');

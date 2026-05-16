@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 
-import { createDID, generateKeypair, signString } from '@agentic-mesh/core';
-import type { DID } from '@agentic-mesh/types';
+import { createDID, generateKeypair, signString } from '@hivemind-os/collective-core';
+import type { DID } from '@hivemind-os/collective-types';
 import { describe, expect, it } from 'vitest';
 import type WebSocket from 'ws';
 

@@ -1,4 +1,4 @@
-import { PaymentRail } from '@agentic-mesh/types';
+import { PaymentRail } from '@hivemind-os/collective-types';
 
 import { loadMeshConfig, saveMeshConfig } from './config.js';
 import { parseSuiToMist } from './wallet.js';

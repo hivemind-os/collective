@@ -1,4 +1,4 @@
-export * from '@agentic-mesh/types';
+export * from '@hivemind-os/collective-types';
 export * from './identity/index.js';
 export * from './crypto/index.js';
 export * from './auth/index.js';

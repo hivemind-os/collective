@@ -1,4 +1,4 @@
-# Blockchain Platform Analysis for Agentic Mesh
+# Blockchain Platform Analysis for HiveMind Collective
 
 **Document Type:** Research & Decision Analysis
 **Date:** 2026-05-14
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document evaluates three blockchain platforms — **Ethereum L2s** (Base, Arbitrum, Optimism), **Solana**, and **Sui** — for use as the on-chain substrate of the Agentic Mesh protocol. The on-chain layer handles agent identity registration, staking/slashing, reputation anchoring, payment settlement (x402), and dispute escrow.
+This document evaluates three blockchain platforms — **Ethereum L2s** (Base, Arbitrum, Optimism), **Solana**, and **Sui** — for use as the on-chain substrate of the HiveMind Collective protocol. The on-chain layer handles agent identity registration, staking/slashing, reputation anchoring, payment settlement (x402), and dispute escrow.
 
 ### Recommendation
 
@@ -44,7 +44,7 @@ This document evaluates three blockchain platforms — **Ethereum L2s** (Base, A
 
 ### Why Base is the Primary Candidate
 
-Among the three L2s, **Base is the clear frontrunner** for Agentic Mesh:
+Among the three L2s, **Base is the clear frontrunner** for HiveMind Collective:
 
 1. **x402 is a Coinbase project, and Base is a Coinbase chain.** Base has first-class x402 support in both V1 (named network) and V2 (CAIP-2). Arbitrum and Optimism are only supported via the V2 wildcard `eip155:*`.
 
@@ -360,13 +360,13 @@ x402/typescript/packages/mechanisms/
 
 ## 5. Multi-Chain Strategy
 
-Rather than choosing one chain exclusively, the Agentic Mesh should adopt a **layered multi-chain strategy**:
+Rather than choosing one chain exclusively, the HiveMind Collective should adopt a **layered multi-chain strategy**:
 
 ### Phase 1: Base Primary + Solana Secondary
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                 Agentic Mesh                     │
+│                 HiveMind Collective                     │
 ├─────────────────────┬───────────────────────────┤
 │ Base (Primary)      │ Solana (Secondary)         │
 │                     │                            │
@@ -507,7 +507,7 @@ Sui's object model would provide the most natural on-chain representation of the
 
 ## 10. Conclusion
 
-The blockchain platform choice for Agentic Mesh is not a binary decision. The protocol should be **chain-agnostic at the application layer** while being **pragmatic about initial chain selection**.
+The blockchain platform choice for HiveMind Collective is not a binary decision. The protocol should be **chain-agnostic at the application layer** while being **pragmatic about initial chain selection**.
 
 **Start with Base** for the fastest path to a working system with x402 payments and existing agent infrastructure. **Add Solana** early for cost-sensitive agents and Ed25519 alignment. **Evaluate Sui** as the ecosystem matures and x402 support becomes available.
 

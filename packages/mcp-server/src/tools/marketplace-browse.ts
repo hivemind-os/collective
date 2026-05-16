@@ -1,4 +1,4 @@
-import { MarketplaceClient } from '@agentic-mesh/core';
+import { MarketplaceClient } from '@hivemind-os/collective-core';
 
 import type { MeshToolContext } from '../context.js';
 
@@ -10,7 +10,7 @@ export interface MeshMarketplaceBrowseParams {
 }
 
 export const meshMarketplaceBrowseTool = {
-  name: 'mesh_marketplace_browse',
+  name: 'collective_marketplace_browse',
   description: 'Browse open marketplace tasks by category and price filters',
   inputSchema: {
     type: 'object' as const,

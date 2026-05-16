@@ -1,5 +1,5 @@
-import { MeshSuiClient, RegistryClient } from '@agentic-mesh/core';
-import type { AgentCard } from '@agentic-mesh/types';
+import { MeshSuiClient, RegistryClient } from '@hivemind-os/collective-core';
+import type { AgentCard } from '@hivemind-os/collective-types';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { SuiTestNetwork } from '../harness/index.js';

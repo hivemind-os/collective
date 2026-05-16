@@ -7,7 +7,7 @@ import { logAuditEvent } from '../audit.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import { McpSession, type McpSessionStatus } from '../mcp/session.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import type { MeshToolContext } from '@agentic-mesh/mcp-server';
+import type { MeshToolContext } from '@hivemind-os/collective-mcp-server';
 import type { DaemonState } from '../state.js';
 import type { ConnectedAppMetadata } from './connection-registry.js';
 import type { ClientValidationResult } from './pipe-security.js';
@@ -20,7 +20,7 @@ import {
   type JsonRpcMessage,
 } from './protocol.js';
 
-const logger = pino({ name: '@agentic-mesh/daemon:connection' });
+const logger = pino({ name: '@hivemind-os/collective-daemon:connection' });
 
 interface ConnectionOptions {
   getStatus: () => McpSessionStatus;

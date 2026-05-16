@@ -2,19 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { getDefaultIpcPath as getDaemonDefaultIpcPath } from '@agentic-mesh/daemon/config';
+import { getDefaultIpcPath as getDaemonDefaultIpcPath } from '@hivemind-os/collective-daemon/config';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildDefaultConfig, loadMeshConfig } from '../src/commands/config.js';
 
 const createdPaths: string[] = [];
-const originalDataDir = process.env.MESH_DATA_DIR;
+const originalDataDir = process.env.COLLECTIVE_DATA_DIR;
 
 afterEach(async () => {
   if (originalDataDir === undefined) {
-    delete process.env.MESH_DATA_DIR;
+    delete process.env.COLLECTIVE_DATA_DIR;
   } else {
-    process.env.MESH_DATA_DIR = originalDataDir;
+    process.env.COLLECTIVE_DATA_DIR = originalDataDir;
   }
 
   await Promise.all(createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -34,10 +34,10 @@ describe('mesh config', () => {
     expect(config.daemon.ipcPath).toBe(getDaemonDefaultIpcPath(config.daemon.dataDir));
   });
 
-  it('preserves an explicit IPC path when MESH_DATA_DIR is overridden', async () => {
+  it('preserves an explicit IPC path when COLLECTIVE_DATA_DIR is overridden', async () => {
     const dir = await createTestDir();
     const configPath = resolve(dir, 'config.yaml');
-    const explicitIpcPath = process.platform === 'win32' ? '\\\\.\\pipe\\agentic-mesh' : resolve(dir, 'custom.sock');
+    const explicitIpcPath = process.platform === 'win32' ? '\\\\.\\pipe\\hivemind-collective' : resolve(dir, 'custom.sock');
     const overrideDataDir = resolve(dir, 'override-data');
 
     await writeFile(
@@ -51,7 +51,7 @@ describe('mesh config', () => {
       'utf8',
     );
 
-    process.env.MESH_DATA_DIR = overrideDataDir;
+    process.env.COLLECTIVE_DATA_DIR = overrideDataDir;
 
     const config = loadMeshConfig(configPath);
 

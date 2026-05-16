@@ -1,4 +1,4 @@
-import { RelayNodeStatus, type RelayNode } from '@agentic-mesh/types';
+import { RelayNodeStatus, type RelayNode } from '@hivemind-os/collective-types';
 
 import { DEFAULT_RELAY_HEARTBEAT_FRESHNESS_MS, type RelayRegistryClient } from './client.js';
 

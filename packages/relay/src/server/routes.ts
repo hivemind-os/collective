@@ -1,5 +1,5 @@
 import { encodePaymentResponseHeader } from '@x402/core/http';
-import { PaymentRail, type DID } from '@agentic-mesh/types';
+import { PaymentRail, type DID } from '@hivemind-os/collective-types';
 import type { FastifyInstance } from 'fastify';
 
 import type { RelayConfig } from '../config.js';

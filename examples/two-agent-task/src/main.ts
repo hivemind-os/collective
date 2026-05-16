@@ -1,4 +1,4 @@
-import { FilesystemBlobStore } from '@agentic-mesh/core';
+import { FilesystemBlobStore } from '@hivemind-os/collective-core';
 
 import { ECHO_PRICE_MIST, registerProvider, startListening, type ProviderListenerHandle } from './agent-a.js';
 import { discoverAndExecute } from './agent-b.js';

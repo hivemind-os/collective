@@ -1,7 +1,7 @@
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import { describe, expect, it, vi } from 'vitest';
 
-import type { StoredZkLoginSession } from '@agentic-mesh/core';
+import type { StoredZkLoginSession } from '@hivemind-os/collective-core';
 
 import { SessionMonitor } from '../src/auth/session-monitor.js';
 

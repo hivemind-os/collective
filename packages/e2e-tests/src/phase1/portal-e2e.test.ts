@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
-import { ZkLoginProvider, ZkLoginSessionStore } from '@agentic-mesh/core';
+import { ZkLoginProvider, ZkLoginSessionStore } from '@hivemind-os/collective-core';
 import type { SuiClient } from '@mysten/sui/client';
-import { type DaemonFullConfig, getDefaultConfig, saveConfig } from '@agentic-mesh/daemon/config';
-import { PortalServer } from '@agentic-mesh/daemon/portal/server';
+import { type DaemonFullConfig, getDefaultConfig, saveConfig } from '@hivemind-os/collective-daemon/config';
+import { PortalServer } from '@hivemind-os/collective-daemon/portal/server';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { MockOidcProvider, PortAllocator } from '../harness/index.js';
@@ -141,7 +141,7 @@ async function startPortalHarness(params: {
       ...defaults.daemon,
       dataDir: join(baseDir, 'daemon'),
       pidFile: join(baseDir, 'daemon.pid'),
-      ipcPath: `\\\\.\\pipe\\agentic-mesh-portal-${randomUUID()}`,
+      ipcPath: `\\\\.\\pipe\\hivemind-collective-portal-${randomUUID()}`,
     },
     blobstore: {
       mode: 'filesystem',
@@ -151,7 +151,7 @@ async function startPortalHarness(params: {
     },
   };
 
-  const configPath = join(baseDir, 'agentic-mesh.config.yaml');
+  const configPath = join(baseDir, 'hivemind-collective.config.yaml');
   await saveConfig(config, configPath);
 
   const authProvider = new ZkLoginProvider({

@@ -16,7 +16,7 @@ export const DEFAULT_WALRUS_TIMEOUT_MS = 30_000;
 const WALRUS_STORAGE_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const WALRUS_REFERENCE_PATTERN = /^walrus:([A-Za-z0-9_-]{43}):([a-f0-9]{64})$/;
 const WALRUS_STORAGE_ID_BYTES = 32;
-const logger = pino({ name: '@agentic-mesh/core:blobstore:walrus' });
+const logger = pino({ name: '@hivemind-os/collective-core:blobstore:walrus' });
 
 export interface WalrusLogger {
   debug(bindings: Record<string, unknown>, message?: string): void;

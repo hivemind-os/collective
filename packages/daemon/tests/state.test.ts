@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@agentic-mesh/core', async () => {
-  const actual = await vi.importActual<typeof import('@agentic-mesh/core')>('@agentic-mesh/core');
+vi.mock('@hivemind-os/collective-core', async () => {
+  const actual = await vi.importActual<typeof import('@hivemind-os/collective-core')>('@hivemind-os/collective-core');
 
   class MockMeshSuiClient {
     readonly client = {
@@ -51,7 +51,7 @@ vi.mock('@agentic-mesh/core', async () => {
   };
 });
 
-import { SessionState } from '@agentic-mesh/core';
+import { SessionState } from '@hivemind-os/collective-core';
 
 import type { DaemonFullConfig } from '../src/config.js';
 import { getDefaultConfig } from '../src/config.js';

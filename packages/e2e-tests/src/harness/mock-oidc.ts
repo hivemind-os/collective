@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import type { OAuthConfig } from '@agentic-mesh/core';
+import type { OAuthConfig } from '@hivemind-os/collective-core';
 
 interface PendingCode {
   nonce: string;

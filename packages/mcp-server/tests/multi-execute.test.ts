@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { PaymentRail, ProviderSelectionStrategy, type AgentCard } from '@agentic-mesh/types';
+import { PaymentRail, ProviderSelectionStrategy, type AgentCard } from '@hivemind-os/collective-types';
 
 const runMeshExecuteMock = vi.fn();
 const discoverAgentsByCapabilityMock = vi.fn();

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { DID } from '@agentic-mesh/types';
+import type { DID } from '@hivemind-os/collective-types';
 import type WebSocket from 'ws';
 
 import type { ProviderTaskMessage, TaskRequest, TaskResponse, TaskStreamEvent, TaskRequestMessage } from './message-types.js';
