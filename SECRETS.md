@@ -40,7 +40,10 @@ This file contains the private key(s) used to sign transactions.
 sui client new-address ed25519 deployer
 
 # Base64-encode the keystore file
+# Linux:
 base64 -w 0 ~/.sui/sui_config/sui.keystore
+# macOS:
+base64 -i ~/.sui/sui_config/sui.keystore
 ```
 
 Copy the output and add it as a repository secret named `SUI_KEYSTORE`.
@@ -64,7 +67,10 @@ This defines RPC endpoints, the active environment, and the active address.
 cat ~/.sui/sui_config/client.yaml
 
 # Base64-encode it
+# Linux:
 base64 -w 0 ~/.sui/sui_config/client.yaml
+# macOS:
+base64 -i ~/.sui/sui_config/client.yaml
 ```
 
 Copy the output and add it as a repository secret named `SUI_CLIENT_CONFIG`.
