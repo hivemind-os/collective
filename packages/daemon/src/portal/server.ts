@@ -243,6 +243,87 @@ export class PortalServer {
         });
       }
     });
+
+    // ── Wallet page ──────────────────────────────────────────────
+    this.server.get('/wallet', async (_request, reply) => {
+      reply.type('text/html').send(renderWalletPage());
+    });
+
+    this.server.get('/api/wallet', async () => {
+      const state = this.options.state;
+      if (!state) {
+        return { error: 'Daemon state not available.' };
+      }
+
+      const balanceMist = await state.suiClient.getBalance(state.address);
+      return {
+        did: state.did,
+        address: state.address,
+        balanceMist: balanceMist.toString(),
+        balanceSui: formatMistToSui(balanceMist),
+        spendingToday: formatMistToSui(state.spendingPolicy.getSpent('day')),
+        spendingThisHour: formatMistToSui(state.spendingPolicy.getSpent('hour')),
+        spendingThisMonth: formatMistToSui(state.spendingPolicy.getSpent('month')),
+        dailyLimitSui: formatMistToSui(getCurrentDailyLimitMist(this.options.config)),
+      };
+    });
+
+    // ── Discovery page ───────────────────────────────────────────
+    this.server.get('/discover', async (_request, reply) => {
+      reply.type('text/html').send(renderDiscoverPage());
+    });
+
+    this.server.get('/api/discover', async (request) => {
+      const state = this.options.state;
+      if (!state) {
+        return { error: 'Daemon state not available.' };
+      }
+
+      const query = (request.query ?? {}) as { capability?: string; limit?: string };
+      const capability = (query.capability ?? '').trim();
+      if (!capability) {
+        return { capability: '', agents: [] };
+      }
+
+      const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 50);
+      const agents = await state.registryClient.discoverByCapability(capability, limit, {});
+      return {
+        capability,
+        agents: agents.map((agent) => ({
+          name: agent.name,
+          did: agent.did,
+          active: agent.active,
+          capabilities: agent.capabilities.map((cap) => ({
+            name: cap.name,
+            priceMist: cap.pricing.amount.toString(),
+            rail: cap.pricing.rail,
+          })),
+          endpoint: agent.endpoint,
+        })),
+      };
+    });
+
+    // ── Tasks / Spending page ────────────────────────────────────
+    this.server.get('/tasks', async (_request, reply) => {
+      reply.type('text/html').send(renderTasksPage());
+    });
+
+    this.server.get('/api/tasks', async () => {
+      const state = this.options.state;
+      if (!state) {
+        return { error: 'Daemon state not available.' };
+      }
+
+      return {
+        spending: {
+          hour: formatMistToSui(state.spendingPolicy.getSpent('hour')),
+          day: formatMistToSui(state.spendingPolicy.getSpent('day')),
+          month: formatMistToSui(state.spendingPolicy.getSpent('month')),
+        },
+        dailyLimitSui: formatMistToSui(getCurrentDailyLimitMist(this.options.config)),
+        providerRunning: state.getStatusBase().providerRunning,
+      };
+    });
   }
 
   private async startAuthFlow(
@@ -529,7 +610,7 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
       <button class="button" id="finish">Finish Setup</button>
       <p class="error" id="status" hidden></p>
       ${successMessage}
-      <p style="margin-top:24px;font-size:0.85rem"><a href="/network" style="color:#60a5fa">Network Configuration →</a></p>
+      <p style="margin-top:24px;font-size:0.85rem"><a href="/wallet" style="color:#60a5fa">Wallet</a> · <a href="/discover" style="color:#60a5fa">Discover</a> · <a href="/tasks" style="color:#60a5fa">Tasks</a> · <a href="/network" style="color:#60a5fa">Network</a></p>
     </main>
     <script>
       const slider = document.getElementById('limit');
@@ -669,6 +750,184 @@ function renderMessagePage(title: string, detail: string): string {
       <p>${escapeHtml(detail)}</p>
       <a class="button" href="/">Back</a>
     </main>
+  </body>
+</html>`;
+}
+
+const PORTAL_NAV = `
+  <nav class="nav">
+    <a href="/">Settings</a> · <a href="/wallet">Wallet</a> · <a href="/discover">Discover</a> · <a href="/tasks">Tasks</a> · <a href="/network">Network</a>
+  </nav>`;
+
+const INNER_PAGE_STYLES = `
+  .nav { margin-bottom: 16px; font-size: 0.9rem; }
+  .nav a { color: #60a5fa; text-decoration: none; }
+  .nav a:hover { text-decoration: underline; }
+  .stat { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1e293b; }
+  .stat:last-child { border-bottom: 0; }
+  .stat-label { color: #94a3b8; font-size: 0.85rem; }
+  .stat-value { font-family: monospace; font-size: 0.9rem; }
+  .search-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  .search-row input { flex: 1; padding: 10px 12px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 0.9rem; }
+  .search-row input:focus { outline: none; border-color: #2563eb; }
+  .search-row button { flex-shrink: 0; }
+  .agent-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  .agent-name { font-weight: 600; margin-bottom: 4px; }
+  .agent-did { font-family: monospace; font-size: 0.75rem; color: #64748b; word-break: break-all; }
+  .agent-cap { display: inline-block; background: #1e293b; border-radius: 6px; padding: 4px 10px; margin: 6px 4px 0 0; font-size: 0.8rem; }
+  #results-empty { color: #94a3b8; font-style: italic; }
+`;
+
+function renderWalletPage(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agentic Mesh — Wallet</title>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
+  </head>
+  <body>
+    <main class="card">
+      ${PORTAL_NAV}
+      <h1>Wallet</h1>
+      <div id="loading">Loading…</div>
+      <div id="content" hidden>
+        <div class="stat"><span class="stat-label">Address</span><span class="stat-value" id="address"></span></div>
+        <div class="stat"><span class="stat-label">DID</span><span class="stat-value" id="did"></span></div>
+        <div class="stat"><span class="stat-label">Balance</span><span class="stat-value" id="balance"></span></div>
+        <div class="stat"><span class="stat-label">Spent today</span><span class="stat-value" id="spent-day"></span></div>
+        <div class="stat"><span class="stat-label">Spent this hour</span><span class="stat-value" id="spent-hour"></span></div>
+        <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="spent-month"></span></div>
+        <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
+      </div>
+    </main>
+    <script>
+      (async () => {
+        try {
+          const res = await fetch('/api/wallet');
+          const data = await res.json();
+          document.getElementById('address').textContent = data.address ?? '—';
+          document.getElementById('did').textContent = data.did ?? '—';
+          document.getElementById('balance').textContent = (data.balanceSui ?? '—') + ' SUI';
+          document.getElementById('spent-day').textContent = (data.spendingToday ?? '0') + ' SUI';
+          document.getElementById('spent-hour').textContent = (data.spendingThisHour ?? '0') + ' SUI';
+          document.getElementById('spent-month').textContent = (data.spendingThisMonth ?? '0') + ' SUI';
+          document.getElementById('limit').textContent = (data.dailyLimitSui ?? '—') + ' SUI';
+          document.getElementById('loading').hidden = true;
+          document.getElementById('content').hidden = false;
+        } catch (e) {
+          document.getElementById('loading').textContent = 'Failed to load wallet data.';
+        }
+      })();
+    </script>
+  </body>
+</html>`;
+}
+
+function renderDiscoverPage(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agentic Mesh — Discover</title>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
+  </head>
+  <body>
+    <main class="card">
+      ${PORTAL_NAV}
+      <h1>Discover Agents</h1>
+      <div class="search-row">
+        <input id="capability" type="text" placeholder="Enter capability name…" />
+        <button class="button" id="search">Search</button>
+      </div>
+      <div id="results"></div>
+    </main>
+    <script>
+      const input = document.getElementById('capability');
+      const btn = document.getElementById('search');
+      const results = document.getElementById('results');
+
+      async function doSearch() {
+        const cap = input.value.trim();
+        if (!cap) return;
+        btn.disabled = true;
+        results.innerHTML = '<p style="color:#94a3b8">Searching…</p>';
+        try {
+          const res = await fetch('/api/discover?capability=' + encodeURIComponent(cap));
+          const data = await res.json();
+          if (!data.agents || data.agents.length === 0) {
+            results.innerHTML = '<p id="results-empty">No agents found for this capability.</p>';
+            return;
+          }
+          results.innerHTML = data.agents.map(a => {
+            const caps = (a.capabilities || []).map(c =>
+              '<span class="agent-cap">' + esc(c.name) + ' — ' + esc(c.priceMist) + ' MIST</span>'
+            ).join('');
+            return '<div class="agent-card">' +
+              '<div class="agent-name">' + esc(a.name) + (a.active ? '' : ' <span style="color:#f87171">(inactive)</span>') + '</div>' +
+              '<div class="agent-did">' + esc(a.did) + '</div>' +
+              (caps ? '<div>' + caps + '</div>' : '') +
+              (a.endpoint ? '<div style="margin-top:6px;font-size:0.8rem;color:#64748b">' + esc(a.endpoint) + '</div>' : '') +
+              '</div>';
+          }).join('');
+        } catch (e) {
+          results.innerHTML = '<p class="error">Search failed.</p>';
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      btn.addEventListener('click', doSearch);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+
+      function esc(s) {
+        const d = document.createElement('div');
+        d.textContent = s ?? '';
+        return d.innerHTML;
+      }
+    </script>
+  </body>
+</html>`;
+}
+
+function renderTasksPage(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agentic Mesh — Tasks</title>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
+  </head>
+  <body>
+    <main class="card">
+      ${PORTAL_NAV}
+      <h1>Tasks &amp; Spending</h1>
+      <div id="loading">Loading…</div>
+      <div id="content" hidden>
+        <div class="stat"><span class="stat-label">Spent this hour</span><span class="stat-value" id="hour"></span></div>
+        <div class="stat"><span class="stat-label">Spent today</span><span class="stat-value" id="day"></span></div>
+        <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="month"></span></div>
+        <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
+        <div class="stat"><span class="stat-label">Provider running</span><span class="stat-value" id="provider"></span></div>
+      </div>
+    </main>
+    <script>
+      (async () => {
+        try {
+          const res = await fetch('/api/tasks');
+          const data = await res.json();
+          document.getElementById('hour').textContent = (data.spending?.hour ?? '0') + ' SUI';
+          document.getElementById('day').textContent = (data.spending?.day ?? '0') + ' SUI';
+          document.getElementById('month').textContent = (data.spending?.month ?? '0') + ' SUI';
+          document.getElementById('limit').textContent = (data.dailyLimitSui ?? '—') + ' SUI';
+          document.getElementById('provider').textContent = data.providerRunning ? 'Yes' : 'No';
+          document.getElementById('loading').hidden = true;
+          document.getElementById('content').hidden = false;
+        } catch (e) {
+          document.getElementById('loading').textContent = 'Failed to load task data.';
+        }
+      })();
+    </script>
   </body>
 </html>`;
 }

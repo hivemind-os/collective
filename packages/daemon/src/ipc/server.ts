@@ -7,6 +7,7 @@ import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import type { DaemonStatusBase, DaemonState } from '../state.js';
 import { Connection } from './connection.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import type { MeshToolContext } from '@agentic-mesh/mcp-server';
 import { ConnectionRegistry, type ConnectedApp, type ConnectedAppMetadata } from './connection-registry.js';
 import {
   validateClientProcessOwnership,
@@ -32,6 +33,7 @@ export class IpcServer {
   private server?: net.Server;
   private readonly connections = new Map<string, Connection>();
   private readonly connectionRegistry = new ConnectionRegistry();
+  toolContext?: MeshToolContext;
 
   constructor(
     private readonly ipcPath: string,
@@ -170,6 +172,7 @@ export class IpcServer {
       getAuthStatus: () => this.getAuthStatus(),
       triggerReauth: () => this.options.triggerReauth?.() ?? Promise.resolve({ portalUrl: null, browserOpened: false, status: this.getAuthStatus() }),
       validateClient: (metadata) => this.validateClient(metadata),
+      toolContext: this.toolContext,
       onHello: (metadata) => {
         this.connectionRegistry.updateConnection(connection.id, metadata);
       },

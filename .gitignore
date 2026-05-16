@@ -25,5 +25,8 @@ Thumbs.db
 # Demo secrets
 demo-config.json
 
+# Test artifacts
+.test-data/
+
 # Temporary Sui publish manifests
 Pub.mesh-local-*.toml

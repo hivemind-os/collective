@@ -48,6 +48,7 @@
   },
   "dependencies": {
     "@agentic-mesh/core": "workspace:*",
+    "@agentic-mesh/mcp-server": "workspace:*",
     "@agentic-mesh/relay": "workspace:*",
     "@agentic-mesh/types": "workspace:*",
     "@fastify/cors": "^11.2.0",

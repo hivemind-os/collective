@@ -152,6 +152,9 @@ importers:
       '@agentic-mesh/core':
         specifier: workspace:*
         version: link:../core
+      '@agentic-mesh/mcp-server':
+        specifier: workspace:*
+        version: link:../mcp-server
       '@agentic-mesh/relay':
         specifier: workspace:*
         version: link:../relay

@@ -7,6 +7,7 @@ import { logAuditEvent } from '../audit.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import { McpSession, type McpSessionStatus } from '../mcp/session.js';
 import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import type { MeshToolContext } from '@agentic-mesh/mcp-server';
 import type { DaemonState } from '../state.js';
 import type { ConnectedAppMetadata } from './connection-registry.js';
 import type { ClientValidationResult } from './pipe-security.js';
@@ -26,6 +27,7 @@ interface ConnectionOptions {
   getAuthStatus: () => DaemonAuthStatus;
   triggerReauth: () => Promise<{ portalUrl: string | null; browserOpened: boolean; status: DaemonAuthStatus }>;
   validateClient: (metadata: ConnectedAppMetadata) => Promise<ClientValidationResult>;
+  toolContext?: MeshToolContext;
   onHello: (metadata: ConnectedAppMetadata) => void;
   onClose: () => void;
 }
@@ -67,6 +69,7 @@ export class Connection {
       },
       getStatus: this.options.getStatus,
       getAppName: () => this.appName ?? 'unknown',
+      toolContext: this.options.toolContext,
     });
     this.sessionReady = this.session.initialize();
     this.socket.on('data', (chunk: string | Buffer) => {

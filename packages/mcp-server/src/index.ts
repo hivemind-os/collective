@@ -5,6 +5,8 @@ import { registerResourceHandlers } from './resources/index.js';
 import { registerToolHandlers } from './tools/index.js';
 
 export type { MeshToolContext } from './context.js';
+export { meshToolDefinitions, meshToolHandlers, type MeshToolHandler } from './tools/index.js';
+export { registerResourceHandlers } from './resources/index.js';
 export { meshMultiExecuteTool, runMeshMultiExecute, type MeshMultiExecuteParams, type MeshMultiExecuteResult } from './tools/multi-execute.js';
 export {
   meshMeteredExecuteTool,

@@ -47,7 +47,9 @@ const toolDefinitions = [
   meshTaskHistoryTool,
 ];
 
-const toolHandlers: Record<string, (params: unknown, context: MeshToolContext) => Promise<unknown>> = {
+export type MeshToolHandler = (params: never, context: MeshToolContext) => Promise<unknown>;
+
+export const meshToolHandlers: Record<string, MeshToolHandler> = {
   [meshAnalyticsTool.name]: runMeshAnalytics,
   [meshDiscoverTool.name]: runMeshDiscover,
   [meshDisputeTool.name]: runMeshDispute,
@@ -76,7 +78,7 @@ export function registerToolHandlers(server: Server, context: MeshToolContext): 
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const handler = toolHandlers[request.params.name];
+    const handler = meshToolHandlers[request.params.name];
     if (!handler) {
       return createErrorResult(`Unknown tool: ${request.params.name}`);
     }

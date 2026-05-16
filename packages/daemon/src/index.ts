@@ -12,6 +12,7 @@ import { SessionMonitor } from './auth/session-monitor.js';
 import { getConfigPath, loadConfig } from './config.js';
 import { IpcServer } from './ipc/server.js';
 import { DaemonLifecycle } from './lifecycle.js';
+import { buildMeshToolContext } from './mcp/tool-context.js';
 import { PortalServer, type PortalAuthProvider } from './portal/server.js';
 import { loadProviderConfig, ProviderRuntime } from './provider/index.js';
 import { createDaemonIdentityContext, DaemonState } from './state.js';
@@ -126,6 +127,7 @@ export async function main(): Promise<void> {
       getAuthStatus,
       triggerReauth: () => openReauthPortal(true),
     });
+    ipcServer.toolContext = buildMeshToolContext(daemonState, config.daemon.dataDir);
     await ipcServer.start();
     logger.info({ ipcPath: config.daemon.ipcPath }, 'IPC server listening');
 
