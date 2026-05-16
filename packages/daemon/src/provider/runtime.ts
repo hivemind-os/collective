@@ -50,6 +50,7 @@ export class ProviderRuntime {
       relayConfig?: DaemonFullConfig['relay'];
       relayClientFactory?: (config: RelayClientConfig, identity: DaemonState['relayAuthProvider']) => RelayClient;
       mcpSamplingFn?: McpSamplingFn;
+      broadcastNotification?: (method: string, params?: unknown) => void;
     },
   ) {
     this.taskQueue = new TaskQueue(params.providerConfig.maxConcurrency);
@@ -154,6 +155,14 @@ export class ProviderRuntime {
       logger.warn({ taskId: event.task.id, capability: event.task.capability }, 'Provider queue is full');
       return;
     }
+
+    // Notify connected MCP clients of inbound task request
+    this.params.broadcastNotification?.('notifications/mesh/inbound_task', {
+      taskId: event.task.id,
+      capability: event.task.capability,
+      requester: event.task.requester,
+      priceMist: event.task.price.toString(),
+    });
 
     const queued = await this.taskQueue.enqueue(event.task.id, async () => {
       try {

@@ -4,6 +4,10 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   CallToolRequestSchema,
+  GetTaskRequestSchema,
+  GetTaskPayloadRequestSchema,
+  ListTasksRequestSchema,
+  CancelTaskRequestSchema,
   ListToolsRequestSchema,
   type CallToolResult,
   type JSONRPCMessage as SdkJsonRpcMessage,
@@ -15,13 +19,14 @@ import {
   registerResourceHandlers,
   type MeshToolContext,
 } from '@agentic-mesh/mcp-server';
-import { PaymentRail } from '@agentic-mesh/types';
+import { PaymentRail, TaskStatus } from '@agentic-mesh/types';
 
 import { logAuditEvent } from '../audit.js';
 import type { ConnectedApp } from '../ipc/connection-registry.js';
 import type { JsonRpcMessage, JsonRpcResponse } from '../ipc/protocol.js';
 import { isJsonRpcRequest } from '../ipc/protocol.js';
 import type { DaemonState } from '../state.js';
+import { McpTaskStore, type McpTaskEntry, type McpTaskStatus } from './task-store.js';
 
 class IpcTransport implements Transport {
   onclose?: () => void;
@@ -89,6 +94,7 @@ export class McpSession {
   private readonly getStatus: () => McpSessionStatus;
   private readonly getAppName: () => string;
   private readonly toolContext?: MeshToolContext;
+  private readonly taskStore = new McpTaskStore();
   private initializePromise?: Promise<void>;
 
   constructor(params: {
@@ -107,6 +113,7 @@ export class McpSession {
       {
         capabilities: {
           tools: {},
+          tasks: {},
           ...(params.toolContext ? { resources: {} } : {}),
         },
       },
@@ -158,12 +165,42 @@ export class McpSession {
   }
 
   async close(): Promise<void> {
+    this.taskStore.cleanup();
     await this.server.close();
   }
 
   /** Expose the low-level MCP Server for sampling requests. */
   get mcpServer(): Server {
     return this.server;
+  }
+
+  /** Get the per-session MCP task store. */
+  getTaskStore(): McpTaskStore {
+    return this.taskStore;
+  }
+
+  /** Send a progress notification to the connected client. */
+  async sendProgress(progressToken: string | number, progress: number, total?: number, message?: string): Promise<void> {
+    await this.server.notification({
+      method: 'notifications/progress',
+      params: { progressToken, progress, total, message },
+    });
+  }
+
+  /** Send a task status notification to the connected client. */
+  async sendTaskStatusNotification(entry: McpTaskEntry): Promise<void> {
+    await this.server.notification({
+      method: 'notifications/tasks/status',
+      params: {
+        taskId: entry.taskId,
+        status: entry.status,
+        ttl: entry.ttl,
+        createdAt: entry.createdAt,
+        lastUpdatedAt: entry.lastUpdatedAt,
+        ...(entry.pollInterval !== undefined ? { pollInterval: entry.pollInterval } : {}),
+        ...(entry.statusMessage !== undefined ? { statusMessage: entry.statusMessage } : {}),
+      },
+    });
   }
 
   private registerTools(): void {
@@ -212,6 +249,9 @@ export class McpSession {
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const toolName = request.params.name;
+      const meta = request.params._meta as Record<string, unknown> | undefined;
+      const progressToken = meta?.progressToken as string | number | undefined;
+      const blockingMode = meta?.blocking === true;
 
       // Daemon-specific handlers
       const daemonHandler = daemonToolHandlers[toolName];
@@ -227,6 +267,16 @@ export class McpSession {
       // mcp-server handlers
       const meshHandler = meshToolHandlers[toolName];
       if (meshHandler && context) {
+        // For mesh_execute: return as MCP Task unless blocking mode is requested
+        if (toolName === 'mesh_execute' && !blockingMode) {
+          try {
+            return await this.handleExecuteAsTask(request.params.arguments as Record<string, unknown>, context, progressToken);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            return createErrorResult(message);
+          }
+        }
+
         try {
           const callContext = { ...context, originAppName: this.getAppName() };
           const result = await meshHandler((request.params.arguments ?? {}) as never, callContext);
@@ -245,10 +295,249 @@ export class McpSession {
       return createErrorResult(`Unknown tool: ${toolName}`);
     });
 
+    // Register MCP task protocol handlers
+    this.registerTaskHandlers();
+
     // Register resource handlers (capabilities, wallet, agent, task resources)
     if (context) {
       registerResourceHandlers(this.server, context);
     }
+  }
+
+  /**
+   * Handle mesh_execute as an MCP Task: post the on-chain task, return immediately
+   * with a task handle, and track completion in the background.
+   */
+  private async handleExecuteAsTask(
+    args: Record<string, unknown>,
+    context: MeshToolContext,
+    progressToken?: string | number,
+  ): Promise<{ task: McpTaskEntry } & Record<string, unknown>> {
+    const callContext = { ...context, originAppName: this.getAppName() };
+    const executeAsyncHandler = meshToolHandlers['mesh_execute_async'];
+    if (!executeAsyncHandler) {
+      throw new Error('mesh_execute_async handler not found');
+    }
+
+    // Post the task on chain (calls prepareMeshExecution under the hood)
+    const asyncResult = await executeAsyncHandler(args as never, callContext) as {
+      task_id: string;
+      provider_did: string;
+      price_mist: string;
+      status: string;
+    };
+
+    // Create an MCP task entry tracking this on-chain task
+    const mcpTask = this.taskStore.create(asyncResult.task_id, {
+      progressToken,
+      pollInterval: 2_000,
+    });
+
+    // Launch background completion tracker
+    void this.trackTaskCompletion(mcpTask.taskId, asyncResult.task_id, callContext, {
+      providerDid: asyncResult.provider_did,
+      priceMist: BigInt(asyncResult.price_mist),
+    });
+
+    // Return MCP CreateTaskResult shape
+    return {
+      task: mcpTask,
+    };
+  }
+
+  /**
+   * Background loop that polls on-chain task status and sends notifications.
+   */
+  private async trackTaskCompletion(
+    mcpTaskId: string,
+    onChainTaskId: string,
+    context: MeshToolContext,
+    params: { providerDid: string; priceMist: bigint },
+  ): Promise<void> {
+    const POLL_INTERVAL_MS = 2_000;
+    const MAX_DURATION_MS = 300_000; // 5 minutes max
+    const startedAt = Date.now();
+    let lastChainStatus: number | undefined;
+
+    const entry = this.taskStore.get(mcpTaskId);
+    const progressToken = entry?.progressToken;
+
+    try {
+      while (true) {
+        if (Date.now() - startedAt > MAX_DURATION_MS) {
+          this.taskStore.update(mcpTaskId, 'failed', { statusMessage: 'Timed out waiting for provider' });
+          await this.sendTaskStatusNotification(this.taskStore.get(mcpTaskId)!);
+          return;
+        }
+
+        const task = await context.taskClient.getTask(onChainTaskId);
+        if (!task) {
+          this.taskStore.update(mcpTaskId, 'failed', { statusMessage: 'Task not found on chain' });
+          await this.sendTaskStatusNotification(this.taskStore.get(mcpTaskId)!);
+          return;
+        }
+
+        // Send progress notifications on state transitions
+        if (task.status !== lastChainStatus) {
+          lastChainStatus = task.status;
+          if (progressToken !== undefined) {
+            await this.emitProgressForChainStatus(progressToken, task.status);
+          }
+        }
+
+        // Check for cancellation by client
+        const currentEntry = this.taskStore.get(mcpTaskId);
+        if (!currentEntry || currentEntry.status === 'cancelled') {
+          return;
+        }
+
+        if (task.status === TaskStatus.COMPLETED || task.status === TaskStatus.RELEASED) {
+          // Fetch result and release payment
+          let resultText = '';
+          if (task.resultBlobId) {
+            const resultBytes = await context.blobStore.fetch(task.resultBlobId);
+            if (resultBytes) {
+              resultText = new TextDecoder().decode(resultBytes);
+            }
+          }
+
+          if (task.status === TaskStatus.COMPLETED) {
+            await context.taskClient.releasePayment({
+              taskId: onChainTaskId,
+              keypair: context.keypair,
+            });
+            context.spendingPolicy.record({
+              amountMist: params.priceMist,
+              rail: PaymentRail.SUI_ESCROW,
+              taskId: onChainTaskId,
+              appId: params.providerDid,
+              originAppName: context.originAppName,
+            });
+          }
+
+          const toolResult: CallToolResult = {
+            content: [{
+              type: 'text',
+              text: serialize({
+                task_id: onChainTaskId,
+                result: resultText,
+                provider_did: params.providerDid,
+                price_mist: params.priceMist.toString(),
+                status: 'RELEASED',
+                execution_mode: 'async',
+                payment_rail: PaymentRail.SUI_ESCROW,
+              }),
+            }],
+          };
+
+          this.taskStore.update(mcpTaskId, 'completed', { result: toolResult });
+          await this.sendTaskStatusNotification(this.taskStore.get(mcpTaskId)!);
+          return;
+        }
+
+        if (task.status === TaskStatus.CANCELLED || task.status === TaskStatus.DISPUTED) {
+          this.taskStore.update(mcpTaskId, 'failed', {
+            statusMessage: `Task ended with status ${TaskStatus[task.status]}`,
+          });
+          await this.sendTaskStatusNotification(this.taskStore.get(mcpTaskId)!);
+          return;
+        }
+
+        await delay(POLL_INTERVAL_MS);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.taskStore.update(mcpTaskId, 'failed', { statusMessage: message });
+      try {
+        await this.sendTaskStatusNotification(this.taskStore.get(mcpTaskId)!);
+      } catch {
+        // notification send may fail if connection closed
+      }
+    }
+  }
+
+  private async emitProgressForChainStatus(progressToken: string | number, chainStatus: number): Promise<void> {
+    const stages: Record<number, { progress: number; message: string }> = {
+      [TaskStatus.POSTED]: { progress: 0.25, message: 'Escrow posted, waiting for provider' },
+      [TaskStatus.ACCEPTED]: { progress: 0.5, message: 'Task accepted by provider' },
+      [TaskStatus.COMPLETED]: { progress: 0.9, message: 'Provider completed, verifying result' },
+      [TaskStatus.RELEASED]: { progress: 1, message: 'Payment released, task complete' },
+    };
+
+    const stage = stages[chainStatus];
+    if (stage) {
+      try {
+        await this.sendProgress(progressToken, stage.progress, 1, stage.message);
+      } catch {
+        // ignore send failures
+      }
+    }
+  }
+
+  private registerTaskHandlers(): void {
+    // tasks/get — return current task status
+    this.server.setRequestHandler(GetTaskRequestSchema, async (request) => {
+      const entry = this.taskStore.get(request.params.taskId);
+      if (!entry) {
+        throw new Error(`Task ${request.params.taskId} not found`);
+      }
+      return toTaskResult(entry);
+    });
+
+    // tasks/result — return the completed result
+    this.server.setRequestHandler(GetTaskPayloadRequestSchema, async (request) => {
+      const entry = this.taskStore.get(request.params.taskId);
+      if (!entry) {
+        throw new Error(`Task ${request.params.taskId} not found`);
+      }
+      if (entry.status !== 'completed' || !entry.result) {
+        throw new Error(`Task ${request.params.taskId} is not yet completed (status: ${entry.status})`);
+      }
+      return entry.result;
+    });
+
+    // tasks/list — return all tasks for this session
+    this.server.setRequestHandler(ListTasksRequestSchema, async () => {
+      const tasks = this.taskStore.list().map((entry) => toTaskResult(entry));
+      return { tasks };
+    });
+
+    // tasks/cancel — cancel a task, trigger on-chain cancel if possible
+    this.server.setRequestHandler(CancelTaskRequestSchema, async (request) => {
+      const entry = this.taskStore.get(request.params.taskId);
+      if (!entry) {
+        throw new Error(`Task ${request.params.taskId} not found`);
+      }
+
+      if (entry.status === 'completed' || entry.status === 'failed' || entry.status === 'cancelled') {
+        return toTaskResult(entry);
+      }
+
+      // Attempt on-chain cancellation
+      if (this.toolContext) {
+        try {
+          const chainTask = await this.toolContext.taskClient.getTask(entry.onChainTaskId);
+          if (chainTask) {
+            if (chainTask.status === TaskStatus.POSTED) {
+              await this.toolContext.taskClient.cancelTask({
+                taskId: entry.onChainTaskId,
+                keypair: this.toolContext.keypair,
+              });
+            } else if (chainTask.status === TaskStatus.ACCEPTED) {
+              await this.toolContext.taskClient.disputeTask({
+                taskId: entry.onChainTaskId,
+                keypair: this.toolContext.keypair,
+              });
+            }
+          }
+        } catch {
+          // Chain cancellation is best-effort
+        }
+      }
+
+      const cancelled = this.taskStore.cancel(request.params.taskId);
+      return toTaskResult(cancelled ?? entry);
+    });
   }
 }
 
@@ -280,6 +569,26 @@ function createErrorResult(message: string): {
   };
 }
 
+function toTaskResult(entry: McpTaskEntry): {
+  taskId: string;
+  status: McpTaskStatus;
+  ttl: number | null;
+  createdAt: string;
+  lastUpdatedAt: string;
+  pollInterval?: number;
+  statusMessage?: string;
+} {
+  return {
+    taskId: entry.taskId,
+    status: entry.status,
+    ttl: entry.ttl,
+    createdAt: entry.createdAt,
+    lastUpdatedAt: entry.lastUpdatedAt,
+    ...(entry.pollInterval !== undefined ? { pollInterval: entry.pollInterval } : {}),
+    ...(entry.statusMessage !== undefined ? { statusMessage: entry.statusMessage } : {}),
+  };
+}
+
 function serialize(payload: unknown): string {
   return JSON.stringify(payload, bigintReplacer, 2);
 }
@@ -290,4 +599,10 @@ function bigintReplacer(_key: string, value: unknown): unknown {
 
 function isJsonRpcResponse(message: JsonRpcMessage): message is JsonRpcResponse {
   return !('method' in message);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolvePromise) => {
+    setTimeout(resolvePromise, ms);
+  });
 }

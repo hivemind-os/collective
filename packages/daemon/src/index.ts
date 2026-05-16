@@ -167,6 +167,9 @@ export async function main(): Promise<void> {
               return server.createMessage(params);
             }
           : undefined,
+        broadcastNotification: ipcRef
+          ? (method, params) => ipcRef.broadcastNotification(method, params)
+          : undefined,
       });
       await providerRuntime.start();
       daemonState.setProviderRunning(true);

@@ -142,6 +142,16 @@ export class IpcServer {
   }
 
   /**
+   * Broadcast a notification to all connected MCP sessions.
+   * Used for provider inbound task notifications and other system-wide events.
+   */
+  broadcastNotification(method: string, params?: unknown): void {
+    for (const connection of this.connections.values()) {
+      connection.sendNotification(method, params);
+    }
+  }
+
+  /**
    * Look up the low-level MCP Server for a connected app by name.
    * Throws if multiple connections match (ambiguous).
    * Returns undefined if no match is found.

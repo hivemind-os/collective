@@ -129,6 +129,68 @@ Consumer                    Chain                     Provider
 6. **Consumer daemon** verifies result and calls `task::release()` to unlock escrow to provider
 7. If disputed, the `task::dispute()` path starts a clock-based dispute window
 
+## MCP Tasks & Notifications
+
+The daemon uses the **MCP Tasks** protocol (experimental in SDK v1.29) to provide async-first task execution with real-time updates:
+
+```
+MCP Client                     Daemon                        Chain
+   │                             │                             │
+   │  tools/call mesh_execute    │                             │
+   ├────────────────────────────►│  task::post()               │
+   │                             ├────────────────────────────►│
+   │  CreateTaskResult           │                             │
+   │◄────────────────────────────┤                             │
+   │  { task: { taskId, status: "working" } }                  │
+   │                             │                             │
+   │  notifications/progress     │  TaskPosted detected        │
+   │◄────────────────────────────┤  (progress: 0.25)           │
+   │                             │                             │
+   │  notifications/progress     │  TaskAccepted               │
+   │◄────────────────────────────┤  (progress: 0.5)            │
+   │                             │                             │
+   │  notifications/tasks/status │  TaskCompleted              │
+   │◄────────────────────────────┤  status: "completed"        │
+   │                             │                             │
+   │  tasks/result               │                             │
+   ├────────────────────────────►│  (returns CallToolResult)   │
+   │◄────────────────────────────┤                             │
+```
+
+### Task Protocol Endpoints
+
+| Method | Direction | Purpose |
+|--------|-----------|---------|
+| `tasks/get` | Client → Server | Get current task status |
+| `tasks/result` | Client → Server | Fetch result of completed task |
+| `tasks/list` | Client → Server | List all tasks in session |
+| `tasks/cancel` | Client → Server | Cancel task (triggers on-chain dispute) |
+| `notifications/tasks/status` | Server → Client | Push task state changes |
+| `notifications/progress` | Server → Client | Progress milestones |
+| `notifications/mesh/inbound_task` | Server → Client | Provider: inbound task arrived |
+
+### Backward Compatibility
+
+Clients that don't support MCP Tasks can pass `_meta: { blocking: true }` in the `tools/call` request to get the old blocking behavior (waits up to 120s for result inline).
+
+### Provider Inbound Notifications
+
+When the provider runtime detects a `TaskPosted` event matching a registered capability, it broadcasts a `notifications/mesh/inbound_task` notification to all connected MCP clients:
+
+```json
+{
+  "method": "notifications/mesh/inbound_task",
+  "params": {
+    "taskId": "0x...",
+    "capability": "summarize",
+    "requester": "0xabc...",
+    "priceMist": "1000000"
+  }
+}
+```
+
+This allows AI agents connected via MCP to be aware of incoming work requests in real time.
+
 ## Execution Adapters
 
 Providers configure how incoming tasks are executed:

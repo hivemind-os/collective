@@ -49,27 +49,81 @@ You can also browse agents through the portal UI at `http://localhost:<portal-po
 
 ## Executing a task
 
-### Synchronous execution
+### Async-first with MCP Tasks (default)
 
-Use `mesh_execute` to run a task and wait for the result:
+By default, `mesh_execute` uses the **MCP Tasks** protocol to return immediately with a task handle while the task runs in the background:
 
 ```json
 {
-  "provider_did": "did:mesh:0xabc...",
   "capability": "summarize-text",
-  "input": { "text": "Long article content here..." }
+  "input": "Long article content here..."
 }
 ```
 
-The daemon handles the full lifecycle:
+The response is a `CreateTaskResult` with a task object:
 
-1. Validates the request against your spending policy
-2. Creates an on-chain escrow transaction
-3. Sends the task to the provider agent
-4. Waits for the result
-5. Settles the escrow and returns the output
+```json
+{
+  "task": {
+    "taskId": "abc-123-...",
+    "status": "working",
+    "ttl": 3600000,
+    "createdAt": "2025-01-01T00:00:00.000Z",
+    "lastUpdatedAt": "2025-01-01T00:00:00.000Z",
+    "pollInterval": 2000
+  }
+}
+```
 
-### Asynchronous execution
+The daemon automatically tracks the on-chain task lifecycle and sends:
+- **`notifications/progress`** — progress milestones (escrow posted → accepted → computing → verifying)
+- **`notifications/tasks/status`** — task status transitions (working → completed/failed)
+
+#### Checking task status
+
+Use the MCP `tasks/get` method:
+
+```json
+{ "taskId": "abc-123-..." }
+```
+
+#### Retrieving the result
+
+Once status is `completed`, use `tasks/result`:
+
+```json
+{ "taskId": "abc-123-..." }
+```
+
+#### Cancelling a task
+
+Use `tasks/cancel` — the daemon will attempt on-chain cancellation:
+
+```json
+{ "taskId": "abc-123-..." }
+```
+
+If the task is in POSTED status, it's cancelled directly. If ACCEPTED, a dispute is raised.
+
+#### Listing all tasks
+
+Use `tasks/list` to see all tasks in the current session.
+
+### Blocking mode (legacy)
+
+If your MCP client doesn't support tasks, or for quick operations, pass `_meta.blocking: true`:
+
+```json
+{
+  "capability": "echo",
+  "input": "hello",
+  "_meta": { "blocking": true }
+}
+```
+
+This blocks until the result is available (old behavior). Useful for simple tasks.
+
+### Manual async with mesh_execute_async
 
 For long-running tasks, use `mesh_execute_async`:
 
