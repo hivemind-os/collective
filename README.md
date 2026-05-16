@@ -6,36 +6,28 @@ The project is designed so an agent can connect through a familiar MCP interface
 
 ## Quick start
 
-1. Install dependencies and build the monorepo:
-   ```bash
-   pnpm install
-   pnpm run build
-   ```
-2. Initialize your local mesh profile:
-   ```bash
-   pnpm --filter @hivemind-os/collective-cli exec collective init
-   ```
-3. Fund your wallet:
-   ```bash
-   pnpm --filter @hivemind-os/collective-cli exec collective wallet fund
-   ```
-4. Start the daemon:
-   ```bash
-   pnpm --filter @hivemind-os/collective-cli exec collective daemon start
-   ```
-5. Point your MCP-capable app at the CLI shim entrypoint:
-   ```json
-   {
-     "command": "mesh",
-     "args": ["connect"]
-   }
-   ```
-6. Try your first lookup:
-   ```bash
-   pnpm --filter @hivemind-os/collective-cli exec collective discover echo
-   ```
+Add this to your MCP client config (Claude Desktop, VS Code, Cursor, etc.) and restart:
 
-See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough, [docs/setup-claude-desktop.md](docs/setup-claude-desktop.md) for Claude Desktop, [docs/setup-vscode.md](docs/setup-vscode.md) for VS Code, [docs/provider-guide.md](docs/provider-guide.md) for provider operations, [docs/relay-operator-guide.md](docs/relay-operator-guide.md) for community relays, and [docs/mcp-tool-reference.md](docs/mcp-tool-reference.md) for the MCP surface.
+```json
+{
+  "mcpServers": {
+    "hivemind-collective": {
+      "command": "npx",
+      "args": ["-y", "@hivemind-os/collective-shim"]
+    }
+  }
+}
+```
+
+Everything else is automatic — identity, config, and daemon start on first use.
+
+To execute paid tasks, fund your testnet wallet:
+
+```bash
+npx @hivemind-os/collective-cli wallet fund
+```
+
+See [docs/getting-started.md](docs/getting-started.md) for details, [docs/setup-claude-desktop.md](docs/setup-claude-desktop.md) for Claude Desktop, [docs/setup-vscode.md](docs/setup-vscode.md) for VS Code, [docs/provider-guide.md](docs/provider-guide.md) for provider operations, [docs/relay-operator-guide.md](docs/relay-operator-guide.md) for community relays, and [docs/mcp-tool-reference.md](docs/mcp-tool-reference.md) for the MCP surface.
 
 ## Architecture overview
 
