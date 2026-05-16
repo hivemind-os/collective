@@ -1,0 +1,17 @@
+{
+  "name": "@agentic-mesh/example-two-agent-task",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "prestart": "pnpm --dir ..\\.. --filter @agentic-mesh/types run build && pnpm --dir ..\\.. --filter @agentic-mesh/core run build",
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@agentic-mesh/core": "workspace:*",
+    "@agentic-mesh/types": "workspace:*",
+    "@mysten/sui": "^1.30.0",
+    "tsx": "^4.0.0"
+  }
+}
