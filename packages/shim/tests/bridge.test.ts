@@ -148,7 +148,12 @@ async function createTestDir(): Promise<string> {
 }
 
 function createIpcPath(dir: string): string {
-  return process.platform === 'win32' ? `\\\\.\\pipe\\hivemind-collective-shim-${randomUUID()}` : resolve(dir, 'mesh.sock');
+  if (process.platform === 'win32') {
+    return `\\\\.\\pipe\\hivemind-collective-shim-${randomUUID()}`;
+  }
+  // Unix socket paths have a 108-char limit; use /tmp with a short name
+  const short = randomUUID().slice(0, 8);
+  return `/tmp/hm-shim-${short}.sock`;
 }
 
 describe('bridge', () => {
