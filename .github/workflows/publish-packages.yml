@@ -83,7 +83,7 @@ jobs:
           else
             # Read current version from root package.json
             CURRENT=$(jq -r .version packages/types/package.json)
-            NEW=$(npx --yes semver "$CURRENT" -i "${{ inputs.version_bump }}")
+            NEW=$(pnpm dlx semver "$CURRENT" -i "${{ inputs.version_bump }}")
             echo "version=$NEW" >> "$GITHUB_OUTPUT"
           fi
 
