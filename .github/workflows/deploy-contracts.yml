@@ -66,12 +66,16 @@ jobs:
       - name: Publish contracts
         id: publish
         run: |
-          set -euo pipefail
+          set -uo pipefail
           OUTPUT=$(sui client publish contracts/agentic_mesh \
             --gas-budget ${{ inputs.gas_budget }} \
-            --json)
+            --json 2>&1) || {
+            echo "::error::sui client publish failed"
+            echo "$OUTPUT"
+            exit 1
+          }
 
-          echo "$OUTPUT" | jq .
+          echo "$OUTPUT" | jq . || echo "$OUTPUT"
 
           PACKAGE_ID=$(echo "$OUTPUT" | jq -r '.objectChanges[] | select(.type == "published") | .packageId')
           REGISTRY_ID=$(echo "$OUTPUT" | jq -r '.objectChanges[] | select(.objectType != null and (.objectType | test("::registry::Registry$"))) | .objectId')
