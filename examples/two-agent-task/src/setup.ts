@@ -12,19 +12,16 @@ import type { NetworkConfig } from '@agentic-mesh/types';
 import { SuiClient } from '@mysten/sui/client';
 import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 
+import type { DemoWallet, SuiDemo } from './demo-interface.js';
+
+export type { DemoWallet, SuiDemo } from './demo-interface.js';
+
 const SUI_STARTUP_TIMEOUT_MS = 60_000;
 const CONTRACT_DEPLOY_TIMEOUT_MS = 60_000;
 const FAUCET_TIMEOUT_MS = 30_000;
 const WALLET_FUNDING_TIMEOUT_MS = 30_000;
 const PROCESS_OUTPUT_LIMIT = 100;
 const MIST_PER_SUI = 1_000_000_000n;
-
-export interface DemoWallet {
-  name: string;
-  address: string;
-  keypair: Ed25519Keypair;
-  client: MeshSuiClient;
-}
 
 export interface ContractAddresses {
   packageId: string;
@@ -48,7 +45,7 @@ interface PublishClientConfig {
   deployerAddress: string;
 }
 
-export class LocalSuiDemo {
+export class LocalSuiDemo implements SuiDemo {
   readonly exampleRoot: string;
   readonly repositoryRoot: string;
   readonly contractsPath: string;
@@ -57,6 +54,7 @@ export class LocalSuiDemo {
   readonly providerCursorDbPath: string;
 
   private readonly suiBinary: string;
+  private readonly suiFaucetBinary: string;
   private readonly suiHomeDir: string;
   private readonly suiOutput: string[] = [];
 
@@ -67,6 +65,7 @@ export class LocalSuiDemo {
   private contractAddresses?: ContractAddresses;
   private suiEnvironment?: NodeJS.ProcessEnv;
   private suiProcess?: ChildProcess;
+  private faucetProcess?: ChildProcess;
   private suiProcessError?: Error;
 
   constructor() {
@@ -78,6 +77,7 @@ export class LocalSuiDemo {
     this.providerCursorDbPath = join(this.runtimeDir, 'agent-a-cursors.sqlite');
     this.suiHomeDir = join(this.runtimeDir, 'sui-home');
     this.suiBinary = resolveSuiBinary();
+    this.suiFaucetBinary = resolveSuiFaucetBinary();
   }
 
   get networkConfig(): NetworkConfig {
@@ -119,7 +119,6 @@ export class LocalSuiDemo {
 
     const startArgs = [
       'start',
-      `--with-faucet=127.0.0.1:${faucetPort}`,
       '--force-regenesis',
       '--fullnode-rpc-port',
       String(rpcPort),
@@ -141,6 +140,7 @@ export class LocalSuiDemo {
     });
 
     await this.waitForRpcReady();
+    await this.startFaucet(faucetPort);
 
     const publishClient = await this.createPublishClient();
     const publishOutput = await this.publishContracts(publishClient);
@@ -175,7 +175,13 @@ export class LocalSuiDemo {
 
   async stop(): Promise<void> {
     const pid = this.suiProcess?.pid;
+    const faucetPid = this.faucetProcess?.pid;
     this.suiProcess = undefined;
+    this.faucetProcess = undefined;
+
+    if (faucetPid) {
+      await killProcess(faucetPid).catch(() => undefined);
+    }
 
     if (pid) {
       await killProcess(pid).catch(() => undefined);
@@ -228,6 +234,52 @@ export class LocalSuiDemo {
     }
 
     throw new Error(`Timed out waiting ${timeoutMs}ms for local Sui RPC readiness.\n${this.suiOutput.join('\n')}`);
+  }
+
+  private async startFaucet(faucetPort: number): Promise<void> {
+    this.faucetProcess = spawn(this.suiFaucetBinary, ['--port', String(faucetPort), '--host-ip', '127.0.0.1'], {
+      cwd: this.repositoryRoot,
+      env: this.suiEnvironment,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    this.faucetProcess.stdout?.on('data', (chunk: Buffer | string) => {
+      captureProcessOutput(this.suiOutput, chunk.toString());
+    });
+    this.faucetProcess.stderr?.on('data', (chunk: Buffer | string) => {
+      captureProcessOutput(this.suiOutput, chunk.toString());
+    });
+
+    await this.waitForFaucetReady();
+  }
+
+  private async waitForFaucetReady(timeoutMs = 30_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      if (this.faucetProcess && this.faucetProcess.exitCode !== null) {
+        throw new Error(`Faucet process exited early with code ${this.faucetProcess.exitCode}.`);
+      }
+
+      try {
+        const response = await fetch(this.faucetUrl ?? '', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ FixedAmountRequest: { recipient: '0x0000000000000000000000000000000000000000000000000000000000000000' } }),
+          signal: AbortSignal.timeout(2_000),
+        });
+
+        if (response.ok || response.status === 500) {
+          // 500 means faucet is running but request failed (e.g. invalid address) - still ready
+          return;
+        }
+      } catch {
+        // Keep polling until the faucet HTTP server is ready.
+      }
+
+      await delay(500);
+    }
+
+    throw new Error(`Timed out waiting ${timeoutMs}ms for local faucet readiness.`);
   }
 
   private async createPublishClient(): Promise<PublishClientConfig> {
@@ -586,6 +638,18 @@ function resolveSuiBinary(): string {
   }
 
   return 'sui';
+}
+
+function resolveSuiFaucetBinary(): string {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA ?? resolve(homedir(), 'AppData', 'Local');
+    const localBinary = resolve(localAppData, 'bin', 'sui-faucet.exe');
+    if (existsSync(localBinary)) {
+      return localBinary;
+    }
+  }
+
+  return 'sui-faucet';
 }
 
 function captureProcessOutput(lines: string[], chunk: string): void {

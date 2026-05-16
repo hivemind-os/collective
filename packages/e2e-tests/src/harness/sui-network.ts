@@ -58,6 +58,7 @@ export class SuiTestNetwork {
   private readonly portAllocator: PortAllocator;
   private readonly processTracker: ProcessTracker;
   private readonly suiBinary: string;
+  private readonly suiFaucetBinary: string;
   private readonly tmpRoot: string;
   private readonly workingDirectory: string;
 
@@ -78,6 +79,7 @@ export class SuiTestNetwork {
     this.processTracker = options.processTracker ?? new ProcessTracker();
     this.portAllocator = options.portAllocator ?? new PortAllocator();
     this.suiBinary = options.suiBinary ?? resolveSuiBinary();
+    this.suiFaucetBinary = resolveSuiFaucetBinary();
     this.tmpRoot = options.tmpRoot ?? resolve(this.workingDirectory, 'sui_tmp');
   }
 
@@ -159,7 +161,6 @@ export class SuiTestNetwork {
 
     const startArgs = [
       'start',
-      `--with-faucet=127.0.0.1:${faucetPort}`,
       '--force-regenesis',
       '--fullnode-rpc-port',
       String(rpcPort),
@@ -180,6 +181,7 @@ export class SuiTestNetwork {
     }
 
     await this.waitForRpcReady();
+    await this.startFaucet(faucetPort);
 
     const publishClient = await this.createPublishClient();
     const publishOutput = await this.publishContracts(publishClient);
@@ -269,6 +271,45 @@ export class SuiTestNetwork {
     }
 
     throw new Error(`Timed out waiting ${timeoutMs}ms for local Sui RPC readiness.`);
+  }
+
+  private async startFaucet(faucetPort: number): Promise<void> {
+    const faucetProcess = spawn(this.suiFaucetBinary, ['--port', String(faucetPort), '--host-ip', '127.0.0.1'], {
+      cwd: this.workingDirectory,
+      env: this.suiEnvironment,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    if (faucetProcess.pid) {
+      this.processTracker.track(faucetProcess.pid, 'sui-faucet');
+    }
+
+    await this.waitForFaucetReady();
+  }
+
+  private async waitForFaucetReady(timeoutMs = 30_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch(this.faucetUrl, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ FixedAmountRequest: { recipient: '0x0000000000000000000000000000000000000000000000000000000000000000' } }),
+          signal: AbortSignal.timeout(2_000),
+        });
+
+        if (response.ok || response.status === 500) {
+          return;
+        }
+      } catch {
+        // Keep polling until the faucet HTTP server is ready.
+      }
+
+      await delay(500);
+    }
+
+    throw new Error(`Timed out waiting ${timeoutMs}ms for local faucet readiness.`);
   }
 
   private async requestFromFaucet(address: string, amount: bigint): Promise<void> {
@@ -505,8 +546,23 @@ function resolveSuiBinary(): string {
   return 'sui';
 }
 
+function resolveSuiFaucetBinary(): string {
+  if (process.platform === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA ?? resolve(homedir(), 'AppData', 'Local');
+    const localBinary = resolve(localAppData, 'bin', 'sui-faucet.exe');
+    if (existsSync(localBinary)) {
+      return localBinary;
+    }
+  }
+
+  return 'sui-faucet';
+}
+
 function isUnsupportedBuildEnvError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
+  if (/not present in Move\.toml/i.test(message)) {
+    return true;
+  }
   return /--build-env|build-env/i.test(message) && /unexpected|unknown|unrecognized|wasn't expected|not allowed/i.test(message);
 }
 

@@ -2,7 +2,19 @@ import { FilesystemBlobStore } from '@agentic-mesh/core';
 
 import { ECHO_PRICE_MIST, registerProvider, startListening, type ProviderListenerHandle } from './agent-a.js';
 import { discoverAndExecute } from './agent-b.js';
+import type { SuiDemo } from './demo-interface.js';
+import { resolveNetworkMode, REMOTE_NETWORKS } from './network-config.js';
+import { RemoteSuiDemo } from './remote-setup.js';
 import { LocalSuiDemo, delay, formatMistAsSui } from './setup.js';
+
+function createDemo(): SuiDemo {
+  const mode = resolveNetworkMode();
+  if (mode === 'local') {
+    return new LocalSuiDemo();
+  }
+
+  return new RemoteSuiDemo(mode, REMOTE_NETWORKS[mode]);
+}
 
 const color = {
   blue: (value: string) => `\u001b[34m${value}\u001b[0m`,
@@ -16,7 +28,8 @@ const color = {
 const divider = color.blue('='.repeat(72));
 
 async function run(): Promise<void> {
-  const demo = new LocalSuiDemo();
+  const networkMode = resolveNetworkMode();
+  const demo = createDemo();
   const blobStore = new FilesystemBlobStore(demo.blobStoreDir);
   let providerListener: ProviderListenerHandle | undefined;
   let shuttingDown = false;
@@ -48,9 +61,9 @@ async function run(): Promise<void> {
   });
 
   try {
-    printBanner();
+    printBanner(networkMode);
 
-    console.log(stepLabel(1, '🚀', 'Starting local Sui test network...'));
+    console.log(stepLabel(1, '🚀', `Connecting to Sui ${networkMode} network...`));
     await demo.start();
     console.log(`    RPC: ${demo.networkConfig.rpcUrl}`);
     console.log(`    Faucet: ${demo.networkConfig.faucetUrl}`);
@@ -133,10 +146,11 @@ async function run(): Promise<void> {
   }
 }
 
-function printBanner(): void {
+function printBanner(networkMode: string): void {
   console.log(divider);
   console.log(color.cyan('🤖 Agentic Mesh two-agent demo'));
   console.log(color.magenta('Agent A discovers work. Agent B discovers Agent A. SUI moves on-chain.'));
+  console.log(color.yellow(`    Network: ${networkMode} (set SUI_NETWORK=local|devnet|testnet to change)`));
   console.log(divider);
 }
 
