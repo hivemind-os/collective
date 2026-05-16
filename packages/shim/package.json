@@ -13,6 +13,7 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "@hivemind-os/collective-daemon": "workspace:*",
     "pino": "^9.0.0"
   },
   "devDependencies": {

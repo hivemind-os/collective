@@ -45,7 +45,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<BridgeH
     ipcPath: options.ipcPath ?? getDefaultIpcPath(),
     pidFile: options.pidFile ?? getDefaultPidFile(),
     daemonBin: options.daemonBin ?? resolveDaemonBin(),
-    startupTimeoutMs: options.startupTimeoutMs ?? 5_000,
+    startupTimeoutMs: options.startupTimeoutMs ?? 30_000,
   };
   const appName = options.appName ?? (await guessAppName());
 
