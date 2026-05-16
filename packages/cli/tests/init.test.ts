@@ -80,7 +80,7 @@ describe('mesh init', () => {
 
     const configPath = resolve(dataDir, 'config.yaml');
     const configContents = await readFile(configPath, 'utf8');
-    expect(configContents).toContain('rpcUrl: http://127.0.0.1:9000');
+    expect(configContents).toContain('rpcUrl: https://fullnode.testnet.sui.io:443');
     expect(configContents).toContain('daemon:');
     expect(configContents).toContain('logFile:');
   });

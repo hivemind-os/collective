@@ -7,10 +7,13 @@ import { isDeepStrictEqual } from 'node:util';
 
 import {
   PaymentRail,
+  NETWORK_PRESETS,
+  getNetworkPreset,
   type AuthConfig,
   type BlobStoreConfig,
   type EncryptionConfig,
   type NetworkConfig,
+  type NetworkName,
   type PaymentConfig,
   type SpendingLimit,
   type SpendingPolicy,
@@ -292,13 +295,14 @@ function formatConfigContents(config: LooseRecord, configPath: string): string {
 
 function buildDefaultConfig(dataDir: string): DaemonFullConfig {
   const resolvedDataDir = normalizePath(dataDir);
+  const defaultNetwork = NETWORK_PRESETS.testnet;
 
   return {
     network: {
-      rpcUrl: 'http://127.0.0.1:9000',
-      faucetUrl: 'http://127.0.0.1:9123',
-      packageId: '',
-      registryId: '',
+      rpcUrl: defaultNetwork.rpcUrl,
+      faucetUrl: defaultNetwork.faucetUrl,
+      packageId: defaultNetwork.packageId,
+      registryId: defaultNetwork.registryId,
     },
     identity: {
       dataDir: join(resolvedDataDir, 'identity'),
@@ -360,10 +364,7 @@ function mergeConfig(defaults: DaemonFullConfig, parsed: LooseRecord): DaemonFul
 
   return {
     network: {
-      rpcUrl: readString(network.rpcUrl) ?? defaults.network.rpcUrl,
-      faucetUrl: readString(network.faucetUrl) ?? defaults.network.faucetUrl,
-      packageId: readHexString(network.packageId) ?? defaults.network.packageId,
-      registryId: readHexString(network.registryId) ?? defaults.network.registryId,
+      ...resolveNetworkFromConfig(network, defaults.network),
     },
     identity: {
       dataDir: normalizePath(readString(identity.dataDir) ?? defaults.identity.dataDir),
@@ -408,14 +409,27 @@ function applyEnvironmentOverrides(
     ...withDataDir,
     network: {
       ...withDataDir.network,
-      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? withDataDir.network.rpcUrl,
-      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? withDataDir.network.packageId,
-      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? withDataDir.network.registryId,
+      ...resolveNetworkEnvOverrides(withDataDir.network),
     },
     daemon: {
       ...withDataDir.daemon,
       logLevel: normalizeLogLevel(process.env.COLLECTIVE_LOG_LEVEL, withDataDir.daemon.logLevel),
     },
+  };
+}
+
+function resolveNetworkEnvOverrides(base: NetworkConfig): Partial<NetworkConfig> {
+  // COLLECTIVE_NETWORK=testnet|mainnet|devnet|local applies a full preset
+  const networkName = process.env.COLLECTIVE_NETWORK as NetworkName | undefined;
+  const preset = networkName ? getNetworkPreset(networkName) : undefined;
+  const merged = preset ? { ...base, ...preset } : base;
+
+  // Individual env vars override the preset
+  return {
+    rpcUrl: process.env.COLLECTIVE_RPC_URL ?? merged.rpcUrl,
+    faucetUrl: merged.faucetUrl,
+    packageId: process.env.COLLECTIVE_PACKAGE_ID ?? merged.packageId,
+    registryId: process.env.COLLECTIVE_REGISTRY_ID ?? merged.registryId,
   };
 }
 
@@ -836,6 +850,23 @@ function expandHome(value: string): string {
   }
 
   return value;
+}
+
+/**
+ * Resolve the network config from YAML. If a `name` field is present (e.g. "testnet"),
+ * use the corresponding preset as the base, then overlay any explicit fields.
+ */
+function resolveNetworkFromConfig(network: LooseRecord, defaults: NetworkConfig): NetworkConfig {
+  const nameField = readString(network.name);
+  const preset = nameField ? getNetworkPreset(nameField) : undefined;
+  const base = preset ?? defaults;
+
+  return {
+    rpcUrl: readString(network.rpcUrl) ?? base.rpcUrl,
+    faucetUrl: readString(network.faucetUrl) ?? base.faucetUrl,
+    packageId: readHexString(network.packageId) ?? base.packageId,
+    registryId: readHexString(network.registryId) ?? base.registryId,
+  };
 }
 
 function readString(value: unknown): string | undefined {

@@ -315,10 +315,10 @@ describe('config', () => {
     await access(configPath);
     const persisted = await readFile(configPath, 'utf8');
 
-    expect(config.network.rpcUrl).toBe('http://127.0.0.1:9000');
+    expect(config.network.rpcUrl).toBe('https://fullnode.testnet.sui.io:443');
     expect(config.auth.mode).toBe('ed25519');
     expect(config.encryption).toEqual({ enabled: true, requireEncryption: false });
-    expect(persisted).toContain('rpcUrl: http://127.0.0.1:9000');
+    expect(persisted).toContain('rpcUrl: https://fullnode.testnet.sui.io:443');
     expect(persisted).toContain('mode: ed25519');
     expect(persisted).toContain('requireEncryption: false');
   });

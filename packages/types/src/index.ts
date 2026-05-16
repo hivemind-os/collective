@@ -10,3 +10,4 @@ export * from './staking.js';
 export * from './dispute.js';
 export * from './routing.js';
 export * from './relay.js';
+export * from './networks.js';

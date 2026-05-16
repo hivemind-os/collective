@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { getDefaultIpcPath as getDaemonDefaultIpcPath } from '@hivemind-os/collective-daemon/config';
-import { PaymentRail, type NetworkConfig, type SpendingPolicy } from '@hivemind-os/collective-types';
+import { PaymentRail, NETWORK_PRESETS, getNetworkPreset, type NetworkConfig, type NetworkName, type SpendingPolicy } from '@hivemind-os/collective-types';
 import yaml from 'js-yaml';
 
 import { success } from '../utils/output.js';
@@ -74,12 +74,16 @@ export function getConfigPath(configPath?: string): string {
 
 export function buildDefaultConfig(dataDir = getMeshDataDir()): MeshCliConfig {
   const resolvedDataDir = normalizePath(dataDir);
+  const networkName = process.env.COLLECTIVE_NETWORK as NetworkName | undefined;
+  const preset = networkName ? getNetworkPreset(networkName) : NETWORK_PRESETS.testnet;
+  const defaultNetwork = preset ?? NETWORK_PRESETS.testnet;
+
   return {
     network: {
-      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? 'http://127.0.0.1:9000',
-      faucetUrl: 'http://127.0.0.1:9123',
-      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? '',
-      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? '',
+      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? defaultNetwork.rpcUrl,
+      faucetUrl: defaultNetwork.faucetUrl,
+      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? defaultNetwork.packageId,
+      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? defaultNetwork.registryId,
     },
     identity: {
       dataDir: join(resolvedDataDir, 'identity'),
@@ -231,13 +235,20 @@ function applyEnvironmentOverrides(
       }
     : config;
 
+  // COLLECTIVE_NETWORK env var applies a full preset
+  const networkName = process.env.COLLECTIVE_NETWORK as NetworkName | undefined;
+  const envPreset = networkName ? getNetworkPreset(networkName) : undefined;
+  const baseNetwork = envPreset
+    ? { ...withDataDir.network, ...envPreset }
+    : withDataDir.network;
+
   return {
     ...withDataDir,
     network: {
-      ...withDataDir.network,
-      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? withDataDir.network.rpcUrl,
-      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? withDataDir.network.packageId,
-      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? withDataDir.network.registryId,
+      ...baseNetwork,
+      rpcUrl: process.env.COLLECTIVE_RPC_URL ?? baseNetwork.rpcUrl,
+      packageId: process.env.COLLECTIVE_PACKAGE_ID ?? baseNetwork.packageId,
+      registryId: process.env.COLLECTIVE_REGISTRY_ID ?? baseNetwork.registryId,
     },
     daemon: {
       ...withDataDir.daemon,
