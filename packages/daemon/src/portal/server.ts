@@ -264,7 +264,7 @@ export class PortalServer {
         spendingToday: formatMistToSui(state.spendingPolicy.getSpent('day')),
         spendingThisHour: formatMistToSui(state.spendingPolicy.getSpent('hour')),
         spendingThisMonth: formatMistToSui(state.spendingPolicy.getSpent('month')),
-        dailyLimitSui: formatMistToSui(getCurrentDailyLimitMist(this.options.config)),
+        dailyLimit: formatDailyLimit(this.options.config),
       };
     });
 
@@ -273,7 +273,7 @@ export class PortalServer {
       reply.type('text/html').send(renderDiscoverPage());
     });
 
-    this.server.get('/api/discover', async (request) => {
+    this.server.get('/api/discover', async (request, reply) => {
       const state = this.options.state;
       if (!state) {
         return { error: 'Daemon state not available.' };
@@ -284,23 +284,32 @@ export class PortalServer {
       if (!capability) {
         return { capability: '', agents: [] };
       }
+      if (capability.length > 200) {
+        reply.code(400);
+        return { error: 'Capability query must be 200 characters or fewer.' };
+      }
 
       const limit = Math.min(Math.max(Number(query.limit) || 10, 1), 50);
-      const agents = await state.registryClient.discoverByCapability(capability, limit, {});
-      return {
-        capability,
-        agents: agents.map((agent) => ({
-          name: agent.name,
-          did: agent.did,
-          active: agent.active,
-          capabilities: agent.capabilities.map((cap) => ({
-            name: cap.name,
-            priceMist: cap.pricing.amount.toString(),
-            rail: cap.pricing.rail,
+      try {
+        const agents = await state.registryClient.discoverByCapability(capability, limit, {});
+        return {
+          capability,
+          agents: agents.map((agent) => ({
+            name: agent.name,
+            did: agent.did,
+            active: agent.active,
+            capabilities: agent.capabilities.map((cap) => ({
+              name: cap.name,
+              priceMist: cap.pricing.amount.toString(),
+              rail: cap.pricing.rail,
+            })),
+            endpoint: agent.endpoint,
           })),
-          endpoint: agent.endpoint,
-        })),
-      };
+        };
+      } catch (err) {
+        reply.code(502);
+        return { error: 'Failed to query the registry. The network may be unavailable.', capability };
+      }
     });
 
     // ── Tasks / Spending page ────────────────────────────────────
@@ -314,14 +323,24 @@ export class PortalServer {
         return { error: 'Daemon state not available.' };
       }
 
+      const recentEntries = state.spendingPolicy.getRecentEntries(50).map((e) => ({
+        id: e.id,
+        amountSui: formatMistToSui(e.amountBaseUnits),
+        rail: e.rail,
+        taskId: e.taskId ?? null,
+        appId: e.appId ?? null,
+        timestamp: e.timestamp,
+      }));
+
       return {
         spending: {
           hour: formatMistToSui(state.spendingPolicy.getSpent('hour')),
           day: formatMistToSui(state.spendingPolicy.getSpent('day')),
           month: formatMistToSui(state.spendingPolicy.getSpent('month')),
         },
-        dailyLimitSui: formatMistToSui(getCurrentDailyLimitMist(this.options.config)),
+        dailyLimit: formatDailyLimit(this.options.config),
         providerRunning: state.getStatusBase().providerRunning,
+        recentEntries,
       };
     });
   }
@@ -597,10 +616,11 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
   <head>
     <meta charset="utf-8" />
     <title>Agentic Mesh Setup</title>
-    <style>${BASE_STYLES}</style>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
   </head>
   <body>
     <main class="card">
+      ${PORTAL_NAV}
       <h1>${escapeHtml(title)}</h1>
       <p>Your Sui address:</p>
       <code>${escapeHtml(params.address)}</code>
@@ -610,7 +630,6 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
       <button class="button" id="finish">Finish Setup</button>
       <p class="error" id="status" hidden></p>
       ${successMessage}
-      <p style="margin-top:24px;font-size:0.85rem"><a href="/wallet" style="color:#60a5fa">Wallet</a> · <a href="/discover" style="color:#60a5fa">Discover</a> · <a href="/tasks" style="color:#60a5fa">Tasks</a> · <a href="/network" style="color:#60a5fa">Network</a></p>
     </main>
     <script>
       const slider = document.getElementById('limit');
@@ -651,11 +670,11 @@ function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; package
   <head>
     <meta charset="utf-8" />
     <title>Agentic Mesh — Network</title>
-    <style>${BASE_STYLES}${NETWORK_PAGE_STYLES}</style>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}${NETWORK_PAGE_STYLES}</style>
   </head>
   <body>
     <main class="card">
-      <nav class="nav"><a href="/">← Settings</a></nav>
+      ${PORTAL_NAV}
       <h1>Network Configuration</h1>
       <p>Configure which Sui network the daemon connects to.</p>
 
@@ -812,7 +831,7 @@ function renderWalletPage(): string {
           document.getElementById('spent-day').textContent = (data.spendingToday ?? '0') + ' SUI';
           document.getElementById('spent-hour').textContent = (data.spendingThisHour ?? '0') + ' SUI';
           document.getElementById('spent-month').textContent = (data.spendingThisMonth ?? '0') + ' SUI';
-          document.getElementById('limit').textContent = (data.dailyLimitSui ?? '—') + ' SUI';
+          document.getElementById('limit').textContent = data.dailyLimit ?? '—';
           document.getElementById('loading').hidden = true;
           document.getElementById('content').hidden = false;
         } catch (e) {
@@ -855,6 +874,10 @@ function renderDiscoverPage(): string {
         try {
           const res = await fetch('/api/discover?capability=' + encodeURIComponent(cap));
           const data = await res.json();
+          if (data.error) {
+            results.innerHTML = '<p class="error">' + esc(data.error) + '</p>';
+            return;
+          }
           if (!data.agents || data.agents.length === 0) {
             results.innerHTML = '<p id="results-empty">No agents found for this capability.</p>';
             return;
@@ -896,7 +919,12 @@ function renderTasksPage(): string {
   <head>
     <meta charset="utf-8" />
     <title>Agentic Mesh — Tasks</title>
-    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}
+      .tx-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.82rem; }
+      .tx-table th { text-align: left; color: #94a3b8; padding: 6px 8px; border-bottom: 1px solid #1e293b; }
+      .tx-table td { padding: 6px 8px; border-bottom: 1px solid #0f172a; font-family: monospace; }
+      .tx-table tr:hover td { background: #0f172a; }
+    </style>
   </head>
   <body>
     <main class="card">
@@ -909,9 +937,12 @@ function renderTasksPage(): string {
         <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="month"></span></div>
         <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
         <div class="stat"><span class="stat-label">Provider running</span><span class="stat-value" id="provider"></span></div>
+        <h2 style="margin-top:24px;font-size:1rem;">Recent Transactions</h2>
+        <div id="entries"></div>
       </div>
     </main>
     <script>
+      function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
       (async () => {
         try {
           const res = await fetch('/api/tasks');
@@ -919,8 +950,17 @@ function renderTasksPage(): string {
           document.getElementById('hour').textContent = (data.spending?.hour ?? '0') + ' SUI';
           document.getElementById('day').textContent = (data.spending?.day ?? '0') + ' SUI';
           document.getElementById('month').textContent = (data.spending?.month ?? '0') + ' SUI';
-          document.getElementById('limit').textContent = (data.dailyLimitSui ?? '—') + ' SUI';
+          document.getElementById('limit').textContent = data.dailyLimit ?? '—';
           document.getElementById('provider').textContent = data.providerRunning ? 'Yes' : 'No';
+
+          const entries = data.recentEntries ?? [];
+          if (entries.length === 0) {
+            document.getElementById('entries').innerHTML = '<p style="color:#64748b;font-style:italic">No transactions yet.</p>';
+          } else {
+            const rows = entries.map(e => '<tr><td>' + esc(new Date(e.timestamp).toLocaleString()) + '</td><td>' + esc(e.amountSui) + ' SUI</td><td>' + esc(e.rail) + '</td><td>' + esc(e.taskId ?? '—') + '</td><td>' + esc(e.appId ?? '—') + '</td></tr>').join('');
+            document.getElementById('entries').innerHTML = '<table class="tx-table"><thead><tr><th>Time</th><th>Amount</th><th>Rail</th><th>Task</th><th>App</th></tr></thead><tbody>' + rows + '</tbody></table>';
+          }
+
           document.getElementById('loading').hidden = true;
           document.getElementById('content').hidden = false;
         } catch (e) {
@@ -974,6 +1014,11 @@ function updateDailyLimit(config: DaemonFullConfig, amountMist: bigint): void {
 
 function getCurrentDailyLimitMist(config: DaemonFullConfig): bigint {
   return config.spending.limits.find((limit) => limit.interval === 'day' && !limit.scope && !limit.rail)?.amount ?? 0n;
+}
+
+function formatDailyLimit(config: DaemonFullConfig): string {
+  const limit = getCurrentDailyLimitMist(config);
+  return limit === 0n ? 'Unlimited' : formatMistToSui(limit) + ' SUI';
 }
 
 function parsePositiveBigInt(value: number | string, field: string): bigint {

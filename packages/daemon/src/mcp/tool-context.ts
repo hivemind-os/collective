@@ -16,17 +16,12 @@ import type { DaemonState } from '../state.js';
 /**
  * Build a {@link MeshToolContext} from daemon state so the
  * `@agentic-mesh/mcp-server` tool handlers can run inside the daemon.
+ *
+ * Optional clients are lazily instantiated on first access to avoid
+ * allocating resources (SQLite databases, objects) that may never be used.
  */
 export function buildMeshToolContext(state: DaemonState, dataDir: string): MeshToolContext {
-  const stakingClient = new StakingClient(state.suiClient, { packageId: state.network.packageId });
-  const disputeClient = new DisputeClient(state.suiClient, { packageId: state.network.packageId });
-  const marketplaceClient = new MarketplaceClient(state.suiClient, state.network);
-  const relayRegistryClient = new RelayRegistryClient(state.suiClient, { packageId: state.network.packageId });
-  const paymentRailSelector = new PaymentRailSelector();
-  const reputationPublisher = new ReputationEventPublisher(state.blobStore, state.authProvider);
-  const reputationStore = new ReputationStore(join(dataDir, 'reputation.sqlite'));
-
-  return {
+  const base: MeshToolContext = {
     did: state.did,
     keypair: state.keypair,
     suiClient: state.suiClient,
@@ -40,12 +35,30 @@ export function buildMeshToolContext(state: DaemonState, dataDir: string): MeshT
     authProvider: state.authProvider,
     relayAuthProvider: state.relayAuthProvider,
     x402Client: state.x402Client,
-    stakingClient,
-    disputeClient,
-    marketplaceClient,
-    relayRegistryClient,
-    paymentRailSelector,
-    reputationPublisher,
-    reputationStore,
   };
+
+  // Lazy getters for optional clients — instantiated on first access
+  defineLazy(base, 'stakingClient', () => new StakingClient(state.suiClient, { packageId: state.network.packageId }));
+  defineLazy(base, 'disputeClient', () => new DisputeClient(state.suiClient, { packageId: state.network.packageId }));
+  defineLazy(base, 'marketplaceClient', () => new MarketplaceClient(state.suiClient, state.network));
+  defineLazy(base, 'relayRegistryClient', () => new RelayRegistryClient(state.suiClient, { packageId: state.network.packageId }));
+  defineLazy(base, 'paymentRailSelector', () => new PaymentRailSelector());
+  defineLazy(base, 'reputationPublisher', () => new ReputationEventPublisher(state.blobStore, state.authProvider));
+  defineLazy(base, 'reputationStore', () => new ReputationStore(join(dataDir, 'reputation.sqlite')));
+
+  return base;
+}
+
+function defineLazy<T extends object, K extends keyof T>(obj: T, key: K, factory: () => T[K]): void {
+  let cached: T[K] | undefined;
+  Object.defineProperty(obj, key, {
+    configurable: true,
+    enumerable: true,
+    get() {
+      if (cached === undefined) {
+        cached = factory();
+      }
+      return cached;
+    },
+  });
 }

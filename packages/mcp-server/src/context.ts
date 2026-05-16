@@ -28,6 +28,8 @@ export interface MeshToolContext {
   blobStore: BlobStore;
   spendingPolicy: SpendingPolicyEngine;
   networkConfig: NetworkConfig;
+  /** The name of the MCP client app invoking the tool (for per-app spending). */
+  originAppName?: string;
   stakingClient?: StakingClient;
   relayRegistryClient?: RelayRegistryClient;
   disputeClient?: DisputeClient;

@@ -95,6 +95,7 @@ export async function runMeshExecute(
     rail: prepared.rail,
     taskId: prepared.taskId,
     appId: prepared.providerDid,
+    originAppName: context.originAppName,
   });
 
   await publishSuccessfulReputationEvent(context, {
@@ -206,6 +207,7 @@ async function tryRelayExecution(
       rail,
       taskId,
       appId: resolved.agent.did,
+      originAppName: context.originAppName,
     });
 
     return {
@@ -269,6 +271,7 @@ function approveSpend(context: MeshToolContext, amountMist: bigint, rail: Paymen
     amountMist,
     rail,
     appId,
+    originAppName: context.originAppName,
   });
   if (!decision.approved) {
     throw new Error(decision.reason ?? 'Spending policy rejected the request.');

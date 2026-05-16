@@ -228,7 +228,8 @@ export class McpSession {
       const meshHandler = meshToolHandlers[toolName];
       if (meshHandler && context) {
         try {
-          const result = await meshHandler((request.params.arguments ?? {}) as never, context);
+          const callContext = { ...context, originAppName: this.getAppName() };
+          const result = await meshHandler((request.params.arguments ?? {}) as never, callContext);
           return createSuccessResult(result);
         } catch (error) {
           const message =

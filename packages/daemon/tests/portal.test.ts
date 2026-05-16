@@ -396,3 +396,138 @@ describe('portal server', () => {
     await mockOidc.close();
   });
 });
+
+describe('portal API endpoints', () => {
+  function createMockState() {
+    return {
+      did: 'did:mesh:0xtest123',
+      address: '0xwallet456',
+      suiClient: {
+        getBalance: vi.fn().mockResolvedValue(5_000_000_000n),
+      },
+      spendingPolicy: {
+        getSpent: vi.fn().mockReturnValue(1_000_000_000n),
+        getRecentEntries: vi.fn().mockReturnValue([
+          {
+            id: 1,
+            amountBaseUnits: 500_000_000n,
+            rail: 'sui_escrow',
+            currency: undefined,
+            taskId: 'task-abc',
+            appId: 'did:mesh:0xprovider',
+            timestamp: 1700000000000,
+          },
+        ]),
+      },
+      registryClient: {
+        discoverByCapability: vi.fn().mockResolvedValue([
+          {
+            name: 'TestAgent',
+            did: 'did:mesh:0xagent',
+            active: true,
+            capabilities: [{ name: 'summarize', pricing: { amount: 100_000_000n, rail: 'sui_escrow' } }],
+            endpoint: 'https://example.com',
+          },
+        ]),
+      },
+      getStatusBase: vi.fn().mockReturnValue({ providerRunning: true }),
+    } as unknown;
+  }
+
+  async function startPortalWithState(state: unknown): Promise<{ portal: PortalServer; url: string }> {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+    await writeFile(configPath, 'auth:\n  mode: keypair\ndaemon:\n  dataDir: ' + resolve(dir, 'daemon'), 'utf8');
+    const config = getDefaultConfig();
+    config.daemon.dataDir = resolve(dir, 'daemon');
+    config.daemon.pidFile = resolve(dir, 'daemon.pid');
+    const portal = new PortalServer({
+      config,
+      configPath,
+      authProvider: { createAuthorizationRequest: vi.fn(), exchangeCode: vi.fn() } as never,
+      state: state as never,
+    });
+    const url = await portal.start();
+    return { portal, url };
+  }
+
+  it('GET /api/wallet returns wallet info', async () => {
+    const state = createMockState();
+    const { portal, url } = await startPortalWithState(state);
+    try {
+      const res = await fetch(`${url}/api/wallet`);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.did).toBe('did:mesh:0xtest123');
+      expect(body.address).toBe('0xwallet456');
+      expect(body.balanceSui).toBe('5');
+      expect(body.spendingToday).toBe('1');
+      expect(body.dailyLimit).toBe('1 SUI');
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('GET /api/discover returns agents for a valid capability', async () => {
+    const state = createMockState();
+    const { portal, url } = await startPortalWithState(state);
+    try {
+      const res = await fetch(`${url}/api/discover?capability=summarize`);
+      const body = (await res.json()) as { capability: string; agents: Array<{ name: string; did: string }> };
+      expect(body.capability).toBe('summarize');
+      expect(body.agents).toHaveLength(1);
+      expect(body.agents[0].name).toBe('TestAgent');
+      expect(body.agents[0].did).toBe('did:mesh:0xagent');
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('GET /api/discover rejects overly long capability', async () => {
+    const state = createMockState();
+    const { portal, url } = await startPortalWithState(state);
+    try {
+      const longCap = 'a'.repeat(201);
+      const res = await fetch(`${url}/api/discover?capability=${longCap}`);
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('200 characters');
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('GET /api/discover returns 502 on registry failure', async () => {
+    const state = createMockState() as { registryClient: { discoverByCapability: ReturnType<typeof vi.fn> } };
+    state.registryClient.discoverByCapability = vi.fn().mockRejectedValue(new Error('Network timeout'));
+    const { portal, url } = await startPortalWithState(state);
+    try {
+      const res = await fetch(`${url}/api/discover?capability=test`);
+      expect(res.status).toBe(502);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('registry');
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('GET /api/tasks returns spending and recent entries', async () => {
+    const state = createMockState();
+    const { portal, url } = await startPortalWithState(state);
+    try {
+      const res = await fetch(`${url}/api/tasks`);
+      const body = (await res.json()) as {
+        spending: { hour: string; day: string; month: string };
+        dailyLimit: string;
+        providerRunning: boolean;
+        recentEntries: Array<{ amountSui: string; taskId: string }>;
+      };
+      expect(body.spending.hour).toBe('1');
+      expect(body.providerRunning).toBe(true);
+      expect(body.recentEntries).toHaveLength(1);
+      expect(body.recentEntries[0].amountSui).toBe('0.5');
+      expect(body.recentEntries[0].taskId).toBe('task-abc');
+    } finally {
+      await portal.stop();
+    }
+  });
+});

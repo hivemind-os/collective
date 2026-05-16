@@ -82,6 +82,7 @@ export async function runMeshMeteredExecute(
     amountMist: maxPriceMist,
     rail: PaymentRail.SUI_ESCROW,
     appId: resolved.agent.did,
+    originAppName: context.originAppName,
   });
   if (!spendingDecision.approved) {
     throw new Error(spendingDecision.reason ?? 'Spending policy rejected the request.');
@@ -111,6 +112,7 @@ export async function runMeshMeteredExecute(
     rail: PaymentRail.SUI_ESCROW,
     taskId: task.id,
     appId: resolved.agent.did,
+    originAppName: context.originAppName,
   });
 
   return {

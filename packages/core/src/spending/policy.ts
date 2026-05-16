@@ -25,6 +25,16 @@ interface SpendingAmount {
   currency?: string;
 }
 
+export interface SpendingLogEntry {
+  id: number;
+  amountBaseUnits: bigint;
+  rail: PaymentRail;
+  currency?: string;
+  taskId?: string;
+  appId?: string;
+  timestamp: number;
+}
+
 export class SpendingPolicyEngine {
   private readonly db: Database.Database;
   private policy: SpendingPolicyConfig;
@@ -99,6 +109,33 @@ export class SpendingPolicyEngine {
 
   getSpent(interval: 'hour' | 'day' | 'month', rail?: PaymentRail, appId?: string, currency?: string): bigint {
     return this.getSpentForLimit(interval, rail, appId, normalizeCurrency(currency));
+  }
+
+  /** Return the most recent spending log entries, newest first. */
+  getRecentEntries(limit = 50): SpendingLogEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, amount_base_units, rail, currency, task_id, app_id, timestamp
+         FROM spending_log ORDER BY timestamp DESC LIMIT ?`,
+      )
+      .all(limit) as Array<{
+      id: number;
+      amount_base_units: bigint;
+      rail: string;
+      currency: string | null;
+      task_id: string | null;
+      app_id: string | null;
+      timestamp: bigint;
+    }>;
+    return rows.map((row) => ({
+      id: row.id,
+      amountBaseUnits: row.amount_base_units,
+      rail: row.rail as PaymentRail,
+      currency: row.currency ?? undefined,
+      taskId: row.task_id ?? undefined,
+      appId: row.app_id ?? undefined,
+      timestamp: Number(row.timestamp),
+    }));
   }
 
   updatePolicy(policy: SpendingPolicyConfig): void {
