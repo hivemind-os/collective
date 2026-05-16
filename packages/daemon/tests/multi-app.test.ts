@@ -130,7 +130,7 @@ async function createTestDir(): Promise<string> {
   return dir;
 }
 
-function createIpcPath(dir: string): string {
+function createIpcPath(_dir: string): string {
   if (process.platform === 'win32') {
     return `\\\\.\\pipe\\hivemind-collective-test-${randomUUID()}`;
   }
