@@ -11,6 +11,8 @@ import type { DaemonAuthStatus } from '../auth/session-monitor.js';
 import { buildOAuthConfig, type DaemonState } from '../state.js';
 
 type PortalOAuthProvider = OAuthConfig['provider'];
+type PortalProviderConfig = NonNullable<DaemonFullConfig['provider']>;
+type PortalProviderCapability = PortalProviderConfig['capabilities'][number];
 
 type PortalAuthFlow = 'setup' | 'reauth';
 
@@ -60,6 +62,7 @@ export interface PortalServerOptions {
   getConnectedApps?: () => { appName: string; appPid: number; profile?: string; connectedAt: number }[];
   onAuthenticated?: (session: StoredZkLoginSession) => Promise<void> | void;
   onSettingsSaved?: (config: DaemonFullConfig) => Promise<void> | void;
+  onProviderConfigChanged?: () => Promise<void> | void;
 }
 
 const PENDING_AUTH_TTL_MS = 10 * 60 * 1000;
@@ -201,7 +204,7 @@ export class PortalServer {
     // ── Auth routes (zkLogin only) ───────────────────────────────
     if (this.options.authProvider) {
       this.server.get('/auth/reauth', async (_request, reply) => {
-        reply.type('text/html').send(renderReauthPage(getConfiguredProviders(this.options.config)));
+        reply.type('text/html').send(wrapInLayout('Session expired', 'settings', renderReauthPage(getConfiguredProviders(this.options.config))));
       });
 
       this.server.get('/auth/google', async (request, reply) => this.startAuthFlow('google', reply, readFlow(request.query)));
@@ -217,7 +220,7 @@ export class PortalServer {
     }
 
     this.server.get('/network', async (_request, reply) => {
-      reply.type('text/html').send(renderNetworkPage(this.options.config.network));
+      reply.type('text/html').send(wrapInLayout('Network', 'network', renderNetworkPage(this.options.config.network)));
     });
 
     this.server.get('/api/network', async () => {
@@ -258,7 +261,7 @@ export class PortalServer {
 
     // ── Wallet page ──────────────────────────────────────────────
     this.server.get('/wallet', async (_request, reply) => {
-      reply.type('text/html').send(renderWalletPage());
+      reply.type('text/html').send(wrapInLayout('Wallet', 'wallet', renderWalletPage()));
     });
 
     this.server.get('/api/wallet', async () => {
@@ -282,7 +285,7 @@ export class PortalServer {
 
     // ── Discovery page ───────────────────────────────────────────
     this.server.get('/discover', async (_request, reply) => {
-      reply.type('text/html').send(renderDiscoverPage());
+      reply.type('text/html').send(wrapInLayout('Discover', 'discover', renderDiscoverPage()));
     });
 
     this.server.get('/api/discover', async (request, reply) => {
@@ -326,12 +329,59 @@ export class PortalServer {
 
     // ── Tasks / Spending page ────────────────────────────────────
     this.server.get('/tasks', async (_request, reply) => {
-      reply.type('text/html').send(renderTasksPage());
+      reply.type('text/html').send(wrapInLayout('Tasks', 'tasks', renderTasksPage()));
     });
 
     // ── Services page ─────────────────────────────────────────────
     this.server.get('/services', async (_request, reply) => {
-      reply.type('text/html').send(renderServicesPage());
+      reply.type('text/html').send(wrapInLayout('Services', 'services', renderServicesPage()));
+    });
+
+    this.server.get('/api/provider/config', async () => {
+      return getProviderConfigForPortal(this.options.config);
+    });
+
+    this.server.post('/api/provider/config', async (request, reply) => {
+      const previousProvider = this.options.config.provider;
+      const programmaticCapabilities = (previousProvider?.capabilities ?? []).filter((capability) => capability.adapter === 'local-function');
+
+      try {
+        const validated = validateProviderConfigInput(request.body);
+        this.options.config.provider = validated;
+        await saveConfig(this.options.config, this.options.configPath);
+
+        if (programmaticCapabilities.length > 0) {
+          this.options.config.provider = {
+            ...validated,
+            capabilities: [...validated.capabilities, ...programmaticCapabilities],
+          };
+        }
+
+        this.options.logger?.info({ configPath: this.options.configPath }, 'Portal provider config persisted');
+
+        try {
+          await this.options.onProviderConfigChanged?.();
+        } catch (error) {
+          this.options.logger?.warn({ err: error, configPath: this.options.configPath }, 'Provider restart callback failed');
+          return reply.code(500).send({
+            ok: false,
+            error: getSafeErrorMessage(error, 'Provider configuration was saved, but the provider could not be restarted.'),
+          });
+        }
+
+        return { ok: true };
+      } catch (error) {
+        this.options.config.provider = previousProvider;
+        const isValidation = isProviderConfigValidationError(error);
+        if (!isValidation) {
+          this.options.logger?.warn({ err: error, configPath: this.options.configPath }, 'Failed to persist provider config');
+        }
+
+        return reply.code(isValidation ? 400 : 500).send({
+          ok: false,
+          error: getSafeErrorMessage(error, 'Unable to save provider settings.'),
+        });
+      }
     });
 
     this.server.get('/api/services', async () => {
@@ -408,7 +458,6 @@ export class PortalServer {
       };
     });
   }
-
   private async startAuthFlow(
     provider: PortalOAuthProvider,
     reply: FastifyReply,
@@ -592,27 +641,39 @@ export class PortalServer {
   private renderPage(): string {
     const version = this.options.state?.getStatusBase().version;
     if (!this.options.authProvider) {
-      return renderSetupPage({
-        address: this.options.state?.address ?? '',
-        dailyLimitMist: getCurrentDailyLimitMist(this.options.config),
-        setupComplete: true,
-        version,
-      });
+      return wrapInLayout(
+        'HiveMind Collective',
+        'settings',
+        renderSetupPage({
+          address: this.options.state?.address ?? '',
+          dailyLimitMist: getCurrentDailyLimitMist(this.options.config),
+          setupComplete: true,
+          version,
+        }),
+      );
     }
 
     const authStatus = this.getAuthStatus();
     if (!this.options.authProvider.isAuthenticated()) {
-      return this.options.getAuthStatus && (authStatus.state === 'expired' || authStatus.state === 'reauth_required')
-        ? renderReauthPage(getConfiguredProviders(this.options.config))
-        : renderWelcomePage(getConfiguredProviders(this.options.config));
+      return wrapInLayout(
+        authStatus.state === 'expired' || authStatus.state === 'reauth_required' ? 'Session expired' : 'Agentic Mesh Setup',
+        'settings',
+        this.options.getAuthStatus && (authStatus.state === 'expired' || authStatus.state === 'reauth_required')
+          ? renderReauthPage(getConfiguredProviders(this.options.config))
+          : renderWelcomePage(getConfiguredProviders(this.options.config)),
+      );
     }
 
-    return renderSetupPage({
-      address: this.options.authProvider.getSession()?.address ?? '',
-      dailyLimitMist: getCurrentDailyLimitMist(this.options.config),
-      setupComplete: this.setupComplete,
-      version,
-    });
+    return wrapInLayout(
+      'HiveMind Collective',
+      'settings',
+      renderSetupPage({
+        address: this.options.authProvider.getSession()?.address ?? '',
+        dailyLimitMist: getCurrentDailyLimitMist(this.options.config),
+        setupComplete: this.setupComplete,
+        version,
+      }),
+    );
   }
 }
 
@@ -642,28 +703,27 @@ function renderReauthPage(providers: PortalOAuthProvider[]): string {
 }
 
 function renderReauthCompletePage(): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Authentication restored</title>
-    <style>${BASE_STYLES}</style>
-  </head>
-  <body>
-    <main class="card">
-      <h1>Authentication restored</h1>
-      <p>Your session is active again. This window will close automatically.</p>
-    </main>
-    <script>
-      setTimeout(() => {
-        window.close();
+  return wrapInLayout(
+    'Authentication restored',
+    'settings',
+    `
+      <section class="hero-card">
+        <div class="hero-card__content">
+          <span class="pill pill--success">Session active</span>
+          <h1>Authentication restored</h1>
+          <p>Your session is active again. This window will close automatically.</p>
+        </div>
+      </section>
+      <script>
         setTimeout(() => {
-          window.location.replace('/');
-        }, 250);
-      }, 150);
-    </script>
-  </body>
-</html>`;
+          window.close();
+          setTimeout(() => {
+            window.location.replace('/');
+          }, 250);
+        }, 150);
+      </script>
+    `,
+  );
 }
 
 function renderAuthPage(params: {
@@ -673,59 +733,79 @@ function renderAuthPage(params: {
   flow: PortalAuthFlow;
 }): string {
   const buttons = params.providers.map((provider) => renderAuthButton(provider, params.flow)).join('');
+  const badge = params.flow === 'reauth' ? 'Re-authentication required' : 'Local portal setup';
 
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Agentic Mesh Setup</title>
-    <style>${BASE_STYLES}</style>
-  </head>
-  <body>
-    <main class="card">
-      <h1>${escapeHtml(params.title)}</h1>
-      <p>${escapeHtml(params.detail)}</p>
-      ${buttons ? `<div class="auth-buttons">${buttons}</div>` : '<p class="error">No OAuth providers are configured.</p>'}
-    </main>
-  </body>
-</html>`;
+  return `
+    <section class="hero-card">
+      <div class="hero-card__content">
+        <span class="pill pill--accent">${escapeHtml(badge)}</span>
+        <h1>${escapeHtml(params.title)}</h1>
+        <p>${escapeHtml(params.detail)}</p>
+      </div>
+      ${buttons ? `<div class="auth-buttons">${buttons}</div>` : '<div class="notice notice--error">No OAuth providers are configured.</div>'}
+    </section>`;
 }
 
 function renderAuthButton(provider: PortalOAuthProvider, flow: PortalAuthFlow): string {
   const href = `/auth/${provider}?flow=${flow}`;
   if (provider === 'apple') {
-    return `<a class="button button--apple" href="${href}"><span class="button__icon" aria-hidden="true"></span><span>Sign in with Apple</span></a>`;
+    return `<a class="button button--secondary button--apple" href="${escapeAttr(href)}"><span class="button__icon" aria-hidden="true"></span><span>Sign in with Apple</span></a>`;
   }
 
-  return `<a class="button button--google" href="${href}"><span>Sign in with Google</span></a>`;
+  return `<a class="button" href="${escapeAttr(href)}"><span class="button__icon" aria-hidden="true">◎</span><span>Sign in with Google</span></a>`;
 }
 
 function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setupComplete: boolean; version?: string }): string {
-  const currentLimitSui = formatMistToSui(params.dailyLimitMist);
-  const successMessage = params.setupComplete ? '<p class="success">Setup complete. You can return to your app.</p>' : '';
+  const currentLimitSui = formatMistToSui(params.dailyLimitMist || 1n) || '1';
   const title = params.setupComplete ? 'HiveMind Collective' : 'Finish setup';
-  const versionBadge = params.version ? `<span style="font-size:0.75rem;color:#64748b;font-weight:400;margin-left:8px;">v${escapeHtml(params.version)}</span>` : '';
+  const buttonLabel = params.setupComplete ? 'Save settings' : 'Finish setup';
+  const versionBadge = params.version ? `<span class="pill">v${escapeHtml(params.version)}</span>` : '';
+  const successMessage = params.setupComplete ? '<div class="notice notice--success">Setup complete. You can return to your app at any time.</div>' : '';
 
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>HiveMind Collective</title>
-    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
-  </head>
-  <body>
-    <main class="card">
-      ${PORTAL_NAV}
-      <h1>${escapeHtml(title)}${versionBadge}</h1>
-      <p>Your Sui address:</p>
-      <code>${escapeHtml(params.address)}</code>
-      <label for="limit">Daily spending limit (SUI)</label>
-      <input id="limit" type="range" min="1" max="100" step="1" value="${escapeHtml(currentLimitSui)}" />
-      <div id="limit-value">${escapeHtml(currentLimitSui)} SUI</div>
-      <button class="button" id="finish">Finish Setup</button>
-      <p class="error" id="status" hidden></p>
+  return `
+    <section class="page-header">
+      <div class="page-header__content">
+        <div class="title-row">
+          <h1>${escapeHtml(title)}</h1>
+          ${versionBadge}
+        </div>
+        <p>Configure your local HiveMind Collective daemon, wallet spending limits, and portal access from this localhost-only control plane.</p>
+      </div>
+    </section>
+    <section class="card stack">
       ${successMessage}
-    </main>
+      <div class="grid grid--2">
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Wallet identity</h2>
+              <p>The current portal is bound to the wallet below.</p>
+            </div>
+          </div>
+          <div class="code-block mono">${escapeHtml(params.address || 'Not available')}</div>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Daily spending limit</h2>
+              <p>Control how much the daemon can spend in a single day.</p>
+            </div>
+          </div>
+          <label for="limit">
+            Spending limit (SUI)
+            <span class="field-hint">Choose a value between 1 and 100 SUI.</span>
+          </label>
+          <input id="limit" type="range" min="1" max="100" step="1" value="${escapeAttr(currentLimitSui)}" />
+          <div class="range-footer">
+            <span class="pill pill--accent" id="limit-value">${escapeHtml(currentLimitSui)} SUI</span>
+          </div>
+          <div class="top-actions">
+            <button class="button" id="finish">${escapeHtml(buttonLabel)}</button>
+          </div>
+          <div class="notice notice--error" id="status" hidden></div>
+        </div>
+      </div>
+    </section>
     <script>
       const slider = document.getElementById('limit');
       const output = document.getElementById('limit-value');
@@ -754,48 +834,56 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
           button.disabled = false;
         }
       });
-    </script>
-  </body>
-</html>`;
+    </script>`;
 }
 
 function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; packageId: string; registryId: string }): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Agentic Mesh — Network</title>
-    <style>${BASE_STYLES}${INNER_PAGE_STYLES}${NETWORK_PAGE_STYLES}</style>
-  </head>
-  <body>
-    <main class="card">
-      ${PORTAL_NAV}
-      <h1>Network Configuration</h1>
-      <p>Configure which Sui network the daemon connects to.</p>
-
-      <div class="presets">
-        <button class="preset" data-rpc="https://fullnode.devnet.sui.io:443" data-faucet="https://faucet.devnet.sui.io">Devnet</button>
-        <button class="preset" data-rpc="https://fullnode.testnet.sui.io:443" data-faucet="https://faucet.testnet.sui.io">Testnet</button>
-        <button class="preset" data-rpc="http://127.0.0.1:9000" data-faucet="http://127.0.0.1:9123">Local</button>
+  return `
+    <section class="page-header">
+      <div class="page-header__content">
+        <h1>Network configuration</h1>
+        <p>Choose the Sui network and registry coordinates used by your daemon.</p>
       </div>
-
-      <label for="rpcUrl">RPC URL <span class="required">*</span></label>
-      <input id="rpcUrl" type="url" value="${escapeAttr(network.rpcUrl)}" placeholder="https://fullnode.devnet.sui.io:443" required />
-
-      <label for="faucetUrl">Faucet URL</label>
-      <input id="faucetUrl" type="url" value="${escapeAttr(network.faucetUrl)}" placeholder="https://faucet.devnet.sui.io" />
-
-      <label for="packageId">Package ID</label>
-      <input id="packageId" type="text" value="${escapeAttr(network.packageId)}" placeholder="0x..." />
-
-      <label for="registryId">Registry ID</label>
-      <input id="registryId" type="text" value="${escapeAttr(network.registryId)}" placeholder="0x..." />
-
-      <p class="hint" id="hint" hidden></p>
-      <button class="button" id="save">Save Network Config</button>
-      <p class="error" id="status" hidden></p>
-      <p class="success" id="success" hidden></p>
-    </main>
+    </section>
+    <section class="card stack">
+      <div class="section-header section-header--compact">
+        <div>
+          <h2>RPC and registry settings</h2>
+          <p>Use a preset or enter custom endpoints for local, testnet, or devnet environments.</p>
+        </div>
+      </div>
+      <div class="preset-list">
+        <button class="button button--secondary preset" data-rpc="https://fullnode.devnet.sui.io:443" data-faucet="https://faucet.devnet.sui.io">Devnet</button>
+        <button class="button button--secondary preset" data-rpc="https://fullnode.testnet.sui.io:443" data-faucet="https://faucet.testnet.sui.io">Testnet</button>
+        <button class="button button--secondary preset" data-rpc="http://127.0.0.1:9000" data-faucet="http://127.0.0.1:9123">Local</button>
+      </div>
+      <div class="grid grid--2">
+        <label for="rpcUrl">
+          RPC URL <span class="required">*</span>
+          <input id="rpcUrl" type="url" value="${escapeAttr(network.rpcUrl)}" placeholder="https://fullnode.devnet.sui.io:443" required />
+        </label>
+        <label for="faucetUrl">
+          Faucet URL
+          <input id="faucetUrl" type="url" value="${escapeAttr(network.faucetUrl)}" placeholder="https://faucet.devnet.sui.io" />
+        </label>
+      </div>
+      <div class="grid grid--2">
+        <label for="packageId">
+          Package ID
+          <input id="packageId" type="text" value="${escapeAttr(network.packageId)}" placeholder="0x..." />
+        </label>
+        <label for="registryId">
+          Registry ID
+          <input id="registryId" type="text" value="${escapeAttr(network.registryId)}" placeholder="0x..." />
+        </label>
+      </div>
+      <div class="notice" id="hint" hidden></div>
+      <div class="top-actions">
+        <button class="button" id="save">Save network config</button>
+      </div>
+      <div class="notice notice--error" id="status" hidden></div>
+      <div class="notice notice--success" id="success" hidden></div>
+    </section>
     <script>
       const rpcUrl = document.getElementById('rpcUrl');
       const faucetUrl = document.getElementById('faucetUrl');
@@ -806,11 +894,12 @@ function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; package
       const successEl = document.getElementById('success');
       const hint = document.getElementById('hint');
 
-      document.querySelectorAll('.preset').forEach(btn => {
+      document.querySelectorAll('.preset').forEach((btn) => {
         btn.addEventListener('click', () => {
-          rpcUrl.value = btn.dataset.rpc;
-          faucetUrl.value = btn.dataset.faucet;
+          rpcUrl.value = btn.dataset.rpc || '';
+          faucetUrl.value = btn.dataset.faucet || '';
           hint.textContent = 'Preset applied to RPC and Faucet URLs. Package and Registry IDs are unchanged.';
+          hint.className = 'notice';
           hint.hidden = false;
           successEl.hidden = true;
           status.hidden = true;
@@ -837,7 +926,7 @@ function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; package
           if (!response.ok) {
             throw new Error(typeof body.error === 'string' ? body.error : 'Unable to save network settings.');
           }
-          successEl.textContent = 'Network configuration saved. The daemon will reconnect to the configured network.';
+          successEl.textContent = 'Network configuration saved. The daemon will reconnect using the updated settings.';
           successEl.hidden = false;
         } catch (error) {
           status.textContent = error instanceof Error ? error.message : 'Unable to save network settings.';
@@ -845,76 +934,129 @@ function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; package
         }
         saveBtn.disabled = false;
       });
-    </script>
-  </body>
-</html>`;
+    </script>`;
 }
 
 function renderMessagePage(title: string, detail: string): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>${escapeHtml(title)}</title>
-    <style>${BASE_STYLES}</style>
-  </head>
-  <body>
-    <main class="card">
-      <h1>${escapeHtml(title)}</h1>
-      <p>${escapeHtml(detail)}</p>
-      <a class="button" href="/">Back</a>
-    </main>
-  </body>
-</html>`;
+  return wrapInLayout(
+    title,
+    'settings',
+    `
+      <section class="hero-card">
+        <div class="hero-card__content">
+          <h1>${escapeHtml(title)}</h1>
+          <p>${escapeHtml(detail)}</p>
+        </div>
+        <div class="top-actions">
+          <a class="button" href="/">Back to portal</a>
+        </div>
+      </section>
+    `,
+  );
 }
 
-const PORTAL_NAV = `
-  <nav class="nav">
-    <a href="/">Settings</a> · <a href="/wallet">Wallet</a> · <a href="/services">Services</a> · <a href="/discover">Discover</a> · <a href="/tasks">Tasks</a> · <a href="/network">Network</a>
-  </nav>`;
+const PORTAL_NAV = [
+  { id: 'settings', href: '/', icon: '⚙', label: 'Settings' },
+  { id: 'wallet', href: '/wallet', icon: '👛', label: 'Wallet' },
+  { id: 'services', href: '/services', icon: '🧩', label: 'Services' },
+  { id: 'discover', href: '/discover', icon: '🔎', label: 'Discover' },
+  { id: 'tasks', href: '/tasks', icon: '📋', label: 'Tasks' },
+  { id: 'network', href: '/network', icon: '🌐', label: 'Network' },
+] as const;
 
 const INNER_PAGE_STYLES = `
-  .nav { margin-bottom: 16px; font-size: 0.9rem; }
-  .nav a { color: #60a5fa; text-decoration: none; }
-  .nav a:hover { text-decoration: underline; }
-  .stat { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
+  .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .page-header__content { display: grid; gap: 10px; }
+  .title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .stack { display: grid; gap: 24px; }
+  .stack--tight { gap: 16px; }
+  .surface { display: grid; gap: 16px; padding: 20px; border-radius: 16px; background: #0b1220; border: 1px solid #1e293b; }
+  .surface--muted { background: rgba(15, 22, 40, 0.85); }
+  .section-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  .section-header--compact h2, .section-header--compact h3 { margin-bottom: 6px; }
+  .top-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .grid { display: grid; gap: 16px; }
+  .grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .code-block { padding: 16px; border-radius: 14px; background: #09101c; border: 1px solid #1e293b; color: #cbd5e1; overflow-wrap: anywhere; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  .range-footer { display: flex; justify-content: flex-start; }
+  .preset-list { display: flex; gap: 12px; flex-wrap: wrap; }
+  .required { color: #ef4444; }
+  .hero-card { max-width: 720px; display: grid; gap: 20px; padding: 32px; border-radius: 24px; border: 1px solid #1e293b; background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(11, 18, 32, 0.92)); box-shadow: 0 24px 60px rgba(2, 6, 23, 0.45); }
+  .hero-card__content { display: grid; gap: 16px; }
+  .auth-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
+  .stat-list { display: grid; gap: 0; }
+  .stat { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 16px 0; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
   .stat:last-child { border-bottom: 0; }
-  .stat-label { color: #94a3b8; font-size: 0.85rem; white-space: nowrap; }
-  .stat-value { font-family: monospace; font-size: 0.9rem; word-break: break-all; text-align: right; }
-  .search-row { display: flex; gap: 8px; margin-bottom: 20px; }
-  .search-row input { flex: 1; padding: 10px 12px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 0.9rem; }
-  .search-row input:focus { outline: none; border-color: #2563eb; }
-  .search-row button { flex-shrink: 0; }
-  .agent-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
-  .agent-name { font-weight: 600; margin-bottom: 4px; }
-  .agent-did { font-family: monospace; font-size: 0.75rem; color: #64748b; word-break: break-all; }
-  .agent-cap { display: inline-block; background: #1e293b; border-radius: 6px; padding: 4px 10px; margin: 6px 4px 0 0; font-size: 0.8rem; }
-  #results-empty { color: #94a3b8; font-style: italic; }
+  .stat-label { color: #94a3b8; font-size: 0.92rem; }
+  .stat-value { color: #e2e8f0; font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+  .search-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .search-row input { flex: 1 1 280px; }
+  .agent-grid { display: grid; gap: 16px; }
+  .agent-card { display: grid; gap: 12px; padding: 20px; border-radius: 16px; border: 1px solid #1e293b; background: #0b1220; }
+  .agent-name { display: flex; align-items: center; gap: 10px; font-size: 1rem; font-weight: 700; }
+  .agent-did { color: #94a3b8; font-size: 0.88rem; overflow-wrap: anywhere; }
+  .tag-list { display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.24); color: #bfdbfe; font-size: 0.82rem; }
+  .table-wrap { overflow-x: auto; }
+  .tx-table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  .tx-table th, .tx-table td { padding: 12px 14px; border-bottom: 1px solid #1e293b; text-align: left; }
+  .tx-table th { color: #94a3b8; font-size: 0.84rem; font-weight: 600; }
+  .tx-table td { color: #e2e8f0; font-size: 0.9rem; }
+  .tx-table tbody tr:hover td { background: rgba(30, 41, 59, 0.42); }
+  .clients-list { display: grid; gap: 12px; }
+  .client-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 16px; border-radius: 14px; border: 1px solid #1e293b; background: #0b1220; flex-wrap: wrap; }
+  .client-name { font-weight: 600; }
+  .client-meta { color: #94a3b8; font-size: 0.88rem; }
+  .provider-layout { display: grid; gap: 20px; grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr); }
+  .capability-list { display: grid; gap: 12px; }
+  .capability-card { display: grid; gap: 14px; }
+  .capability-card__title { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .capability-card__meta { display: flex; gap: 8px; flex-wrap: wrap; }
+  .capability-card__description { color: #cbd5e1; }
+  .switch-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 18px 20px; border-radius: 16px; background: #0b1220; border: 1px solid #1e293b; }
+  .switch-row__copy { display: grid; gap: 6px; }
+  .switch-row__copy p { color: #94a3b8; }
+  .switch { position: relative; width: 54px; height: 32px; display: inline-flex; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch__slider { position: absolute; inset: 0; cursor: pointer; border-radius: 999px; background: #334155; transition: background 0.2s ease; }
+  .switch__slider::before { content: ''; position: absolute; left: 4px; top: 4px; width: 24px; height: 24px; border-radius: 50%; background: white; transition: transform 0.2s ease; }
+  .switch input:checked + .switch__slider { background: #3b82f6; }
+  .switch input:checked + .switch__slider::before { transform: translateX(22px); }
+  .empty-state { padding: 20px; border-radius: 14px; border: 1px dashed #334155; color: #94a3b8; text-align: center; }
+  .services-grid { align-items: start; }
+  @media (max-width: 960px) {
+    .grid--2, .provider-layout { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 767px) {
+    .hero-card { padding: 24px; }
+    .search-row { flex-direction: column; }
+    .tx-table { min-width: 560px; }
+  }
 `;
 
 function renderWalletPage(): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Agentic Mesh — Wallet</title>
-    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
-  </head>
-  <body>
-    <main class="card">
-      ${PORTAL_NAV}
-      <h1>Wallet</h1>
-      <div id="loading">Loading…</div>
-      <div id="content" hidden>
-        <div class="stat"><span class="stat-label">Address</span><span class="stat-value" id="address"></span></div>
-        <div class="stat"><span class="stat-label">DID</span><span class="stat-value" id="did"></span></div>
-        <div class="stat"><span class="stat-label">Balance</span><span class="stat-value" id="balance"></span></div>
-        <div class="stat"><span class="stat-label">Spent today</span><span class="stat-value" id="spent-day"></span></div>
-        <div class="stat"><span class="stat-label">Spent this hour</span><span class="stat-value" id="spent-hour"></span></div>
-        <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="spent-month"></span></div>
-        <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
+  return `
+    <section class="page-header">
+      <div class="page-header__content">
+        <h1>Wallet</h1>
+        <p>Inspect the active wallet, balance, and cumulative spending tracked by the daemon.</p>
       </div>
-    </main>
+    </section>
+    <section class="card stack">
+      <div id="loading" class="empty-state">Loading wallet details…</div>
+      <div id="content" hidden>
+        <div class="stat-list">
+          <div class="stat"><span class="stat-label">Address</span><span class="stat-value mono" id="address"></span></div>
+          <div class="stat"><span class="stat-label">DID</span><span class="stat-value mono" id="did"></span></div>
+          <div class="stat"><span class="stat-label">Balance</span><span class="stat-value" id="balance"></span></div>
+          <div class="stat"><span class="stat-label">Spent today</span><span class="stat-value" id="spent-day"></span></div>
+          <div class="stat"><span class="stat-label">Spent this hour</span><span class="stat-value" id="spent-hour"></span></div>
+          <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="spent-month"></span></div>
+          <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
+        </div>
+      </div>
+    </section>
     <script>
       (async () => {
         try {
@@ -933,29 +1075,24 @@ function renderWalletPage(): string {
           document.getElementById('loading').textContent = 'Failed to load wallet data.';
         }
       })();
-    </script>
-  </body>
-</html>`;
+    </script>`;
 }
 
 function renderDiscoverPage(): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Agentic Mesh — Discover</title>
-    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
-  </head>
-  <body>
-    <main class="card">
-      ${PORTAL_NAV}
-      <h1>Discover Agents</h1>
+  return `
+    <section class="page-header">
+      <div class="page-header__content">
+        <h1>Discover agents</h1>
+        <p>Search the registry for providers by capability and inspect their advertised pricing.</p>
+      </div>
+    </section>
+    <section class="card stack">
       <div class="search-row">
         <input id="capability" type="text" placeholder="Enter capability name…" />
         <button class="button" id="search">Search</button>
       </div>
       <div id="results"></div>
-    </main>
+    </section>
     <script>
       const input = document.getElementById('capability');
       const btn = document.getElementById('search');
@@ -965,79 +1102,82 @@ function renderDiscoverPage(): string {
         const cap = input.value.trim();
         if (!cap) return;
         btn.disabled = true;
-        results.innerHTML = '<p style="color:#94a3b8">Searching…</p>';
+        results.innerHTML = '<div class="empty-state">Searching the registry…</div>';
         try {
           const res = await fetch('/api/discover?capability=' + encodeURIComponent(cap));
           const data = await res.json();
           if (data.error) {
-            results.innerHTML = '<p class="error">' + esc(data.error) + '</p>';
+            results.innerHTML = '<div class="notice notice--error">' + esc(data.error) + '</div>';
             return;
           }
           if (!data.agents || data.agents.length === 0) {
-            results.innerHTML = '<p id="results-empty">No agents found for this capability.</p>';
+            results.innerHTML = '<div class="empty-state">No agents found for this capability.</div>';
             return;
           }
-          results.innerHTML = data.agents.map(a => {
-            const caps = (a.capabilities || []).map(c =>
-              '<span class="agent-cap">' + esc(c.name) + ' — ' + esc(c.priceMist) + ' MIST</span>'
-            ).join('');
-            return '<div class="agent-card">' +
-              '<div class="agent-name">' + esc(a.name) + (a.active ? '' : ' <span style="color:#f87171">(inactive)</span>') + '</div>' +
-              '<div class="agent-did">' + esc(a.did) + '</div>' +
-              (caps ? '<div>' + caps + '</div>' : '') +
-              (a.endpoint ? '<div style="margin-top:6px;font-size:0.8rem;color:#64748b">' + esc(a.endpoint) + '</div>' : '') +
-              '</div>';
-          }).join('');
+          results.innerHTML = '<div class="agent-grid">' + data.agents.map((agent) => {
+            const caps = (agent.capabilities || []).map((capability) => {
+              return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' MIST</span>';
+            }).join('');
+            return '<article class="agent-card">' +
+              '<div class="agent-name">' + esc(agent.name) + (agent.active ? '<span class="pill pill--success">Active</span>' : '<span class="pill pill--danger">Inactive</span>') + '</div>' +
+              '<div class="agent-did mono">' + esc(agent.did) + '</div>' +
+              (caps ? '<div class="tag-list">' + caps + '</div>' : '') +
+              (agent.endpoint ? '<div class="client-meta mono">' + esc(agent.endpoint) + '</div>' : '') +
+              '</article>';
+          }).join('') + '</div>';
         } catch (e) {
-          results.innerHTML = '<p class="error">Search failed.</p>';
+          results.innerHTML = '<div class="notice notice--error">Search failed.</div>';
         } finally {
           btn.disabled = false;
         }
       }
 
       btn.addEventListener('click', doSearch);
-      input.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') doSearch();
+      });
 
-      function esc(s) {
-        const d = document.createElement('div');
-        d.textContent = s ?? '';
-        return d.innerHTML;
+      function esc(value) {
+        const div = document.createElement('div');
+        div.textContent = value ?? '';
+        return div.innerHTML;
       }
-    </script>
-  </body>
-</html>`;
+    </script>`;
 }
 
 function renderTasksPage(): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Agentic Mesh — Tasks</title>
-    <style>${BASE_STYLES}${INNER_PAGE_STYLES}
-      .tx-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.82rem; }
-      .tx-table th { text-align: left; color: #94a3b8; padding: 6px 8px; border-bottom: 1px solid #1e293b; }
-      .tx-table td { padding: 6px 8px; border-bottom: 1px solid #0f172a; font-family: monospace; }
-      .tx-table tr:hover td { background: #0f172a; }
-    </style>
-  </head>
-  <body>
-    <main class="card">
-      ${PORTAL_NAV}
-      <h1>Tasks &amp; Spending</h1>
-      <div id="loading">Loading…</div>
+  return `
+    <section class="page-header">
+      <div class="page-header__content">
+        <h1>Tasks &amp; spending</h1>
+        <p>Review spend over time, provider status, and the latest metered task activity.</p>
+      </div>
+    </section>
+    <section class="card stack">
+      <div id="loading" class="empty-state">Loading task activity…</div>
       <div id="content" hidden>
-        <div class="stat"><span class="stat-label">Spent this hour</span><span class="stat-value" id="hour"></span></div>
-        <div class="stat"><span class="stat-label">Spent today</span><span class="stat-value" id="day"></span></div>
-        <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="month"></span></div>
-        <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
-        <div class="stat"><span class="stat-label">Provider running</span><span class="stat-value" id="provider"></span></div>
-        <h2 style="margin-top:24px;font-size:1rem;">Recent Transactions</h2>
+        <div class="stat-list">
+          <div class="stat"><span class="stat-label">Spent this hour</span><span class="stat-value" id="hour"></span></div>
+          <div class="stat"><span class="stat-label">Spent today</span><span class="stat-value" id="day"></span></div>
+          <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="month"></span></div>
+          <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
+          <div class="stat"><span class="stat-label">Provider running</span><span class="stat-value" id="provider"></span></div>
+        </div>
+        <div class="section-header section-header--compact">
+          <div>
+            <h2>Recent transactions</h2>
+            <p>Most recent metered task entries captured by the daemon.</p>
+          </div>
+        </div>
         <div id="entries"></div>
       </div>
-    </main>
+    </section>
     <script>
-      function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+      function esc(value) {
+        const div = document.createElement('div');
+        div.textContent = value ?? '';
+        return div.innerHTML;
+      }
       (async () => {
         try {
           const res = await fetch('/api/tasks');
@@ -1050,10 +1190,18 @@ function renderTasksPage(): string {
 
           const entries = data.recentEntries ?? [];
           if (entries.length === 0) {
-            document.getElementById('entries').innerHTML = '<p style="color:#64748b;font-style:italic">No transactions yet.</p>';
+            document.getElementById('entries').innerHTML = '<div class="empty-state">No transactions yet.</div>';
           } else {
-            const rows = entries.map(e => '<tr><td>' + esc(new Date(e.timestamp).toLocaleString()) + '</td><td>' + esc(e.amountSui) + ' SUI</td><td>' + esc(e.rail) + '</td><td>' + esc(e.taskId ?? '—') + '</td><td>' + esc(e.appId ?? '—') + '</td></tr>').join('');
-            document.getElementById('entries').innerHTML = '<table class="tx-table"><thead><tr><th>Time</th><th>Amount</th><th>Rail</th><th>Task</th><th>App</th></tr></thead><tbody>' + rows + '</tbody></table>';
+            const rows = entries.map((entry) => {
+              return '<tr>' +
+                '<td>' + esc(new Date(entry.timestamp).toLocaleString()) + '</td>' +
+                '<td>' + esc(entry.amountSui) + ' SUI</td>' +
+                '<td>' + esc(entry.rail) + '</td>' +
+                '<td>' + esc(entry.taskId ?? '—') + '</td>' +
+                '<td>' + esc(entry.appId ?? '—') + '</td>' +
+                '</tr>';
+            }).join('');
+            document.getElementById('entries').innerHTML = '<div class="table-wrap"><table class="tx-table"><thead><tr><th>Time</th><th>Amount</th><th>Rail</th><th>Task</th><th>App</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
           }
 
           document.getElementById('loading').hidden = true;
@@ -1062,78 +1210,502 @@ function renderTasksPage(): string {
           document.getElementById('loading').textContent = 'Failed to load task data.';
         }
       })();
-    </script>
-  </body>
-</html>`;
+    </script>`;
 }
 
 function renderServicesPage(): string {
-  return `<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>HiveMind Collective — My Services</title>
-    <style>${BASE_STYLES}${INNER_PAGE_STYLES}
-      .cap-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-      .cap-name { font-weight: 600; font-size: 0.9rem; }
-      .cap-desc { color: #94a3b8; font-size: 0.8rem; margin-top: 2px; }
-      .cap-price { font-family: monospace; font-size: 0.85rem; color: #60a5fa; white-space: nowrap; }
-      .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
-      .badge--active { background: #065f46; color: #6ee7b7; }
-      .badge--inactive { background: #7f1d1d; color: #fca5a5; }
-      .clients-section { margin-top: 32px; padding-top: 20px; border-top: 1px solid #1e293b; }
-      .client-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #0f172a; font-size: 0.85rem; }
-      .client-name { font-weight: 600; }
-      .client-meta { color: #94a3b8; font-size: 0.8rem; }
-    </style>
-  </head>
-  <body>
-    <main class="card">
-      ${PORTAL_NAV}
-      <h1>My Services</h1>
-      <div id="loading">Loading…</div>
-      <div id="content" hidden>
-        <div id="registration"></div>
-        <div class="clients-section">
-          <h2 style="font-size:1rem;margin-bottom:12px;">Connected Clients</h2>
-          <div id="clients"></div>
+  return `
+    <section class="page-header">
+      <div class="page-header__content">
+        <h1>Provider services</h1>
+        <p>Manage local provider settings, advertised capabilities, registration status, and active client connections.</p>
+      </div>
+    </section>
+    <section class="card stack">
+      <div class="section-header">
+        <div>
+          <h2>Provider configuration</h2>
+          <p>Enable provider mode, control registration defaults, and edit the capabilities exposed by this daemon.</p>
+        </div>
+        <div class="top-actions">
+          <button class="button button--secondary" id="reload-provider">Reload</button>
+          <button class="button" id="save-provider">Save configuration</button>
         </div>
       </div>
-    </main>
+      <div id="provider-notice" class="notice" hidden></div>
+      <div id="provider-loading" class="empty-state">Loading provider configuration…</div>
+      <div id="provider-config" class="stack" hidden>
+        <div class="grid grid--2">
+          <div class="switch-row">
+            <div class="switch-row__copy">
+              <strong>Provider enabled</strong>
+              <p>Accept work as a provider when the daemon runtime is started.</p>
+            </div>
+            <label class="switch" aria-label="Provider enabled">
+              <input type="checkbox" id="provider-enabled" />
+              <span class="switch__slider"></span>
+            </label>
+          </div>
+          <div class="switch-row">
+            <div class="switch-row__copy">
+              <strong>Auto-register</strong>
+              <p>Automatically publish or refresh your provider card when the runtime starts.</p>
+            </div>
+            <label class="switch" aria-label="Auto-register">
+              <input type="checkbox" id="provider-auto-register" />
+              <span class="switch__slider"></span>
+            </label>
+          </div>
+        </div>
+        <div class="grid grid--2">
+          <label for="provider-max-concurrency">
+            Max concurrency
+            <span class="field-hint">How many provider tasks can run at the same time.</span>
+            <input id="provider-max-concurrency" type="number" min="1" step="1" value="1" />
+          </label>
+          <div class="notice notice--warning">
+            Subprocess adapters are disabled unless you explicitly acknowledge command execution in the capability editor.
+          </div>
+        </div>
+        <div class="provider-layout">
+          <div class="section">
+            <div class="section-header section-header--compact">
+              <div>
+                <h3>Capabilities</h3>
+                <p id="capability-summary">0 configured</p>
+              </div>
+              <button class="button button--secondary" id="new-capability">Add capability</button>
+            </div>
+            <div id="capability-list" class="capability-list"></div>
+          </div>
+          <div class="surface capability-card">
+            <div class="section-header section-header--compact">
+              <div>
+                <h3 id="capability-editor-title">Add capability</h3>
+                <p>Create or update a provider capability before saving the full configuration.</p>
+              </div>
+            </div>
+            <div class="grid grid--2">
+              <label for="capability-name">
+                Name
+                <input id="capability-name" type="text" placeholder="summarize" />
+              </label>
+              <label for="capability-version">
+                Version
+                <input id="capability-version" type="text" placeholder="1.0.0" />
+              </label>
+            </div>
+            <label for="capability-description">
+              Description
+              <textarea id="capability-description" placeholder="Explain what this capability does for requesters."></textarea>
+            </label>
+            <div class="grid grid--2">
+              <label for="capability-price-mist">
+                Price (MIST)
+                <input id="capability-price-mist" type="number" min="1" step="1" placeholder="1000" />
+              </label>
+              <label for="capability-currency">
+                Currency (optional)
+                <input id="capability-currency" type="text" placeholder="MIST" />
+              </label>
+            </div>
+            <label for="capability-adapter">
+              Adapter type
+              <select id="capability-adapter">
+                <option value="echo">echo</option>
+                <option value="webhook">webhook</option>
+                <option value="subprocess">subprocess</option>
+                <option value="mcp-sampling">mcp-sampling</option>
+              </select>
+            </label>
+            <div id="adapter-fields" class="grid"></div>
+            <label for="capability-extra-config">
+              Additional adapter config (JSON)
+              <span class="field-hint">Optional extra adapter fields such as headers, timeouts, or model hints.</span>
+              <textarea id="capability-extra-config" placeholder="{\n  \"timeoutMs\": 30000\n}"></textarea>
+            </label>
+            <div class="top-actions">
+              <button class="button button--secondary" id="reset-capability">Clear</button>
+              <button class="button" id="save-capability">Save capability</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div class="grid grid--2 services-grid">
+      <section class="card stack">
+        <div class="section-header section-header--compact">
+          <div>
+            <h2>On-chain registration</h2>
+            <p>Current registry view for the active wallet.</p>
+          </div>
+        </div>
+        <div id="registration" class="empty-state">Loading registry status…</div>
+      </section>
+      <section class="card stack">
+        <div class="section-header section-header--compact">
+          <div>
+            <h2>Connected clients</h2>
+            <p>Applications currently connected to the daemon over IPC.</p>
+          </div>
+        </div>
+        <div id="clients" class="clients-list"></div>
+      </section>
+    </div>
     <script>
-      function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+      const UI_ADAPTERS = ['echo', 'webhook', 'subprocess', 'mcp-sampling'];
+      const REQUIRED_KEYS = {
+        echo: [],
+        webhook: ['url'],
+        subprocess: ['command', 'allowSubprocess'],
+        'mcp-sampling': ['appName', 'systemPrompt'],
+      };
 
-      async function loadServices() {
+      const els = {
+        notice: document.getElementById('provider-notice'),
+        loading: document.getElementById('provider-loading'),
+        config: document.getElementById('provider-config'),
+        enabled: document.getElementById('provider-enabled'),
+        autoRegister: document.getElementById('provider-auto-register'),
+        maxConcurrency: document.getElementById('provider-max-concurrency'),
+        capabilitySummary: document.getElementById('capability-summary'),
+        capabilityList: document.getElementById('capability-list'),
+        capabilityEditorTitle: document.getElementById('capability-editor-title'),
+        name: document.getElementById('capability-name'),
+        description: document.getElementById('capability-description'),
+        version: document.getElementById('capability-version'),
+        priceMist: document.getElementById('capability-price-mist'),
+        currency: document.getElementById('capability-currency'),
+        adapter: document.getElementById('capability-adapter'),
+        adapterFields: document.getElementById('adapter-fields'),
+        extraConfig: document.getElementById('capability-extra-config'),
+        saveProvider: document.getElementById('save-provider'),
+        reloadProvider: document.getElementById('reload-provider'),
+        newCapability: document.getElementById('new-capability'),
+        saveCapability: document.getElementById('save-capability'),
+        resetCapability: document.getElementById('reset-capability'),
+        registration: document.getElementById('registration'),
+        clients: document.getElementById('clients'),
+      };
+
+      let providerConfig = { enabled: false, autoRegister: false, maxConcurrency: 1, capabilities: [] };
+      let editingIndex = null;
+
+      function esc(value) {
+        const div = document.createElement('div');
+        div.textContent = value ?? '';
+        return div.innerHTML;
+      }
+
+      function showNotice(message, tone) {
+        if (!message) {
+          els.notice.hidden = true;
+          els.notice.textContent = '';
+          els.notice.className = 'notice';
+          return;
+        }
+        els.notice.hidden = false;
+        els.notice.textContent = message;
+        els.notice.className = 'notice notice--' + tone;
+      }
+
+      function createEmptyProviderConfig() {
+        return { enabled: false, autoRegister: false, maxConcurrency: 1, capabilities: [] };
+      }
+
+      function defaultCapability() {
+        return {
+          name: '',
+          description: '',
+          version: '1.0.0',
+          priceMist: 1,
+          currency: '',
+          adapter: 'echo',
+          adapterConfig: {},
+        };
+      }
+
+      function normalizeCapability(capability) {
+        const adapter = UI_ADAPTERS.includes(capability?.adapter) ? capability.adapter : 'echo';
+        const adapterConfig = capability && capability.adapterConfig && typeof capability.adapterConfig === 'object' && !Array.isArray(capability.adapterConfig)
+          ? { ...capability.adapterConfig }
+          : {};
+        return {
+          name: typeof capability?.name === 'string' ? capability.name : '',
+          description: typeof capability?.description === 'string' ? capability.description : '',
+          version: typeof capability?.version === 'string' ? capability.version : '1.0.0',
+          priceMist: Number.isInteger(capability?.priceMist) && capability.priceMist > 0 ? capability.priceMist : 1,
+          currency: typeof capability?.currency === 'string' ? capability.currency : '',
+          adapter,
+          adapterConfig,
+        };
+      }
+
+      function normalizeProviderConfig(data) {
+        return {
+          enabled: data?.enabled === true,
+          autoRegister: data?.autoRegister === true,
+          maxConcurrency: Number.isInteger(data?.maxConcurrency) && data.maxConcurrency > 0 ? data.maxConcurrency : 1,
+          capabilities: Array.isArray(data?.capabilities) ? data.capabilities.map(normalizeCapability) : [],
+        };
+      }
+
+      function cloneJson(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function getVisibleExtraConfig(capability) {
+        const config = capability?.adapterConfig && typeof capability.adapterConfig === 'object' ? capability.adapterConfig : {};
+        const hiddenKeys = new Set(REQUIRED_KEYS[capability?.adapter] || []);
+        const extra = {};
+        Object.keys(config).forEach((key) => {
+          if (!hiddenKeys.has(key)) {
+            extra[key] = config[key];
+          }
+        });
+        return extra;
+      }
+
+      function describeAdapterConfig(capability) {
+        const config = capability.adapterConfig || {};
+        if (capability.adapter === 'webhook' && typeof config.url === 'string') return config.url;
+        if (capability.adapter === 'subprocess' && typeof config.command === 'string') return config.command;
+        if (capability.adapter === 'mcp-sampling' && typeof config.appName === 'string') return config.appName;
+        return 'No additional adapter config';
+      }
+
+      function renderCapabilityList() {
+        els.capabilitySummary.textContent = providerConfig.capabilities.length + ' configured';
+        if (providerConfig.capabilities.length === 0) {
+          els.capabilityList.innerHTML = '<div class="empty-state">No capabilities configured yet. Add one to describe the services offered by this daemon.</div>';
+          return;
+        }
+
+        els.capabilityList.innerHTML = providerConfig.capabilities.map((capability, index) => {
+          const description = capability.description ? '<div class="capability-card__description">' + esc(capability.description) + '</div>' : '';
+          return '<article class="surface surface--muted capability-card">' +
+            '<div class="capability-card__title">' +
+              '<div>' +
+                '<div class="agent-name">' + esc(capability.name) + '</div>' +
+                description +
+              '</div>' +
+              '<div class="capability-card__meta">' +
+                '<span class="pill">v' + esc(capability.version) + '</span>' +
+                '<span class="pill pill--accent">' + esc(capability.adapter) + '</span>' +
+                '<span class="pill">' + esc(String(capability.priceMist)) + ' ' + esc(capability.currency || 'MIST') + '</span>' +
+              '</div>' +
+            '</div>' +
+            '<div class="client-meta mono">' + esc(describeAdapterConfig(capability)) + '</div>' +
+            '<div class="top-actions">' +
+              '<button class="button button--secondary" type="button" data-action="edit" data-index="' + esc(String(index)) + '">Edit</button>' +
+              '<button class="button button--danger" type="button" data-action="delete" data-index="' + esc(String(index)) + '">Delete</button>' +
+            '</div>' +
+          '</article>';
+        }).join('');
+      }
+
+      function setCapabilityEditor(capability, index) {
+        editingIndex = typeof index === 'number' ? index : null;
+        const next = normalizeCapability(capability || defaultCapability());
+        els.capabilityEditorTitle.textContent = editingIndex === null ? 'Add capability' : 'Edit capability';
+        els.name.value = next.name;
+        els.description.value = next.description;
+        els.version.value = next.version;
+        els.priceMist.value = String(next.priceMist);
+        els.currency.value = next.currency || '';
+        els.adapter.value = next.adapter;
+        els.extraConfig.value = Object.keys(getVisibleExtraConfig(next)).length > 0 ? JSON.stringify(getVisibleExtraConfig(next), null, 2) : '';
+        renderAdapterFields(next);
+      }
+
+      function resetCapabilityEditor() {
+        setCapabilityEditor(defaultCapability(), null);
+      }
+
+      function renderAdapterFields(capability) {
+        const config = capability?.adapterConfig && typeof capability.adapterConfig === 'object' ? capability.adapterConfig : {};
+        if (capability.adapter === 'echo') {
+          els.adapterFields.innerHTML = '<div class="notice">Echo requires no adapter config. It returns the request payload as-is.</div>';
+          return;
+        }
+        if (capability.adapter === 'webhook') {
+          els.adapterFields.innerHTML = '<label for="adapter-webhook-url">Webhook URL<input id="adapter-webhook-url" data-field="url" type="url" placeholder="https://example.com/webhook" value="' + esc(config.url || '') + '" /></label>';
+          return;
+        }
+        if (capability.adapter === 'subprocess') {
+          const checked = config.allowSubprocess === true ? ' checked' : '';
+          els.adapterFields.innerHTML = '<label for="adapter-subprocess-command">Command<input id="adapter-subprocess-command" data-field="command" type="text" placeholder="python worker.py" value="' + esc(config.command || '') + '" /></label>' +
+            '<div class="notice notice--warning">Subprocess adapters can execute local commands. Save is blocked until you explicitly acknowledge this risk.</div>' +
+            '<label class="switch-row" for="adapter-subprocess-allow"><span class="switch-row__copy"><strong>Allow subprocess execution</strong><p>I understand this capability can launch local commands.</p></span><span><input id="adapter-subprocess-allow" data-field="allowSubprocess" type="checkbox"' + checked + ' /></span></label>';
+          return;
+        }
+        if (capability.adapter === 'mcp-sampling') {
+          els.adapterFields.innerHTML = '<label for="adapter-mcp-app-name">App name<input id="adapter-mcp-app-name" data-field="appName" type="text" placeholder="Portal Assistant" value="' + esc(config.appName || '') + '" /></label>' +
+            '<label for="adapter-mcp-system-prompt">System prompt<textarea id="adapter-mcp-system-prompt" data-field="systemPrompt" placeholder="Describe the assistant behavior for the MCP sampling adapter.">' + esc(config.systemPrompt || '') + '</textarea></label>';
+          return;
+        }
+      }
+
+      function parseExtraConfig(lenient) {
+        const raw = els.extraConfig.value.trim();
+        if (!raw) {
+          return {};
+        }
+        try {
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            throw new Error('Additional adapter config must be a JSON object.');
+          }
+          return parsed;
+        } catch (error) {
+          if (lenient) {
+            return {};
+          }
+          throw error instanceof Error ? error : new Error('Additional adapter config must be valid JSON.');
+        }
+      }
+
+      function readCapabilityForm(lenient) {
+        const adapter = els.adapter.value;
+        const capability = {
+          name: els.name.value.trim(),
+          description: els.description.value.trim(),
+          version: els.version.value.trim(),
+          priceMist: Number.parseInt(els.priceMist.value || '0', 10),
+          currency: els.currency.value.trim(),
+          adapter,
+          adapterConfig: parseExtraConfig(lenient),
+        };
+
+        if (adapter === 'webhook') {
+          const url = (document.getElementById('adapter-webhook-url')?.value || '').trim();
+          if (!lenient && !url) throw new Error('Webhook adapter requires a URL.');
+          if (url) capability.adapterConfig.url = url;
+        } else if (adapter === 'subprocess') {
+          const command = (document.getElementById('adapter-subprocess-command')?.value || '').trim();
+          const allowSubprocess = document.getElementById('adapter-subprocess-allow')?.checked === true;
+          if (!lenient && !command) throw new Error('Subprocess adapter requires a command.');
+          if (!lenient && !allowSubprocess) throw new Error('Subprocess adapter requires explicit acknowledgement before saving.');
+          if (command) capability.adapterConfig.command = command;
+          if (allowSubprocess) capability.adapterConfig.allowSubprocess = true;
+        } else if (adapter === 'mcp-sampling') {
+          const appName = (document.getElementById('adapter-mcp-app-name')?.value || '').trim();
+          const systemPrompt = (document.getElementById('adapter-mcp-system-prompt')?.value || '').trim();
+          if (!lenient && !appName) throw new Error('mcp-sampling adapter requires an app name.');
+          if (!lenient && !systemPrompt) throw new Error('mcp-sampling adapter requires a system prompt.');
+          if (appName) capability.adapterConfig.appName = appName;
+          if (systemPrompt) capability.adapterConfig.systemPrompt = systemPrompt;
+        }
+
+        if (adapter === 'echo' && Object.keys(capability.adapterConfig).length === 0) {
+          capability.adapterConfig = undefined;
+        }
+
+        return capability;
+      }
+
+      function validateCapability(capability) {
+        if (!capability.name || !capability.description || !capability.version) {
+          throw new Error('Capability name, description, and version are required.');
+        }
+        if (!Number.isInteger(capability.priceMist) || capability.priceMist <= 0) {
+          throw new Error('Capability price must be a positive integer in MIST.');
+        }
+      }
+
+      function collectProviderConfig() {
+        return {
+          enabled: els.enabled.checked,
+          autoRegister: els.autoRegister.checked,
+          maxConcurrency: Math.max(1, Number.parseInt(els.maxConcurrency.value || '1', 10) || 1),
+          capabilities: providerConfig.capabilities.map((capability) => {
+            const normalized = normalizeCapability(capability);
+            return {
+              name: normalized.name,
+              description: normalized.description,
+              version: normalized.version,
+              priceMist: normalized.priceMist,
+              currency: normalized.currency || undefined,
+              adapter: normalized.adapter,
+              adapterConfig: normalized.adapterConfig && Object.keys(normalized.adapterConfig).length > 0 ? cloneJson(normalized.adapterConfig) : undefined,
+            };
+          }),
+        };
+      }
+
+      async function loadProviderConfig() {
+        els.loading.hidden = false;
+        els.config.hidden = true;
+        showNotice('', 'success');
+        try {
+          const res = await fetch('/api/provider/config');
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(typeof data.error === 'string' ? data.error : 'Unable to load provider configuration.');
+          }
+          providerConfig = normalizeProviderConfig(data || createEmptyProviderConfig());
+          els.enabled.checked = providerConfig.enabled;
+          els.autoRegister.checked = providerConfig.autoRegister;
+          els.maxConcurrency.value = String(providerConfig.maxConcurrency || 1);
+          renderCapabilityList();
+          resetCapabilityEditor();
+          els.loading.hidden = true;
+          els.config.hidden = false;
+        } catch (error) {
+          els.loading.textContent = 'Failed to load provider configuration.';
+          showNotice(error instanceof Error ? error.message : 'Failed to load provider configuration.', 'error');
+        }
+      }
+
+      async function saveProviderConfig() {
+        els.saveProvider.disabled = true;
+        showNotice('', 'success');
+        try {
+          const payload = collectProviderConfig();
+          const res = await fetch('/api/provider/config', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            throw new Error(typeof data.error === 'string' ? data.error : 'Unable to save provider settings.');
+          }
+          showNotice('Provider configuration saved. Restart callback completed successfully.', 'success');
+          await loadProviderConfig();
+          await loadRegistration();
+        } catch (error) {
+          showNotice(error instanceof Error ? error.message : 'Unable to save provider settings.', 'error');
+        } finally {
+          els.saveProvider.disabled = false;
+        }
+      }
+
+      async function loadRegistration() {
         try {
           const res = await fetch('/api/services');
           const data = await res.json();
-          const el = document.getElementById('registration');
-
           if (data.error) {
-            el.innerHTML = '<p class="error">' + esc(data.error) + '</p>';
-          } else if (!data.registered) {
-            el.innerHTML = '<p style="color:#94a3b8;font-style:italic">No agent registered on-chain for this wallet. Use the <code style="display:inline;padding:2px 6px">collective_register</code> tool to register.</p>';
-          } else {
-            const a = data.agent;
-            const badge = a.active
-              ? '<span class="badge badge--active">Active</span>'
-              : '<span class="badge badge--inactive">Inactive</span>';
-            const caps = (a.capabilities || []).map(c =>
-              '<div class="cap-row"><div><div class="cap-name">' + esc(c.name) + '</div>' +
-              (c.description ? '<div class="cap-desc">' + esc(c.description) + '</div>' : '') +
-              '</div><div class="cap-price">' + esc(c.priceMist) + ' MIST (' + esc(c.rail) + ')</div></div>'
-            ).join('');
-
-            el.innerHTML =
-              '<div class="stat"><span class="stat-label">Name</span><span class="stat-value">' + esc(a.name) + ' ' + badge + '</span></div>' +
-              '<div class="stat"><span class="stat-label">DID</span><span class="stat-value">' + esc(a.did) + '</span></div>' +
-              (a.endpoint ? '<div class="stat"><span class="stat-label">Endpoint</span><span class="stat-value">' + esc(a.endpoint) + '</span></div>' : '') +
-              (a.payoutAddress ? '<div class="stat"><span class="stat-label">Payout Address</span><span class="stat-value">' + esc(a.payoutAddress) + '</span></div>' : '') +
-              '<h2 style="font-size:1rem;margin-top:20px;margin-bottom:12px;">Capabilities (' + a.capabilities.length + ')</h2>' +
-              (caps || '<p style="color:#94a3b8;font-style:italic">No capabilities registered.</p>');
+            els.registration.innerHTML = '<div class="notice notice--error">' + esc(data.error) + '</div>';
+            return;
           }
-        } catch (e) {
-          document.getElementById('registration').innerHTML = '<p class="error">Failed to load service data.</p>';
+          if (!data.registered) {
+            els.registration.innerHTML = '<div class="empty-state">No agent is registered on-chain for this wallet yet. Use the <span class="mono">collective_register</span> tool to publish a provider card.</div>';
+            return;
+          }
+          const agent = data.agent;
+          const capabilities = (agent.capabilities || []).map((capability) => {
+            return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' MIST</span>';
+          }).join('');
+          els.registration.innerHTML = '<div class="stat-list">' +
+            '<div class="stat"><span class="stat-label">Name</span><span class="stat-value">' + esc(agent.name) + ' ' + (agent.active ? '<span class="pill pill--success">Active</span>' : '<span class="pill pill--danger">Inactive</span>') + '</span></div>' +
+            '<div class="stat"><span class="stat-label">DID</span><span class="stat-value mono">' + esc(agent.did) + '</span></div>' +
+            (agent.endpoint ? '<div class="stat"><span class="stat-label">Endpoint</span><span class="stat-value mono">' + esc(agent.endpoint) + '</span></div>' : '') +
+            (agent.payoutAddress ? '<div class="stat"><span class="stat-label">Payout address</span><span class="stat-value mono">' + esc(agent.payoutAddress) + '</span></div>' : '') +
+            '</div>' +
+            (capabilities ? '<div class="tag-list">' + capabilities + '</div>' : '<div class="empty-state">No capabilities are currently registered on-chain.</div>');
+        } catch (error) {
+          els.registration.innerHTML = '<div class="notice notice--error">Failed to load registry data.</div>';
         }
       }
 
@@ -1141,30 +1713,116 @@ function renderServicesPage(): string {
         try {
           const res = await fetch('/api/clients');
           const data = await res.json();
-          const el = document.getElementById('clients');
           const clients = data.clients || [];
-
           if (clients.length === 0) {
-            el.innerHTML = '<p style="color:#94a3b8;font-style:italic">No clients connected.</p>';
-          } else {
-            el.innerHTML = clients.map(c =>
-              '<div class="client-row"><div><span class="client-name">' + esc(c.appName) + '</span>' +
-              (c.profile ? ' <span class="client-meta">(' + esc(c.profile) + ')</span>' : '') +
-              '</div><span class="client-meta">PID ' + esc(String(c.pid)) + ' · ' + esc(c.connectedAgo) + '</span></div>'
-            ).join('');
+            els.clients.innerHTML = '<div class="empty-state">No clients connected.</div>';
+            return;
           }
-        } catch (e) {
-          document.getElementById('clients').innerHTML = '<p class="error">Failed to load client data.</p>';
+          els.clients.innerHTML = clients.map((client) => {
+            return '<div class="client-row">' +
+              '<div><div class="client-name">' + esc(client.appName) + '</div>' +
+              (client.profile ? '<div class="client-meta">Profile: ' + esc(client.profile) + '</div>' : '') +
+              '</div>' +
+              '<div class="client-meta">PID ' + esc(String(client.pid)) + ' · ' + esc(client.connectedAgo) + '</div>' +
+            '</div>';
+          }).join('');
+        } catch (error) {
+          els.clients.innerHTML = '<div class="notice notice--error">Failed to load client data.</div>';
         }
       }
 
-      Promise.all([loadServices(), loadClients()]).then(() => {
-        document.getElementById('loading').hidden = true;
-        document.getElementById('content').hidden = false;
+      els.reloadProvider.addEventListener('click', loadProviderConfig);
+      els.saveProvider.addEventListener('click', saveProviderConfig);
+      els.newCapability.addEventListener('click', () => {
+        resetCapabilityEditor();
+        els.name.focus();
       });
-    </script>
+      els.resetCapability.addEventListener('click', resetCapabilityEditor);
+      els.adapter.addEventListener('change', () => {
+        const draft = readCapabilityForm(true);
+        draft.adapter = els.adapter.value;
+        draft.adapterConfig = {};
+        renderAdapterFields(draft);
+      });
+      els.saveCapability.addEventListener('click', () => {
+        try {
+          const capability = readCapabilityForm(false);
+          validateCapability(capability);
+          if (editingIndex === null) {
+            providerConfig.capabilities.push(capability);
+          } else {
+            providerConfig.capabilities[editingIndex] = capability;
+          }
+          renderCapabilityList();
+          resetCapabilityEditor();
+          showNotice('Capability saved locally. Save configuration to persist the changes.', 'success');
+        } catch (error) {
+          showNotice(error instanceof Error ? error.message : 'Unable to save capability.', 'error');
+        }
+      });
+      els.capabilityList.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target.closest('button[data-action]') : null;
+        if (!target) return;
+        const index = Number.parseInt(target.dataset.index || '', 10);
+        if (!Number.isInteger(index) || index < 0 || index >= providerConfig.capabilities.length) {
+          return;
+        }
+        if (target.dataset.action === 'edit') {
+          setCapabilityEditor(providerConfig.capabilities[index], index);
+          els.name.focus();
+          return;
+        }
+        if (target.dataset.action === 'delete') {
+          providerConfig.capabilities.splice(index, 1);
+          renderCapabilityList();
+          if (editingIndex === index) {
+            resetCapabilityEditor();
+          }
+          showNotice('Capability removed locally. Save configuration to persist the change.', 'success');
+        }
+      });
+
+      Promise.all([loadProviderConfig(), loadRegistration(), loadClients()]).catch(() => undefined);
+    </script>`;
+}
+
+function wrapInLayout(title: string, activeNav: string, bodyHtml: string): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand__mark">⬢</span>
+          <div class="brand__copy">
+            <strong>HiveMind Collective</strong>
+            <span>Local portal · 127.0.0.1</span>
+          </div>
+        </div>
+        ${renderPortalNav(activeNav)}
+      </aside>
+      <main class="content">
+        <div class="panel">
+          ${bodyHtml}
+        </div>
+      </main>
+    </div>
   </body>
 </html>`;
+}
+
+function renderPortalNav(activeNav: string): string {
+  return `<nav class="nav">${PORTAL_NAV.map((item) => {
+    const activeClass = item.id === activeNav ? ' is-active' : '';
+    const current = item.id === activeNav ? ' aria-current="page"' : '';
+    return `<a class="nav__item${activeClass}" href="${item.href}"${current}><span class="nav__icon" aria-hidden="true">${item.icon}</span><span class="nav__label">${item.label}</span></a>`;
+  }).join('')}</nav>`;
 }
 
 function formatDuration(ms: number): string {
@@ -1317,6 +1975,168 @@ function isProviderConfigured(config: DaemonFullConfig, provider: PortalOAuthPro
   return provider === 'google' ? Boolean(config.auth.google?.clientId) : Boolean(config.auth.apple?.clientId);
 }
 
+function getProviderConfigForPortal(config: DaemonFullConfig): PortalProviderConfig {
+  return {
+    enabled: config.provider?.enabled ?? false,
+    autoRegister: config.provider?.autoRegister ?? false,
+    maxConcurrency: config.provider?.maxConcurrency ?? 1,
+    capabilities: (config.provider?.capabilities ?? [])
+      .filter((capability) => capability.adapter !== 'local-function')
+      .map((capability) => ({
+        name: capability.name,
+        description: capability.description,
+        version: capability.version,
+        priceMist: capability.priceMist,
+        currency: capability.currency,
+        adapter: capability.adapter,
+        adapterConfig: sanitizeJsonRecord(capability.adapterConfig),
+      })),
+  };
+}
+
+function sanitizeJsonRecord(value: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+  } catch {
+    return undefined;
+  }
+}
+
+function validateProviderConfigInput(body: unknown): PortalProviderConfig {
+  if (!isRecord(body)) {
+    throw new ProviderConfigValidationError('Provider config payload must be an object.');
+  }
+
+  if (typeof body.enabled !== 'boolean') {
+    throw new ProviderConfigValidationError('enabled must be a boolean.');
+  }
+
+  if (!Array.isArray(body.capabilities)) {
+    throw new ProviderConfigValidationError('capabilities must be an array.');
+  }
+
+  const autoRegister = readOptionalBoolean(body.autoRegister);
+  if (body.autoRegister !== undefined && autoRegister === undefined) {
+    throw new ProviderConfigValidationError('autoRegister must be a boolean when provided.');
+  }
+
+  const maxConcurrency = parseOptionalPositiveInteger(body.maxConcurrency, 'maxConcurrency');
+
+  return {
+    enabled: body.enabled,
+    autoRegister,
+    maxConcurrency,
+    capabilities: body.capabilities.map((capability, index) => validateProviderCapabilityInput(capability, index)),
+  };
+}
+
+function validateProviderCapabilityInput(value: unknown, index: number): PortalProviderCapability {
+  if (!isRecord(value)) {
+    throw new ProviderConfigValidationError(`capabilities[${index}] must be an object.`);
+  }
+
+  const name = requireNonEmptyString(value.name, `capabilities[${index}].name`);
+  const description = requireNonEmptyString(value.description, `capabilities[${index}].description`);
+  const version = requireNonEmptyString(value.version, `capabilities[${index}].version`);
+  const priceMist = parsePositiveInteger(value.priceMist, `capabilities[${index}].priceMist`);
+  const adapter = validateProviderAdapter(value.adapter, index);
+  const currency = value.currency === undefined ? undefined : requireNonEmptyString(value.currency, `capabilities[${index}].currency`);
+  const adapterConfig = validateProviderAdapterConfig(value.adapterConfig, adapter, index);
+
+  return {
+    name,
+    description,
+    version,
+    priceMist,
+    currency,
+    adapter,
+    adapterConfig,
+  };
+}
+
+function validateProviderAdapter(value: unknown, index: number): PortalProviderCapability['adapter'] {
+  const adapter = requireNonEmptyString(value, `capabilities[${index}].adapter`) as PortalProviderCapability['adapter'];
+  if (!VALID_PROVIDER_ADAPTERS.has(adapter)) {
+    throw new ProviderConfigValidationError(`capabilities[${index}].adapter must be one of: ${Array.from(VALID_PROVIDER_ADAPTERS).join(', ')}.`);
+  }
+  if (adapter === 'local-function') {
+    throw new ProviderConfigValidationError('local-function adapters are programmatic only and cannot be configured from the portal.');
+  }
+  return adapter;
+}
+
+function validateProviderAdapterConfig(
+  value: unknown,
+  adapter: PortalProviderCapability['adapter'],
+  index: number,
+): Record<string, unknown> | undefined {
+  if (value !== undefined && !isRecord(value)) {
+    throw new ProviderConfigValidationError(`capabilities[${index}].adapterConfig must be an object when provided.`);
+  }
+
+  const adapterConfig = value ? { ...value } : {};
+
+  switch (adapter) {
+    case 'echo':
+      return Object.keys(adapterConfig).length > 0 ? adapterConfig : undefined;
+    case 'webhook': {
+      const url = requireNonEmptyString(adapterConfig.url, `capabilities[${index}].adapterConfig.url`);
+      validateHttpUrl(url, 'Webhook URL');
+      return { ...adapterConfig, url };
+    }
+    case 'subprocess': {
+      const command = requireNonEmptyString(adapterConfig.command, `capabilities[${index}].adapterConfig.command`);
+      if (adapterConfig.allowSubprocess !== true) {
+        throw new ProviderConfigValidationError('subprocess adapters require adapterConfig.allowSubprocess to be true.');
+      }
+      return { ...adapterConfig, command, allowSubprocess: true };
+    }
+    case 'mcp-sampling': {
+      const appName = requireNonEmptyString(adapterConfig.appName, `capabilities[${index}].adapterConfig.appName`);
+      const systemPrompt = requireNonEmptyString(adapterConfig.systemPrompt, `capabilities[${index}].adapterConfig.systemPrompt`);
+      return { ...adapterConfig, appName, systemPrompt };
+    }
+    default:
+      return Object.keys(adapterConfig).length > 0 ? adapterConfig : undefined;
+  }
+}
+
+function requireNonEmptyString(value: unknown, field: string): string {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+  throw new ProviderConfigValidationError(`${field} must be a non-empty string.`);
+}
+
+function parsePositiveInteger(value: unknown, field: string): number {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string' && /^\d+$/.test(value.trim()) && Number(value.trim()) > 0) {
+    return Number(value.trim());
+  }
+  throw new ProviderConfigValidationError(`${field} must be a positive integer.`);
+}
+
+function parseOptionalPositiveInteger(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  return parsePositiveInteger(value, field);
+}
+
+function readOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -1345,36 +2165,132 @@ const HTML_ESCAPES: Record<string, string> = {
   "'": '&#39;',
 };
 
-const BASE_STYLES = `
-  :root { color-scheme: dark; }
-  body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; display: grid; place-items: center; min-height: 100vh; margin: 0; }
-  .card { width: min(480px, 92vw); background: #111827; border: 1px solid #334155; border-radius: 16px; padding: 32px; box-shadow: 0 24px 48px rgba(15, 23, 42, 0.35); }
-  h1 { margin-top: 0; }
-  p, label { color: #cbd5e1; }
-  code { display: block; padding: 12px; border-radius: 10px; background: #020617; overflow-wrap: anywhere; margin-bottom: 20px; }
-  .button, button { display: inline-flex; justify-content: center; align-items: center; gap: 10px; border: 0; border-radius: 999px; background: #2563eb; color: white; padding: 12px 18px; text-decoration: none; font-weight: 600; cursor: pointer; }
-  .auth-buttons { display: grid; gap: 12px; margin-top: 20px; }
-  .button--google { background: #2563eb; }
-  .button--apple { background: #000; color: #fff; border: 1px solid #1f2937; }
-  .button__icon { font-size: 1.1rem; line-height: 1; }
-  input[type='range'] { width: 100%; margin: 16px 0 12px; }
-  .success { color: #86efac; }
-  .error { color: #fca5a5; }
-`;
+const VALID_PROVIDER_ADAPTERS = new Set<PortalProviderCapability['adapter']>([
+  'echo',
+  'local-function',
+  'webhook',
+  'subprocess',
+  'mcp-sampling',
+]);
 
-const NETWORK_PAGE_STYLES = `
-  .nav { margin-bottom: 16px; }
-  .nav a { color: #60a5fa; text-decoration: none; font-size: 0.9rem; }
-  .nav a:hover { text-decoration: underline; }
-  .presets { display: flex; gap: 8px; margin-bottom: 20px; }
-  .preset { background: #1e293b; border: 1px solid #475569; border-radius: 8px; color: #e2e8f0; padding: 8px 14px; font-size: 0.85rem; cursor: pointer; }
-  .preset:hover { background: #334155; }
-  label { display: block; margin-top: 16px; font-size: 0.85rem; font-weight: 600; }
-  .required { color: #f87171; }
-  input[type='url'], input[type='text'] { display: block; width: 100%; box-sizing: border-box; margin-top: 6px; padding: 10px 12px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-family: monospace; font-size: 0.85rem; }
-  input[type='url']:focus, input[type='text']:focus { outline: none; border-color: #2563eb; }
-  .hint { color: #94a3b8; font-size: 0.85rem; margin-top: 12px; }
-  #save { margin-top: 24px; width: 100%; }
+const BASE_STYLES = `
+  :root {
+    color-scheme: dark;
+    --bg: #0a0f1a;
+    --sidebar: #0f1628;
+    --card: #111827;
+    --surface: #0b1220;
+    --border: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #3b82f6;
+    --success: #10b981;
+    --danger: #ef4444;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); }
+  body { font-family: inherit; }
+  a { color: inherit; }
+  h1, h2, h3 { margin: 0; line-height: 1.2; }
+  p { margin: 0; color: #cbd5e1; line-height: 1.65; }
+  strong { color: var(--text); }
+  label { display: grid; gap: 8px; color: var(--text); font-weight: 600; }
+  input, textarea, select { width: 100%; border-radius: 12px; border: 1px solid #334155; background: #09101c; color: var(--text); padding: 12px 14px; font: inherit; }
+  textarea { min-height: 120px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
+  input[type='range'] { padding: 0; background: transparent; border: 0; box-shadow: none; }
+  button, .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-height: 44px;
+    padding: 11px 18px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    background: var(--accent);
+    color: white;
+    text-decoration: none;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  }
+  button:hover, .button:hover { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(59, 130, 246, 0.18); }
+  button:disabled, .button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
+  .button--secondary { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.35); color: #bfdbfe; }
+  .button--danger { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.35); color: #fecaca; }
+  .button--apple { background: #020617; border-color: #334155; color: #e2e8f0; }
+  .button__icon { font-size: 1rem; line-height: 1; }
+  .layout { min-height: 100vh; display: grid; grid-template-columns: 220px minmax(0, 1fr); }
+  .sidebar { display: flex; flex-direction: column; gap: 28px; padding: 28px 20px; background: var(--sidebar); border-right: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 14px; padding: 6px 6px 0; }
+  .brand__mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 14px;
+    background: rgba(59, 130, 246, 0.16);
+    color: #93c5fd;
+    font-size: 1.1rem;
+  }
+  .brand__copy { display: grid; gap: 4px; }
+  .brand__copy strong { font-size: 0.95rem; }
+  .brand__copy span { color: var(--muted); font-size: 0.84rem; }
+  .nav { display: grid; gap: 8px; }
+  .nav__item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid transparent;
+    color: #cbd5e1;
+    text-decoration: none;
+  }
+  .nav__item:hover { background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.18); color: #f8fafc; }
+  .nav__item.is-active { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.35); color: white; }
+  .nav__icon { width: 18px; text-align: center; }
+  .content { padding: 32px; }
+  .panel { max-width: 1280px; margin: 0 auto; display: grid; gap: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 22px; padding: 28px; box-shadow: 0 24px 60px rgba(2, 6, 23, 0.38); }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.14);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    color: #e2e8f0;
+    font-size: 0.82rem;
+    font-weight: 700;
+  }
+  .pill--accent { background: rgba(59, 130, 246, 0.14); border-color: rgba(59, 130, 246, 0.28); color: #bfdbfe; }
+  .pill--success { background: rgba(16, 185, 129, 0.14); border-color: rgba(16, 185, 129, 0.28); color: #a7f3d0; }
+  .pill--danger { background: rgba(239, 68, 68, 0.14); border-color: rgba(239, 68, 68, 0.28); color: #fecaca; }
+  .notice {
+    padding: 14px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(15, 23, 42, 0.75);
+    color: #cbd5e1;
+  }
+  .notice--success { border-color: rgba(16, 185, 129, 0.3); background: rgba(6, 78, 59, 0.28); color: #d1fae5; }
+  .notice--error { border-color: rgba(239, 68, 68, 0.32); background: rgba(127, 29, 29, 0.28); color: #fee2e2; }
+  .notice--warning { border-color: rgba(245, 158, 11, 0.32); background: rgba(120, 53, 15, 0.28); color: #fde68a; }
+  .field-hint { font-size: 0.84rem; font-weight: 400; color: var(--muted); }
+  [hidden] { display: none !important; }
+  @media (max-width: 767px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { gap: 18px; padding: 16px 16px 18px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .nav { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .nav__item { flex-direction: column; justify-content: center; gap: 8px; min-height: 72px; padding: 10px; text-align: center; }
+    .content { padding: 20px; }
+    .card { padding: 22px; }
+  }
 `;
 
 function escapeAttr(value: string): string {
@@ -1438,6 +2354,17 @@ class NetworkValidationError extends Error {
   }
 }
 
+class ProviderConfigValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProviderConfigValidationError';
+  }
+}
+
 function isNetworkValidationError(error: unknown): boolean {
   return error instanceof NetworkValidationError;
+}
+
+function isProviderConfigValidationError(error: unknown): boolean {
+  return error instanceof ProviderConfigValidationError;
 }

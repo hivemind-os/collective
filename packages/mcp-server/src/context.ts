@@ -58,4 +58,23 @@ export interface MeshToolContext {
   portalUrl?: string;
   usdcCoinType?: string;
   openUrl?: (url: string) => Promise<boolean>;
+  providerConfig?: {
+    get: () => ProviderConfigSnapshot;
+    set: (config: ProviderConfigSnapshot) => Promise<{ ok: boolean; error?: string }>;
+  };
+}
+
+export interface ProviderConfigSnapshot {
+  enabled: boolean;
+  autoRegister: boolean;
+  maxConcurrency: number;
+  capabilities: Array<{
+    name: string;
+    description: string;
+    version: string;
+    priceMist: number;
+    currency?: string;
+    adapter: string;
+    adapterConfig?: Record<string, unknown>;
+  }>;
 }

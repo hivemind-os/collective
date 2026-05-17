@@ -118,6 +118,42 @@ export async function main(): Promise<void> {
       logger,
       getAuthStatus,
       getConnectedApps: () => ipcServer?.getConnectedApps() ?? [],
+      onProviderConfigChanged: async () => {
+        // Stop existing provider runtime
+        if (providerRuntime) {
+          daemonState.setProviderRunning(false);
+          await providerRuntime.stop();
+          providerRuntime = undefined;
+          logger.info('Provider runtime stopped for reconfiguration');
+        }
+
+        // Restart with new config if enabled
+        const nextProviderConfig = loadProviderConfig(config);
+        if (nextProviderConfig?.enabled) {
+          const ipcRef = ipcServer;
+          providerRuntime = new ProviderRuntime({
+            state: daemonState,
+            providerConfig: nextProviderConfig,
+            cursorDbPath: join(config.daemon.dataDir, 'provider-cursors.db'),
+            relayConfig: config.relay,
+            mcpSamplingFn: ipcRef
+              ? async (appName, params) => {
+                  const server = ipcRef.getMcpServerForApp(appName);
+                  if (!server) {
+                    throw new Error(`No MCP client connected with appName "${appName}"`);
+                  }
+                  return server.createMessage(params);
+                }
+              : undefined,
+            broadcastNotification: ipcRef
+              ? (method, params) => ipcRef.broadcastNotification(method, params)
+              : undefined,
+          });
+          await providerRuntime.start();
+          daemonState.setProviderRunning(true);
+          logger.info('Provider runtime restarted with new configuration');
+        }
+      },
     });
     const portalUrl = await portal.start();
     logger.info({ portalUrl }, 'Portal server listening');
@@ -129,6 +165,40 @@ export async function main(): Promise<void> {
     ipcServer.toolContext = buildMeshToolContext(daemonState, config.daemon.dataDir, {
       portalUrl,
       openUrl: (url: string) => openPortalUrl(url, logger, 'open settings'),
+      config,
+      configPath,
+      onProviderConfigChanged: async () => {
+        if (providerRuntime) {
+          daemonState.setProviderRunning(false);
+          await providerRuntime.stop();
+          providerRuntime = undefined;
+        }
+
+        const nextProviderConfig = loadProviderConfig(config);
+        if (nextProviderConfig?.enabled) {
+          const ipcRef = ipcServer;
+          providerRuntime = new ProviderRuntime({
+            state: daemonState,
+            providerConfig: nextProviderConfig,
+            cursorDbPath: join(config.daemon.dataDir, 'provider-cursors.db'),
+            relayConfig: config.relay,
+            mcpSamplingFn: ipcRef
+              ? async (appName, params) => {
+                  const server = ipcRef.getMcpServerForApp(appName);
+                  if (!server) {
+                    throw new Error(`No MCP client connected with appName "${appName}"`);
+                  }
+                  return server.createMessage(params);
+                }
+              : undefined,
+            broadcastNotification: ipcRef
+              ? (method, params) => ipcRef.broadcastNotification(method, params)
+              : undefined,
+          });
+          await providerRuntime.start();
+          daemonState.setProviderRunning(true);
+        }
+      },
     });
     await ipcServer.start();
     logger.info({ ipcPath: config.daemon.ipcPath }, 'IPC server listening');

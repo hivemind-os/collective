@@ -18,6 +18,7 @@ import { meshMarketplaceBrowseTool, runMeshMarketplaceBrowse } from './marketpla
 import { meshMarketplacePostTool, runMeshMarketplacePost } from './marketplace-post.js';
 import { meshMultiExecuteTool, runMeshMultiExecute } from './multi-execute.js';
 import { meshPolicyUpdateTool, runMeshPolicyUpdate } from './policy-update.js';
+import { meshProviderConfigTool, runMeshProviderConfig } from './provider-config.js';
 import { meshRegisterTool, runMeshRegister } from './register.js';
 import { meshRelayRegistryTool, runMeshRelayRegistry } from './relay-registry.js';
 import { meshSettingsTool, runMeshSettings } from './settings.js';
@@ -48,6 +49,7 @@ const toolDefinitions = [
   meshRelayRegistryTool,
   meshTaskHistoryTool,
   meshSettingsTool,
+  meshProviderConfigTool,
   meshWithdrawTool,
 ];
 
@@ -75,6 +77,7 @@ export const meshToolHandlers: Record<string, MeshToolHandler> = {
   [meshRelayRegistryTool.name]: runMeshRelayRegistry,
   [meshTaskHistoryTool.name]: runMeshTaskHistory,
   [meshSettingsTool.name]: runMeshSettings,
+  [meshProviderConfigTool.name]: runMeshProviderConfig,
   [meshWithdrawTool.name]: runMeshWithdraw,
 };
 

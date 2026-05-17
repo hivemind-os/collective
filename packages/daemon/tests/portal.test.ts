@@ -434,21 +434,29 @@ describe('portal API endpoints', () => {
     } as unknown;
   }
 
-  async function startPortalWithState(state: unknown): Promise<{ portal: PortalServer; url: string }> {
+  async function startPortalWithState(
+    state: unknown,
+    options?: {
+      configure?: (config: DaemonFullConfig) => void;
+      onProviderConfigChanged?: () => Promise<void> | void;
+    },
+  ): Promise<{ portal: PortalServer; url: string; configPath: string; config: DaemonFullConfig }> {
     const dir = await createTestDir();
     const configPath = resolve(dir, 'config.yaml');
     await writeFile(configPath, 'auth:\n  mode: keypair\ndaemon:\n  dataDir: ' + resolve(dir, 'daemon'), 'utf8');
     const config = getDefaultConfig();
     config.daemon.dataDir = resolve(dir, 'daemon');
     config.daemon.pidFile = resolve(dir, 'daemon.pid');
+    options?.configure?.(config);
     const portal = new PortalServer({
       config,
       configPath,
       authProvider: { createAuthorizationRequest: vi.fn(), exchangeCode: vi.fn() } as never,
       state: state as never,
+      onProviderConfigChanged: options?.onProviderConfigChanged,
     });
     const url = await portal.start();
-    return { portal, url };
+    return { portal, url, configPath, config };
   }
 
   it('GET /api/wallet returns wallet info', async () => {
@@ -526,6 +534,114 @@ describe('portal API endpoints', () => {
       expect(body.recentEntries).toHaveLength(1);
       expect(body.recentEntries[0].amountSui).toBe('0.5');
       expect(body.recentEntries[0].taskId).toBe('task-abc');
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('GET /api/provider/config returns the current provider config', async () => {
+    const state = createMockState();
+    const { portal, url } = await startPortalWithState(state, {
+      configure: (config) => {
+        config.provider = {
+          enabled: true,
+          autoRegister: true,
+          maxConcurrency: 3,
+          capabilities: [
+            {
+              name: 'summarize',
+              description: 'Summarize documents',
+              version: '1.0.0',
+              priceMist: 250,
+              adapter: 'echo',
+            },
+          ],
+        };
+      },
+    });
+    try {
+      const res = await fetch(`${url}/api/provider/config`);
+      const body = (await res.json()) as NonNullable<DaemonFullConfig['provider']>;
+      expect(body.enabled).toBe(true);
+      expect(body.autoRegister).toBe(true);
+      expect(body.maxConcurrency).toBe(3);
+      expect(body.capabilities).toHaveLength(1);
+      expect(body.capabilities[0].name).toBe('summarize');
+      expect(body.capabilities[0].adapter).toBe('echo');
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('POST /api/provider/config persists provider settings and invokes the restart callback', async () => {
+    const state = createMockState();
+    const onProviderConfigChanged = vi.fn();
+    const { portal, url, configPath } = await startPortalWithState(state, { onProviderConfigChanged });
+    try {
+      const payload = {
+        enabled: true,
+        autoRegister: true,
+        maxConcurrency: 2,
+        capabilities: [
+          {
+            name: 'summarize',
+            description: 'Summarize documents',
+            version: '1.0.0',
+            priceMist: 1000,
+            adapter: 'webhook',
+            adapterConfig: {
+              url: 'https://example.com/webhook',
+            },
+          },
+        ],
+      };
+
+      const res = await fetch(`${url}/api/provider/config`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      expect(res.ok).toBe(true);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(onProviderConfigChanged).toHaveBeenCalledTimes(1);
+
+      const reloaded = loadConfig(configPath);
+      expect(reloaded.provider).toMatchObject(payload);
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('POST /api/provider/config rejects subprocess adapters without explicit acknowledgement', async () => {
+    const state = createMockState();
+    const onProviderConfigChanged = vi.fn();
+    const { portal, url } = await startPortalWithState(state, { onProviderConfigChanged });
+    try {
+      const res = await fetch(`${url}/api/provider/config`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          enabled: true,
+          capabilities: [
+            {
+              name: 'worker',
+              description: 'Run a local worker',
+              version: '1.0.0',
+              priceMist: 500,
+              adapter: 'subprocess',
+              adapterConfig: {
+                command: 'python worker.py',
+              },
+            },
+          ],
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain('allowSubprocess');
+      expect(onProviderConfigChanged).not.toHaveBeenCalled();
     } finally {
       await portal.stop();
     }
