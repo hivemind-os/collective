@@ -23,7 +23,7 @@ export async function runMeshBalance(
     balance_sui: formatMistToSui(balanceMist),
   };
 
-  const usdcType = (context as Record<string, unknown>).usdcCoinType as string | undefined;
+  const usdcType = context.usdcCoinType;
   if (usdcType) {
     try {
       const usdcRaw = await context.suiClient.getTokenBalance(address, usdcType);

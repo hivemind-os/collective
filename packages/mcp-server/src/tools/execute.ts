@@ -88,11 +88,13 @@ export async function runMeshExecute(
 
   await context.taskClient.releasePayment({
     taskId: prepared.taskId,
+    coinType: prepared.coinType,
     keypair: context.keypair,
   });
   context.spendingPolicy.record({
     amountMist: prepared.priceMist,
     rail: prepared.rail,
+    currency: prepared.coinType ? 'USDC' : 'MIST',
     taskId: prepared.taskId,
     appId: prepared.providerDid,
     originAppName: context.originAppName,
@@ -125,6 +127,7 @@ export async function prepareMeshExecution(
   providerDid: string;
   priceMist: bigint;
   rail: PaymentRail;
+  coinType?: string;
 }> {
   const resolved = await resolveProviderCapability(params.capability, context, params.provider_did);
   return prepareAsyncExecution(params, context, resolved, resolved.capability.pricing.amount);
@@ -140,12 +143,17 @@ async function prepareAsyncExecution(
   providerDid: string;
   priceMist: bigint;
   rail: PaymentRail;
+  coinType?: string;
 }> {
-  if (resolved.capability.pricing.rail !== PaymentRail.SUI_ESCROW) {
-    throw new Error(`Capability ${resolved.capability.name} does not support SUI escrow execution.`);
+  if (resolved.capability.pricing.rail !== PaymentRail.SUI_ESCROW && resolved.capability.pricing.rail !== PaymentRail.USDC_ESCROW) {
+    throw new Error(`Capability ${resolved.capability.name} does not support escrow execution.`);
   }
 
   approveSpend(context, priceMist, resolved.capability.pricing.rail, resolved.agent.did);
+
+  const coinType = resolved.capability.pricing.rail === PaymentRail.USDC_ESCROW
+    ? context.usdcCoinType
+    : undefined;
 
   const { blobId } = await storeTaskInput(context, resolved.agent, encoder.encode(params.input));
   const posted = await context.taskClient.postTask({
@@ -155,6 +163,7 @@ async function prepareAsyncExecution(
     priceMist,
     disputeWindowMs: DEFAULT_DISPUTE_WINDOW_MS,
     expiryHours: DEFAULT_EXPIRY_HOURS,
+    coinType,
     keypair: context.keypair,
   });
 
@@ -163,6 +172,7 @@ async function prepareAsyncExecution(
     providerDid: resolved.agent.did,
     priceMist,
     rail: resolved.capability.pricing.rail,
+    coinType,
   };
 }
 

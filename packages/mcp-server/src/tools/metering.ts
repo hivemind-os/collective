@@ -72,9 +72,13 @@ export async function runMeshMeteredExecute(
   verified: boolean;
 }> {
   const resolved = await resolveProviderCapability(params.capability, context, params.provider_did);
-  if (resolved.capability.pricing.rail !== PaymentRail.SUI_ESCROW) {
-    throw new Error(`Capability ${resolved.capability.name} does not support SUI escrow execution.`);
+  if (resolved.capability.pricing.rail !== PaymentRail.SUI_ESCROW && resolved.capability.pricing.rail !== PaymentRail.USDC_ESCROW) {
+    throw new Error(`Capability ${resolved.capability.name} does not support escrow execution.`);
   }
+
+  const coinType = resolved.capability.pricing.rail === PaymentRail.USDC_ESCROW
+    ? context.usdcCoinType
+    : undefined;
 
   const maxPriceMist = toRequiredBigInt(params.max_price_mist, 'max_price_mist');
   const unitPriceMist = toRequiredBigInt(params.unit_price_mist, 'unit_price_mist');
@@ -98,6 +102,7 @@ export async function runMeshMeteredExecute(
     unitPriceMist,
     disputeWindowMs: DEFAULT_DISPUTE_WINDOW_MS,
     expiryHours: DEFAULT_EXPIRY_HOURS,
+    coinType,
     keypair: context.keypair,
   });
   const task = await waitForTaskCompletion(posted.taskId, context, params.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS);
@@ -105,11 +110,13 @@ export async function runMeshMeteredExecute(
 
   await context.taskClient.releaseMeteredPayment({
     taskId: task.id,
+    coinType,
     keypair: context.keypair,
   });
   context.spendingPolicy.record({
     amountMist: task.price,
-    rail: PaymentRail.SUI_ESCROW,
+    rail: resolved.capability.pricing.rail,
+    currency: coinType ? 'USDC' : 'MIST',
     taskId: task.id,
     appId: resolved.agent.did,
     originAppName: context.originAppName,

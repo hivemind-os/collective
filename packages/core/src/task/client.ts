@@ -34,6 +34,7 @@ export class TaskClient {
     priceMist: bigint;
     disputeWindowMs: number;
     expiryHours: number;
+    coinType?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string; taskId: string }> {
     const tx = buildPostTaskTx({
@@ -45,6 +46,7 @@ export class TaskClient {
       priceMist: params.priceMist,
       disputeWindowMs: params.disputeWindowMs,
       expiryHours: params.expiryHours,
+      coinType: params.coinType,
     });
 
     return await this.submitTaskCreation(tx, params.keypair);
@@ -59,6 +61,7 @@ export class TaskClient {
     unitPriceMist: bigint;
     disputeWindowMs: number;
     expiryHours: number;
+    coinType?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string; taskId: string }> {
     const tx = buildPostMeteredTaskTx({
@@ -71,6 +74,7 @@ export class TaskClient {
       unitPriceMist: params.unitPriceMist,
       disputeWindowMs: params.disputeWindowMs,
       expiryHours: params.expiryHours,
+      coinType: params.coinType,
     });
 
     return await this.submitTaskCreation(tx, params.keypair);
@@ -78,9 +82,10 @@ export class TaskClient {
 
   async acceptTask(params: {
     taskId: string;
+    coinType?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
-    const tx = buildAcceptTaskTx({ packageId: this.config.packageId, taskId: params.taskId });
+    const tx = buildAcceptTaskTx({ packageId: this.config.packageId, taskId: params.taskId, coinType: params.coinType });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
   }
@@ -88,6 +93,7 @@ export class TaskClient {
   async completeTask(params: {
     taskId: string;
     resultBlobId: string;
+    coinType?: string;
     keypair: Signer;
     providerCardId?: string;
   }): Promise<{ txDigest: string }> {
@@ -95,6 +101,7 @@ export class TaskClient {
       packageId: this.config.packageId,
       taskId: params.taskId,
       resultBlobId: params.resultBlobId,
+      coinType: params.coinType,
       providerCardId: params.providerCardId,
     });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -106,6 +113,7 @@ export class TaskClient {
     resultBlobId: string;
     meteredUnits: number;
     verificationHash: string;
+    coinType?: string;
     keypair: Signer;
     providerCardId?: string;
   }): Promise<{ txDigest: string }> {
@@ -115,6 +123,7 @@ export class TaskClient {
       resultBlobId: params.resultBlobId,
       meteredUnits: params.meteredUnits,
       verificationHash: params.verificationHash,
+      coinType: params.coinType,
       providerCardId: params.providerCardId,
     });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -123,30 +132,34 @@ export class TaskClient {
 
   async releasePayment(params: {
     taskId: string;
+    coinType?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
-    const tx = buildReleasePaymentTx({ packageId: this.config.packageId, taskId: params.taskId });
+    const tx = buildReleasePaymentTx({ packageId: this.config.packageId, taskId: params.taskId, coinType: params.coinType });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
   }
 
   async releaseMeteredPayment(params: {
     taskId: string;
+    coinType?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
-    const tx = buildReleaseMeteredPaymentTx({ packageId: this.config.packageId, taskId: params.taskId });
+    const tx = buildReleaseMeteredPaymentTx({ packageId: this.config.packageId, taskId: params.taskId, coinType: params.coinType });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
   }
 
   async claimPayment(params: {
     taskId: string;
+    coinType?: string;
     keypair: Signer;
     providerCardId?: string;
   }): Promise<{ txDigest: string }> {
     const tx = buildClaimPaymentTx({
       packageId: this.config.packageId,
       taskId: params.taskId,
+      coinType: params.coinType,
       providerCardId: params.providerCardId,
     });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -155,18 +168,20 @@ export class TaskClient {
 
   async cancelTask(params: {
     taskId: string;
+    coinType?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
-    const tx = buildCancelTaskTx({ packageId: this.config.packageId, taskId: params.taskId });
+    const tx = buildCancelTaskTx({ packageId: this.config.packageId, taskId: params.taskId, coinType: params.coinType });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
   }
 
   async refundExpiredTask(params: {
     taskId: string;
+    coinType?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
-    const tx = buildRefundExpiredTaskTx({ packageId: this.config.packageId, taskId: params.taskId });
+    const tx = buildRefundExpiredTaskTx({ packageId: this.config.packageId, taskId: params.taskId, coinType: params.coinType });
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
     return { txDigest: response.digest };
   }

@@ -56,5 +56,6 @@ export interface MeshToolContext {
   reputationStore?: ReputationStore;
   taskHistoryDb?: unknown;
   portalUrl?: string;
+  usdcCoinType?: string;
   openUrl?: (url: string) => Promise<boolean>;
 }
