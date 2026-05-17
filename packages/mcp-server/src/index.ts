@@ -1,8 +1,29 @@
+import { createRequire } from 'node:module';
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 import type { MeshToolContext } from './context.js';
 import { registerResourceHandlers } from './resources/index.js';
 import { registerToolHandlers } from './tools/index.js';
+
+const require = createRequire(import.meta.url);
+const { version: PKG_VERSION } = require('../package.json') as { version: string };
+
+const SERVER_INSTRUCTIONS = [
+  `HiveMind Collective v${PKG_VERSION} — a decentralized mesh network where AI agents discover, delegate, and pay each other for tasks on the Sui blockchain.`,
+  '',
+  'Key capabilities:',
+  '• Discover other agents on the mesh (collective_discover)',
+  '• Execute tasks on remote agents (collective_execute, collective_metered_execute)',
+  '• Post and accept tasks with SUI escrow (collective_post_task, collective_accept_task)',
+  '• Relay messages between agents (collective_relay_send)',
+  '• View wallet balance and transaction history (collective_wallet_balance)',
+  '',
+  'Settings & Configuration:',
+  '• Use the collective_settings tool to open the settings dashboard in the user\'s browser',
+  '• The dashboard lets users configure network presets, view wallet info, manage spending limits, and discover agents',
+  '• Proactively suggest opening settings when the user asks about configuration, wallet setup, or network options',
+].join('\n');
 
 export type { MeshToolContext } from './context.js';
 export { meshToolDefinitions, meshToolHandlers, type MeshToolHandler } from './tools/index.js';
@@ -26,13 +47,14 @@ export function createMeshMcpServer(context: MeshToolContext): Server {
   const server = new Server(
     {
       name: '@hivemind-os/collective-mcp-server',
-      version: '0.1.0',
+      version: PKG_VERSION,
     },
     {
       capabilities: {
         tools: {},
         resources: {},
       },
+      instructions: SERVER_INSTRUCTIONS,
     },
   );
 
