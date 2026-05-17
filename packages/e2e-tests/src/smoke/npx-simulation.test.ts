@@ -191,6 +191,10 @@ describe('NPX simulation: install from tarballs and run shim', () => {
     expect(toolNames).toContain('collective_discover');
     expect(toolNames).toContain('collective_execute');
     expect(toolNames).toContain('collective_balance');
+    expect(toolNames).toContain('collective_settings');
+    // Total: 2 daemon-specific (balance, status) + mcp-server tools (minus 1 overlap for balance)
+    // If this count changes, update it intentionally — never silently drop tools.
+    expect(toolNames.length).toBeGreaterThanOrEqual(22);
   }, TEST_TIMEOUT);
 
 });

@@ -186,6 +186,8 @@ describe('bridge', () => {
     const output = new NdjsonReader(stdout);
     const exit = vi.fn();
 
+    const { SHIM_VERSION: shimVersion } = await import('../src/daemon-launcher.js');
+
     const bridgePromise = createBridge({
       ipcPath,
       pidFile: resolve(dir, 'daemon.pid'),
@@ -211,7 +213,7 @@ describe('bridge', () => {
     server.send({
       jsonrpc: '2.0',
       id: hello.id,
-      result: { acknowledged: true, connectionId: 'test-connection' },
+      result: { acknowledged: true, connectionId: 'test-connection', daemonVersion: shimVersion },
     });
     const bridge = await bridgePromise;
 
@@ -250,6 +252,8 @@ describe('bridge', () => {
     const stderr = new PassThrough();
     const exit = vi.fn();
 
+    const { SHIM_VERSION: shimVersion } = await import('../src/daemon-launcher.js');
+
     const bridgePromise = createBridge({
       ipcPath,
       pidFile: resolve(dir, 'daemon.pid'),
@@ -267,7 +271,7 @@ describe('bridge', () => {
     firstServer.send({
       jsonrpc: '2.0',
       id: firstHello.id,
-      result: { acknowledged: true, connectionId: 'first' },
+      result: { acknowledged: true, connectionId: 'first', daemonVersion: shimVersion },
     });
     const bridge = await bridgePromise;
 
@@ -287,7 +291,7 @@ describe('bridge', () => {
     secondServer.send({
       jsonrpc: '2.0',
       id: secondHello.id,
-      result: { acknowledged: true, connectionId: 'second' },
+      result: { acknowledged: true, connectionId: 'second', daemonVersion: shimVersion },
     });
 
     stdin.write('{"jsonrpc":"2.0","id":"after-reconnect","method":"ping"}\n');
@@ -440,20 +444,35 @@ describe('bridge', () => {
     expect(exit).toHaveBeenCalledWith(0);
   });
 
-  it('skips version check for old daemons without daemonVersion', async () => {
+  it('upgrades legacy daemons that do not report daemonVersion', async () => {
     const dir = await createTestDir();
     const ipcPath = createIpcPath(dir);
 
-    const server = new MockIpcServer(ipcPath);
-    await server.start();
+    let oldServer = new MockIpcServer(ipcPath);
+    await oldServer.start();
 
-    const stopDaemonMock = vi.fn();
-    const ensureDaemon = vi.fn(async () => undefined);
+    const stopDaemonMock = vi.fn(async () => {
+      await oldServer.stop();
+    });
+
+    let newServer: MockIpcServer | undefined;
+    let newServerReady: () => void;
+    const newServerPromise = new Promise<void>((r) => { newServerReady = r; });
+    const ensureDaemon = vi.fn(async () => {
+      if (ensureDaemon.mock.calls.length > 1) {
+        newServer = new MockIpcServer(ipcPath);
+        await newServer.start();
+        newServerReady();
+      }
+    });
 
     const stdin = new PassThrough();
     const stdout = new PassThrough();
     const stderr = new PassThrough();
+    const stderrReader = new NdjsonLineReader(stderr);
     const exit = vi.fn();
+
+    const { SHIM_VERSION: shimVersion } = await import('../src/daemon-launcher.js');
 
     const bridgePromise = createBridge({
       ipcPath,
@@ -466,23 +485,34 @@ describe('bridge', () => {
       exit,
       ensureDaemon,
       stopDaemon: stopDaemonMock,
+      startupTimeoutMs: 5_000,
     });
 
-    const hello = await server.nextMessage();
-    // Old daemon that doesn't send daemonVersion
-    server.send({
+    const oldHello = await oldServer.nextMessage();
+    // Legacy daemon: no daemonVersion field
+    oldServer.send({
       jsonrpc: '2.0',
-      id: hello.id,
+      id: oldHello.id,
       result: { acknowledged: true, connectionId: 'legacy' },
+    });
+
+    // Should trigger upgrade
+    await newServerPromise;
+    const newHello = await newServer!.nextMessage();
+    newServer!.send({
+      jsonrpc: '2.0',
+      id: newHello.id,
+      result: { acknowledged: true, connectionId: 'new', daemonVersion: shimVersion },
     });
 
     const bridge = await bridgePromise;
 
-    // Old daemons without version should be force-upgraded
-    // (daemonVersion is undefined, which !== SHIM_VERSION, but
-    //  we only upgrade when daemonVersion is present and differs)
-    expect(stopDaemonMock).not.toHaveBeenCalled();
-    expect(ensureDaemon).toHaveBeenCalledTimes(1);
+    // Legacy daemons without version SHOULD be upgraded
+    expect(stopDaemonMock).toHaveBeenCalledTimes(1);
+    expect(ensureDaemon).toHaveBeenCalledTimes(2);
+
+    const stderrOutput = stderrReader.lines().join('');
+    expect(stderrOutput).toContain('Upgrading daemon from vunknown');
 
     bridge.close();
     expect(exit).toHaveBeenCalledWith(0);

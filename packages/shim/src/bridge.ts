@@ -99,11 +99,12 @@ export async function createBridge(options: BridgeOptions = {}): Promise<BridgeH
       try {
         const hello = await next.connect(appName);
 
-        // Version mismatch: stop old daemon and restart (once per session)
-        if (!upgraded && hello.daemonVersion && hello.daemonVersion !== SHIM_VERSION) {
+        // Version mismatch: stop old daemon and restart (once per session).
+        // Also upgrade legacy daemons that don't report a version.
+        if (!upgraded && hello.daemonVersion !== SHIM_VERSION) {
           upgraded = true;
           stderr.write(
-            `mesh-shim: Upgrading daemon from v${hello.daemonVersion} to v${SHIM_VERSION}\n`,
+            `mesh-shim: Upgrading daemon from v${hello.daemonVersion ?? 'unknown'} to v${SHIM_VERSION}\n`,
           );
           next.close();
           await stopDaemonFn({ pidFile: launcherOptions.pidFile, ipcPath: launcherOptions.ipcPath });
