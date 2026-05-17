@@ -57,6 +57,7 @@ export interface PortalServerOptions {
   state?: DaemonState;
   logger?: PortalLogger;
   getAuthStatus?: () => DaemonAuthStatus | null;
+  getConnectedApps?: () => { appName: string; appPid: number; profile?: string; connectedAt: number }[];
   onAuthenticated?: (session: StoredZkLoginSession) => Promise<void> | void;
   onSettingsSaved?: (config: DaemonFullConfig) => Promise<void> | void;
 }
@@ -324,6 +325,58 @@ export class PortalServer {
     // ── Tasks / Spending page ────────────────────────────────────
     this.server.get('/tasks', async (_request, reply) => {
       reply.type('text/html').send(renderTasksPage());
+    });
+
+    // ── Services page ─────────────────────────────────────────────
+    this.server.get('/services', async (_request, reply) => {
+      reply.type('text/html').send(renderServicesPage());
+    });
+
+    this.server.get('/api/services', async () => {
+      const state = this.options.state;
+      if (!state) {
+        return { error: 'Daemon state not available.' };
+      }
+
+      try {
+        const card = await state.registryClient.getAgentCardByOwner(state.address);
+        if (!card) {
+          return { registered: false, agent: null };
+        }
+
+        return {
+          registered: true,
+          agent: {
+            name: card.name,
+            did: card.did,
+            active: card.active,
+            endpoint: card.endpoint ?? null,
+            payoutAddress: card.payoutAddress ?? null,
+            capabilities: card.capabilities.map((cap) => ({
+              name: cap.name,
+              description: cap.description ?? null,
+              priceMist: cap.pricing.amount.toString(),
+              rail: cap.pricing.rail,
+            })),
+          },
+        };
+      } catch (err) {
+        return { error: 'Failed to query the registry.', registered: false, agent: null };
+      }
+    });
+
+    // ── Connected clients API ─────────────────────────────────────
+    this.server.get('/api/clients', async () => {
+      const apps = this.options.getConnectedApps?.() ?? [];
+      return {
+        clients: apps.map((app) => ({
+          appName: app.appName,
+          pid: app.appPid,
+          profile: app.profile ?? null,
+          connectedAt: app.connectedAt,
+          connectedAgo: formatDuration(Date.now() - app.connectedAt),
+        })),
+      };
     });
 
     this.server.get('/api/tasks', async () => {
@@ -812,7 +865,7 @@ function renderMessagePage(title: string, detail: string): string {
 
 const PORTAL_NAV = `
   <nav class="nav">
-    <a href="/">Settings</a> · <a href="/wallet">Wallet</a> · <a href="/discover">Discover</a> · <a href="/tasks">Tasks</a> · <a href="/network">Network</a>
+    <a href="/">Settings</a> · <a href="/wallet">Wallet</a> · <a href="/services">Services</a> · <a href="/discover">Discover</a> · <a href="/tasks">Tasks</a> · <a href="/network">Network</a>
   </nav>`;
 
 const INNER_PAGE_STYLES = `
@@ -1007,6 +1060,116 @@ function renderTasksPage(): string {
     </script>
   </body>
 </html>`;
+}
+
+function renderServicesPage(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>HiveMind Collective — My Services</title>
+    <style>${BASE_STYLES}${INNER_PAGE_STYLES}
+      .cap-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 14px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+      .cap-name { font-weight: 600; font-size: 0.9rem; }
+      .cap-desc { color: #94a3b8; font-size: 0.8rem; margin-top: 2px; }
+      .cap-price { font-family: monospace; font-size: 0.85rem; color: #60a5fa; white-space: nowrap; }
+      .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+      .badge--active { background: #065f46; color: #6ee7b7; }
+      .badge--inactive { background: #7f1d1d; color: #fca5a5; }
+      .clients-section { margin-top: 32px; padding-top: 20px; border-top: 1px solid #1e293b; }
+      .client-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #0f172a; font-size: 0.85rem; }
+      .client-name { font-weight: 600; }
+      .client-meta { color: #94a3b8; font-size: 0.8rem; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      ${PORTAL_NAV}
+      <h1>My Services</h1>
+      <div id="loading">Loading…</div>
+      <div id="content" hidden>
+        <div id="registration"></div>
+        <div class="clients-section">
+          <h2 style="font-size:1rem;margin-bottom:12px;">Connected Clients</h2>
+          <div id="clients"></div>
+        </div>
+      </div>
+    </main>
+    <script>
+      function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+      async function loadServices() {
+        try {
+          const res = await fetch('/api/services');
+          const data = await res.json();
+          const el = document.getElementById('registration');
+
+          if (data.error) {
+            el.innerHTML = '<p class="error">' + esc(data.error) + '</p>';
+          } else if (!data.registered) {
+            el.innerHTML = '<p style="color:#94a3b8;font-style:italic">No agent registered on-chain for this wallet. Use the <code style="display:inline;padding:2px 6px">collective_register</code> tool to register.</p>';
+          } else {
+            const a = data.agent;
+            const badge = a.active
+              ? '<span class="badge badge--active">Active</span>'
+              : '<span class="badge badge--inactive">Inactive</span>';
+            const caps = (a.capabilities || []).map(c =>
+              '<div class="cap-row"><div><div class="cap-name">' + esc(c.name) + '</div>' +
+              (c.description ? '<div class="cap-desc">' + esc(c.description) + '</div>' : '') +
+              '</div><div class="cap-price">' + esc(c.priceMist) + ' MIST (' + esc(c.rail) + ')</div></div>'
+            ).join('');
+
+            el.innerHTML =
+              '<div class="stat"><span class="stat-label">Name</span><span class="stat-value">' + esc(a.name) + ' ' + badge + '</span></div>' +
+              '<div class="stat"><span class="stat-label">DID</span><span class="stat-value">' + esc(a.did) + '</span></div>' +
+              (a.endpoint ? '<div class="stat"><span class="stat-label">Endpoint</span><span class="stat-value">' + esc(a.endpoint) + '</span></div>' : '') +
+              (a.payoutAddress ? '<div class="stat"><span class="stat-label">Payout Address</span><span class="stat-value">' + esc(a.payoutAddress) + '</span></div>' : '') +
+              '<h2 style="font-size:1rem;margin-top:20px;margin-bottom:12px;">Capabilities (' + a.capabilities.length + ')</h2>' +
+              (caps || '<p style="color:#94a3b8;font-style:italic">No capabilities registered.</p>');
+          }
+        } catch (e) {
+          document.getElementById('registration').innerHTML = '<p class="error">Failed to load service data.</p>';
+        }
+      }
+
+      async function loadClients() {
+        try {
+          const res = await fetch('/api/clients');
+          const data = await res.json();
+          const el = document.getElementById('clients');
+          const clients = data.clients || [];
+
+          if (clients.length === 0) {
+            el.innerHTML = '<p style="color:#94a3b8;font-style:italic">No clients connected.</p>';
+          } else {
+            el.innerHTML = clients.map(c =>
+              '<div class="client-row"><div><span class="client-name">' + esc(c.appName) + '</span>' +
+              (c.profile ? ' <span class="client-meta">(' + esc(c.profile) + ')</span>' : '') +
+              '</div><span class="client-meta">PID ' + esc(String(c.pid)) + ' · ' + esc(c.connectedAgo) + '</span></div>'
+            ).join('');
+          }
+        } catch (e) {
+          document.getElementById('clients').innerHTML = '<p class="error">Failed to load client data.</p>';
+        }
+      }
+
+      Promise.all([loadServices(), loadClients()]).then(() => {
+        document.getElementById('loading').hidden = true;
+        document.getElementById('content').hidden = false;
+      });
+    </script>
+  </body>
+</html>`;
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
 }
 
 function snapshotPortalSettings(config: DaemonFullConfig): Pick<DaemonFullConfig, 'auth' | 'payment' | 'spending'> {

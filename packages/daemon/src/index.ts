@@ -117,6 +117,7 @@ export async function main(): Promise<void> {
       state: daemonState,
       logger,
       getAuthStatus,
+      getConnectedApps: () => ipcServer?.getConnectedApps() ?? [],
     });
     const portalUrl = await portal.start();
     logger.info({ portalUrl }, 'Portal server listening');
