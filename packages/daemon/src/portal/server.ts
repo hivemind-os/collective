@@ -590,12 +590,13 @@ export class PortalServer {
   }
 
   private renderPage(): string {
+    const version = this.options.state?.getStatusBase().version;
     if (!this.options.authProvider) {
-      // ed25519 mode — show the dashboard directly
       return renderSetupPage({
         address: this.options.state?.address ?? '',
         dailyLimitMist: getCurrentDailyLimitMist(this.options.config),
         setupComplete: true,
+        version,
       });
     }
 
@@ -610,6 +611,7 @@ export class PortalServer {
       address: this.options.authProvider.getSession()?.address ?? '',
       dailyLimitMist: getCurrentDailyLimitMist(this.options.config),
       setupComplete: this.setupComplete,
+      version,
     });
   }
 }
@@ -698,22 +700,23 @@ function renderAuthButton(provider: PortalOAuthProvider, flow: PortalAuthFlow): 
   return `<a class="button button--google" href="${href}"><span>Sign in with Google</span></a>`;
 }
 
-function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setupComplete: boolean }): string {
+function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setupComplete: boolean; version?: string }): string {
   const currentLimitSui = formatMistToSui(params.dailyLimitMist);
   const successMessage = params.setupComplete ? '<p class="success">Setup complete. You can return to your app.</p>' : '';
-  const title = params.setupComplete ? 'Agentic Mesh is ready' : 'Finish setup';
+  const title = params.setupComplete ? 'HiveMind Collective' : 'Finish setup';
+  const versionBadge = params.version ? `<span style="font-size:0.75rem;color:#64748b;font-weight:400;margin-left:8px;">v${escapeHtml(params.version)}</span>` : '';
 
   return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Agentic Mesh Setup</title>
+    <title>HiveMind Collective</title>
     <style>${BASE_STYLES}${INNER_PAGE_STYLES}</style>
   </head>
   <body>
     <main class="card">
       ${PORTAL_NAV}
-      <h1>${escapeHtml(title)}</h1>
+      <h1>${escapeHtml(title)}${versionBadge}</h1>
       <p>Your Sui address:</p>
       <code>${escapeHtml(params.address)}</code>
       <label for="limit">Daily spending limit (SUI)</label>

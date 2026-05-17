@@ -90,7 +90,7 @@ describe('Phase 1 Beta E2E: Portal integration', () => {
       expect(statusBody.setupComplete).toBe(true);
       expect(statusBody.spendingLimitMist).toBe('7000000000');
       expect(onSettingsSaved).toHaveBeenCalledTimes(1);
-      expect(readyHtml).toContain('Agentic Mesh is ready');
+      expect(readyHtml).toContain('HiveMind Collective');
     } finally {
       await harness.cleanup();
     }

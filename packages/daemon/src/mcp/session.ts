@@ -215,7 +215,7 @@ export class McpSession {
       },
       {
         name: 'collective_status',
-        description: 'Return daemon identity, uptime, and connected apps.',
+        description: 'Return daemon version, identity, uptime, and connected apps.',
         inputSchema: { type: 'object' as const, properties: {} },
       },
     ];
