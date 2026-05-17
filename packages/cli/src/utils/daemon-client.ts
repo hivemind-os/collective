@@ -25,9 +25,11 @@ interface JsonRpcNotification {
 }
 
 export interface DaemonStatus {
+  version?: string;
   did: string;
   address: string;
   uptimeMs: number;
+  uptime?: number;
   connectedApps: Array<{
     connectionId: string;
     appName?: string;

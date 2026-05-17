@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import pino from 'pino';
 
+declare const PKG_VERSION: string;
+
 import {
   AgentCache,
   type AuthProvider,
@@ -39,6 +41,7 @@ import { Ed25519Keypair } from '@mysten/sui/keypairs/ed25519';
 import type { DaemonFullConfig } from './config.js';
 
 export interface DaemonStatusBase {
+  version: string;
   did: DID;
   address: string;
   evmAddress?: string;
@@ -190,6 +193,7 @@ export class DaemonState {
 
   getStatusBase(): DaemonStatusBase {
     return {
+      version: PKG_VERSION,
       did: this.did,
       address: this.address,
       evmAddress: this.evmWallet?.address,

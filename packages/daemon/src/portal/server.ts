@@ -144,7 +144,9 @@ export class PortalServer {
     // ── Dashboard routes (always available) ──────────────────────
     this.server.get('/api/status', async () => {
       const auth = this.getAuthStatus();
+      const status = this.options.state?.getStatusBase();
       return {
+        version: status?.version ?? null,
         authenticated: auth.authenticated,
         authMode: auth.authMode,
         authState: auth.state,

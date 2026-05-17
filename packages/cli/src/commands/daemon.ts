@@ -159,9 +159,12 @@ async function waitForReady(ipcPath: string, deps: DaemonCommandDeps): Promise<b
 }
 
 function printStatus(status: DaemonStatus): void {
+  if (status.version) {
+    console.log(`Version: ${status.version}`);
+  }
   console.log(`DID: ${status.did}`);
   console.log(`Address: ${status.address}`);
-  console.log(`Uptime: ${formatDuration(status.uptimeMs)}`);
+  console.log(`Uptime: ${formatDuration(status.uptimeMs ?? status.uptime ?? 0)}`);
   console.log(`Connected Apps: ${status.connectedApps.length}`);
   if (status.connectedApps.length > 0) {
     table(
