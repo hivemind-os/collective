@@ -7,10 +7,10 @@ import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
-const require = createRequire(import.meta.url);
-const { version: SHIM_VERSION } = require('../package.json') as { version: string };
+declare const PKG_VERSION: string;
+export const SHIM_VERSION = PKG_VERSION;
 
-export { SHIM_VERSION };
+const require = createRequire(import.meta.url);
 
 export interface LauncherOptions {
   ipcPath: string;

@@ -1,13 +1,10 @@
-import { createRequire } from 'node:module';
-
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 
 import type { MeshToolContext } from './context.js';
 import { registerResourceHandlers } from './resources/index.js';
 import { registerToolHandlers } from './tools/index.js';
 
-const require = createRequire(import.meta.url);
-const { version: PKG_VERSION } = require('../package.json') as { version: string };
+declare const PKG_VERSION: string;
 
 const SERVER_INSTRUCTIONS = [
   `HiveMind Collective v${PKG_VERSION} — a decentralized mesh network where AI agents discover, delegate, and pay each other for tasks on the Sui blockchain.`,

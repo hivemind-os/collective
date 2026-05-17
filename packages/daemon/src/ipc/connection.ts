@@ -1,11 +1,10 @@
-import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 
 import pino from 'pino';
 
-const require = createRequire(import.meta.url);
-const { version: DAEMON_VERSION } = require('../../package.json') as { version: string };
+declare const PKG_VERSION: string;
+const DAEMON_VERSION = PKG_VERSION;
 
 import { logAuditEvent } from '../audit.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';

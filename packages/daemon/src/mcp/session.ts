@@ -1,5 +1,7 @@
-import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
+
+declare const PKG_VERSION: string;
+const DAEMON_VERSION = PKG_VERSION;
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -28,9 +30,6 @@ import type { JsonRpcMessage, JsonRpcResponse } from '../ipc/protocol.js';
 import { isJsonRpcRequest } from '../ipc/protocol.js';
 import type { DaemonState } from '../state.js';
 import { McpTaskStore, type McpTaskEntry, type McpTaskStatus } from './task-store.js';
-
-const require = createRequire(import.meta.url);
-const { version: DAEMON_VERSION } = require('../../package.json') as { version: string };
 
 class IpcTransport implements Transport {
   onclose?: () => void;

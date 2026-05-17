@@ -1,9 +1,8 @@
-import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 
-const require = createRequire(import.meta.url);
-const { version: SHIM_VERSION } = require('../package.json') as { version: string };
+declare const PKG_VERSION: string;
+const SHIM_VERSION = PKG_VERSION;
 
 type MessageHandler = (message: object) => void;
 type CloseHandler = () => void;
