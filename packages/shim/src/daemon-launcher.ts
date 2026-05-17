@@ -36,10 +36,11 @@ export function resolveDaemonBin(): string {
   try {
     return require.resolve('@hivemind-os/collective-daemon');
   } catch {
-    if (commandExists('mesh-daemon')) {
-      return 'mesh-daemon';
+    if (commandExists('collective-daemon')) {
+      return 'collective-daemon';
     }
 
+    // Monorepo fallback (only works when running from packages/shim/)
     return fileURLToPath(new URL('../../daemon/dist/index.js', import.meta.url));
   }
 }
@@ -69,14 +70,31 @@ export async function ensureDaemonRunning(options: LauncherOptions): Promise<voi
 
   const command = options.daemonBin.endsWith('.js') ? process.execPath : options.daemonBin;
   const args = options.daemonBin.endsWith('.js') ? [options.daemonBin] : [];
-  const child = spawn(command, args, { detached: true, stdio: 'ignore' });
+  const child = spawn(command, args, { detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  let stderrOutput = '';
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (chunk: string) => {
+    stderrOutput += chunk;
+  });
   child.unref();
+  child.stderr?.unref();
+
+  let exited = false;
+  let exitCode: number | null = null;
+  child.once('exit', (code) => {
+    exited = true;
+    exitCode = code;
+  });
 
   const deadline = Date.now() + options.startupTimeoutMs;
   while (Date.now() < deadline) {
     await delay(200);
     if (await isDaemonRunning(options.ipcPath)) {
       return;
+    }
+    if (exited) {
+      const detail = stderrOutput.trim() ? `\n${stderrOutput.trim()}` : '';
+      throw new Error(`Daemon process exited with code ${exitCode} before IPC was ready.${detail}`);
     }
   }
 
