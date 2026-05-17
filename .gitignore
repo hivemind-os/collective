@@ -27,6 +27,8 @@ demo-config.json
 
 # Test artifacts
 .test-data/
+test-results/
+playwright-report/
 
 # Temporary Sui publish manifests
 Pub.mesh-local-*.toml

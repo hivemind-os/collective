@@ -1671,9 +1671,9 @@ function renderServicesPage(): string {
           if (!res.ok) {
             throw new Error(typeof data.error === 'string' ? data.error : 'Unable to save provider settings.');
           }
-          showNotice('Provider configuration saved. Restart callback completed successfully.', 'success');
           await loadProviderConfig();
           await loadRegistration();
+          showNotice('Provider configuration saved successfully.', 'success');
         } catch (error) {
           showNotice(error instanceof Error ? error.message : 'Unable to save provider settings.', 'error');
         } finally {
