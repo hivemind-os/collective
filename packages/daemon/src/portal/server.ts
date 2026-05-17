@@ -819,10 +819,10 @@ const INNER_PAGE_STYLES = `
   .nav { margin-bottom: 16px; font-size: 0.9rem; }
   .nav a { color: #60a5fa; text-decoration: none; }
   .nav a:hover { text-decoration: underline; }
-  .stat { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1e293b; }
+  .stat { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1e293b; flex-wrap: wrap; }
   .stat:last-child { border-bottom: 0; }
-  .stat-label { color: #94a3b8; font-size: 0.85rem; }
-  .stat-value { font-family: monospace; font-size: 0.9rem; }
+  .stat-label { color: #94a3b8; font-size: 0.85rem; white-space: nowrap; }
+  .stat-value { font-family: monospace; font-size: 0.9rem; word-break: break-all; text-align: right; }
   .search-row { display: flex; gap: 8px; margin-bottom: 20px; }
   .search-row input { flex: 1; padding: 10px 12px; background: #020617; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 0.9rem; }
   .search-row input:focus { outline: none; border-color: #2563eb; }
