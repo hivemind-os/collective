@@ -230,9 +230,13 @@ export class RegistryClient {
           continue;
         }
 
-        const hasMatch = parsed.agent.capabilities.some(
-          (entry) => entry.name.toLowerCase() === capability.toLowerCase(),
-        );
+        const query = capability.toLowerCase();
+        const hasMatch =
+          parsed.agent.capabilities.some(
+            (entry) => entry.name.toLowerCase().includes(query),
+          ) ||
+          parsed.agent.name.toLowerCase().includes(query) ||
+          parsed.agent.description.toLowerCase().includes(query);
         if (!hasMatch) {
           continue;
         }

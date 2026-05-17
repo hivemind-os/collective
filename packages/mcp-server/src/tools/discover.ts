@@ -74,7 +74,7 @@ export async function discoverAgentsByCapability(
   }
 
   const cached = (await queryLocalCache(context, normalizedCapability, Math.max(limit * 2, limit), sortBy))
-    .filter((agent) => hasCapability(agent, normalizedCapability))
+    .filter((agent) => capabilityMatches(agent, normalizedCapability))
     .slice(0, limit);
 
   if (cached.length > 0) {
@@ -220,6 +220,15 @@ function hasCapability(agent: AgentCard, capability: string): boolean {
 
 function capabilityNameEquals(left: string, right: string): boolean {
   return left.toLowerCase() === right.toLowerCase();
+}
+
+function capabilityMatches(agent: AgentCard, query: string): boolean {
+  const q = query.toLowerCase();
+  return (
+    agent.capabilities.some((entry) => entry.name.toLowerCase().includes(q)) ||
+    agent.name.toLowerCase().includes(q) ||
+    agent.description.toLowerCase().includes(q)
+  );
 }
 
 function compareBigInt(left: bigint, right: bigint): number {
