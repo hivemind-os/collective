@@ -68,6 +68,7 @@ module agentic_mesh::registry_tests {
                 cap_prices,
                 cap_currencies,
                 endpoint,
+                @0x0,
                 clock,
                 scenario.ctx(),
             );
@@ -235,6 +236,7 @@ module agentic_mesh::registry_tests {
                 string::utf8(b"Agent A Updated"),
                 string::utf8(b"Updated production profile"),
                 string::utf8(b"https://mesh.example/updated"),
+                @0x0,
                 &clock,
                 scenario.ctx(),
             );
@@ -374,6 +376,7 @@ module agentic_mesh::registry_tests {
                 string::utf8(b"Agent A v2"),
                 string::utf8(b"Updated once"),
                 string::utf8(b"https://mesh.example/v2"),
+                @0x0,
                 &clock,
                 scenario.ctx(),
             );
@@ -434,6 +437,7 @@ module agentic_mesh::registry_tests {
                 string::utf8(b"Hacked"),
                 string::utf8(b"Hacked"),
                 string::utf8(b"https://mesh.example/hacked"),
+                @0x0,
                 &clock,
                 scenario.ctx(),
             );
@@ -626,6 +630,7 @@ module agentic_mesh::registry_tests {
                 cap_prices,
                 cap_currencies,
                 string::utf8(b"https://mesh.example/events"),
+                @0x0,
                 &clock,
                 scenario.ctx(),
             );
@@ -668,6 +673,7 @@ module agentic_mesh::registry_tests {
                 string::utf8(b"Agent Event Update"),
                 string::utf8(b"Updated metadata for event testing"),
                 string::utf8(b"https://mesh.example/events/update"),
+                @0x0,
                 &clock,
                 scenario.ctx(),
             );

@@ -174,7 +174,7 @@ module agentic_mesh::staking {
 
     public fun slash_expired_escrow(
         position: &mut StakePosition,
-        task_ref: &Task,
+        task_ref: &Task<SUI>,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
@@ -183,7 +183,7 @@ module agentic_mesh::staking {
 
     public fun slash_non_delivery(
         position: &mut StakePosition,
-        task_ref: &Task,
+        task_ref: &Task<SUI>,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
@@ -192,7 +192,7 @@ module agentic_mesh::staking {
 
     fun slash(
         position: &mut StakePosition,
-        task_ref: &Task,
+        task_ref: &Task<SUI>,
         evidence_type: u8,
         clock: &Clock,
         ctx: &mut TxContext,
@@ -235,7 +235,7 @@ module agentic_mesh::staking {
         transfer::transfer(record, ctx.sender());
     }
 
-    fun is_valid_evidence(position: &StakePosition, task_ref: &Task, clock: &Clock): bool {
+    fun is_valid_evidence(position: &StakePosition, task_ref: &Task<SUI>, clock: &Clock): bool {
         if (task::task_provider(task_ref) != position.owner) {
             return false
         };

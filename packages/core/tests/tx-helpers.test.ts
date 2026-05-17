@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildAcceptBidTx,
   buildClaimPaymentTx,
   buildCompleteMeteredTaskTx,
   buildOpenDisputeTx,
   buildPostMeteredTaskTx,
+  buildPostTaskTx,
   buildReleaseMeteredPaymentTx,
+  buildSlashExpiredEscrowTx,
 } from '../src/sui/tx-helpers.js';
+
+function getMoveCalls(tx: { getData: () => { commands: Array<Record<string, unknown>> } }): Array<Record<string, unknown>> {
+  return tx.getData().commands
+    .filter((command) => 'MoveCall' in command && typeof command.MoveCall === 'object' && command.MoveCall)
+    .map((command) => command.MoveCall as Record<string, unknown>);
+}
 
 describe('tx-helpers object id validation', () => {
   it('rejects all-zero object ids while preserving short test ids', () => {
@@ -56,6 +65,46 @@ describe('tx-helpers object id validation', () => {
       packageId: '0x1',
       taskId: '0x3',
     })).not.toThrow();
+  });
+
+  it('adds type arguments to generic task, marketplace, dispute, and slash calls', () => {
+    const defaultTaskCall = getMoveCalls(buildPostTaskTx({
+      packageId: '0x1',
+      capability: 'summarize',
+      category: 'analysis',
+      inputBlobId: 'blob-1',
+      priceMist: 10n,
+      disputeWindowMs: 60_000,
+      expiryHours: 24,
+    }))[0];
+    expect(defaultTaskCall?.typeArguments).toEqual(['0x2::sui::SUI']);
+
+    const customCoinType = '0x123::coin::COIN';
+    const bidCalls = getMoveCalls(buildAcceptBidTx({
+      packageId: '0x1',
+      taskId: '0x3',
+      bidId: '0x4',
+      otherBidIds: ['0x5'],
+      coinType: customCoinType,
+    }));
+    expect(bidCalls).toHaveLength(2);
+    expect(bidCalls.map((call) => call.typeArguments)).toEqual([[customCoinType], [customCoinType]]);
+
+    const disputeCall = getMoveCalls(buildOpenDisputeTx({
+      packageId: '0x1',
+      taskId: '0x3',
+      evidenceBlobId: 'walrus:evidence',
+      proposedSplitMist: 1n,
+      coinType: customCoinType,
+    }))[0];
+    expect(disputeCall?.typeArguments).toEqual([customCoinType]);
+
+    const slashCall = getMoveCalls(buildSlashExpiredEscrowTx({
+      packageId: '0x1',
+      stakeId: '0x2',
+      taskId: '0x3',
+    }))[0];
+    expect(slashCall?.typeArguments).toEqual(['0x2::sui::SUI']);
   });
 
   it('rejects invalid metered completion hashes', () => {

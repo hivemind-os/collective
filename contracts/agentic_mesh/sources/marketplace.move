@@ -64,8 +64,8 @@ module agentic_mesh::marketplace {
         status: u8,
     }
 
-    public fun place_bid(
-        task: &Task,
+    public fun place_bid<T>(
+        task: &Task<T>,
         reputation_score: u64,
         bid_price: u64,
         evidence_blob: vector<u8>,
@@ -102,12 +102,12 @@ module agentic_mesh::marketplace {
         transfer::share_object(bid);
     }
 
-    public fun accept_bid(task: &mut Task, bid: &mut Bid, clock: &Clock, ctx: &mut TxContext) {
+    public fun accept_bid<T>(task: &mut Task<T>, bid: &mut Bid, clock: &Clock, ctx: &mut TxContext) {
         assert!(ctx.sender() == task::task_requester(task), E_NOT_REQUESTER);
         assert!(bid.task_id == task::task_id(task), E_TASK_MISMATCH);
         assert!(bid.status == STATUS_ACTIVE, E_INVALID_STATUS);
 
-        let refunded_amount = task::accept_bid_for_task(task, bid.bidder, bid.bid_price, clock, ctx);
+        let refunded_amount = task::accept_bid_for_task<T>(task, bid.bidder, bid.bid_price, clock, ctx);
         bid.status = STATUS_ACCEPTED;
 
         event::emit(BidAccepted {
@@ -135,7 +135,7 @@ module agentic_mesh::marketplace {
         });
     }
 
-    public fun reject_bid(bid: &mut Bid, task: &Task, ctx: &TxContext) {
+    public fun reject_bid<T>(bid: &mut Bid, task: &Task<T>, ctx: &TxContext) {
         assert!(ctx.sender() == task::task_requester(task), E_NOT_REQUESTER);
         assert!(bid.task_id == task::task_id(task), E_TASK_MISMATCH);
         assert!(bid.status == STATUS_ACTIVE, E_INVALID_STATUS);

@@ -4,7 +4,6 @@ module agentic_mesh::dispute {
     use sui::clock::Clock;
     use sui::coin;
     use sui::event;
-    use sui::sui::SUI;
 
     const RESOLUTION_PERIOD_MS: u64 = 604_800_000;
 
@@ -75,8 +74,8 @@ module agentic_mesh::dispute {
         dispute_id: ID,
     }
 
-    public fun open_dispute(
-        task: &mut Task,
+    public fun open_dispute<T>(
+        task: &mut Task<T>,
         evidence_blob: vector<u8>,
         proposed_split: u64,
         arbitrator: address,
@@ -157,13 +156,13 @@ module agentic_mesh::dispute {
         });
     }
 
-    public fun accept_resolution(
+    public fun accept_resolution<T>(
         dispute: &mut Dispute,
-        task: &mut Task,
+        task: &mut Task<T>,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        assert_task_match(dispute, task);
+        assert_task_match<T>(dispute, task);
         assert!(
             dispute.status == STATUS_OPEN || dispute.status == STATUS_RESPONDED,
             E_DISPUTE_NOT_OPEN,
@@ -180,7 +179,7 @@ module agentic_mesh::dispute {
         };
 
         let requester_amount = dispute.requester_proposed_split;
-        let provider_amount = settle_split(dispute, task, requester_amount, STATUS_MUTUAL_RESOLVED, clock, ctx);
+        let provider_amount = settle_split<T>(dispute, task, requester_amount, STATUS_MUTUAL_RESOLVED, clock, ctx);
         event::emit(DisputeMutuallyResolved {
             dispute_id: object::id(dispute),
             requester_amount,
@@ -188,14 +187,14 @@ module agentic_mesh::dispute {
         });
     }
 
-    public fun arbitrate(
+    public fun arbitrate<T>(
         dispute: &mut Dispute,
-        task: &mut Task,
+        task: &mut Task<T>,
         ruling_split: u64,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        assert_task_match(dispute, task);
+        assert_task_match<T>(dispute, task);
         assert!(
             dispute.status == STATUS_OPEN || dispute.status == STATUS_RESPONDED,
             E_DISPUTE_NOT_OPEN,
@@ -205,7 +204,7 @@ module agentic_mesh::dispute {
         assert!(ruling_split <= dispute.escrow_amount, E_INVALID_SPLIT);
 
         dispute.ruling_split = ruling_split;
-        let provider_amount = settle_split(dispute, task, ruling_split, STATUS_ARBITRATED, clock, ctx);
+        let provider_amount = settle_split<T>(dispute, task, ruling_split, STATUS_ARBITRATED, clock, ctx);
         event::emit(DisputeArbitrated {
             dispute_id: object::id(dispute),
             arbitrator: dispute.arbitrator,
@@ -214,33 +213,33 @@ module agentic_mesh::dispute {
         });
     }
 
-    public fun expire_dispute(
+    public fun expire_dispute<T>(
         dispute: &mut Dispute,
-        task: &mut Task,
+        task: &mut Task<T>,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
-        assert_task_match(dispute, task);
+        assert_task_match<T>(dispute, task);
         assert!(
             dispute.status == STATUS_OPEN || dispute.status == STATUS_RESPONDED,
             E_DISPUTE_NOT_OPEN,
         );
         assert!(clock.timestamp_ms() >= dispute.resolution_deadline, E_RESOLUTION_PERIOD_EXPIRED);
 
-        let _provider_amount = settle_split(dispute, task, 0, STATUS_EXPIRED, clock, ctx);
+        let _provider_amount = settle_split<T>(dispute, task, 0, STATUS_EXPIRED, clock, ctx);
         event::emit(DisputeExpired {
             dispute_id: object::id(dispute),
         });
     }
 
-    fun assert_task_match(dispute: &Dispute, task: &Task) {
+    fun assert_task_match<T>(dispute: &Dispute, task: &Task<T>) {
         assert!(dispute.task_id == task::task_id(task), E_TASK_MISMATCH);
         assert!(task::task_status(task) == task::status_disputed(), E_DISPUTE_NOT_OPEN);
     }
 
-    fun settle_split(
+    fun settle_split<T>(
         dispute: &mut Dispute,
-        task: &mut Task,
+        task: &mut Task<T>,
         requester_amount: u64,
         resolved_status: u8,
         clock: &Clock,
@@ -248,18 +247,18 @@ module agentic_mesh::dispute {
     ): u64 {
         assert!(requester_amount <= dispute.escrow_amount, E_INVALID_SPLIT);
 
-        let (requester_balance, provider_balance) = task::split_escrow(task, requester_amount);
+        let (requester_balance, provider_balance) = task::split_escrow<T>(task, requester_amount);
         let provider_amount = dispute.escrow_amount - requester_amount;
 
-        transfer_balance(requester_balance, dispute.requester, ctx);
-        transfer_balance(provider_balance, dispute.provider, ctx);
+        transfer_balance<T>(requester_balance, dispute.requester, ctx);
+        transfer_balance<T>(provider_balance, dispute.provider, ctx);
 
         dispute.status = resolved_status;
         dispute.resolved_at = clock.timestamp_ms();
         provider_amount
     }
 
-    fun transfer_balance(balance_ref: Balance<SUI>, recipient: address, ctx: &mut TxContext) {
+    fun transfer_balance<T>(balance_ref: Balance<T>, recipient: address, ctx: &mut TxContext) {
         if (balance::value(&balance_ref) == 0) {
             balance::destroy_zero(balance_ref);
             return

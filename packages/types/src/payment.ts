@@ -1,5 +1,6 @@
 export enum PaymentRail {
   SUI_ESCROW = 'SUI_ESCROW',
+  USDC_ESCROW = 'USDC_ESCROW',
   SUI_TRANSFER = 'SUI_TRANSFER',
   X402_BASE = 'X402_BASE',
 }

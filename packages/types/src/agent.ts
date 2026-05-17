@@ -36,6 +36,7 @@ export interface AgentCard {
   endpoint?: string;
   relayEndpoints?: RelayEndpoint[];
   encryptionPublicKey?: string;
+  payoutAddress?: string;
   active: boolean;
   version: number;
   registeredAt: number;

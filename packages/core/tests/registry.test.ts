@@ -28,8 +28,16 @@ function getMoveTargets(tx: { getData: () => { commands: Array<Record<string, un
     .filter(Boolean);
 }
 
+function getMoveCall(tx: { getData: () => { commands: Array<Record<string, unknown>> } }): {
+  arguments: Array<Record<string, unknown>>;
+} {
+  return tx.getData().commands.find((command) => 'MoveCall' in command)?.MoveCall as {
+    arguments: Array<Record<string, unknown>>;
+  };
+}
+
 describe('RegistryClient', () => {
-  it('builds a register agent transaction', async () => {
+  it('builds a register agent transaction with a payout address', async () => {
     const executeTransaction = vi.fn().mockResolvedValue({
       digest: '0xtx',
       objectChanges: [
@@ -66,11 +74,16 @@ describe('RegistryClient', () => {
         },
       ],
       endpoint: 'https://example.com',
+      payoutAddress: '0x3',
       keypair: {} as unknown as Ed25519Keypair,
     });
 
     const tx = executeTransaction.mock.calls[0]?.[0];
+    const txData = tx.getData();
+    const moveCall = getMoveCall(tx);
+    const payoutInput = txData.inputs[(moveCall.arguments[10] as { Input: number }).Input] as { Pure: { bytes: string } };
     expect(getMoveTargets(tx).some((target) => target.endsWith('::registry::register_agent'))).toBe(true);
+    expect(Buffer.from(payoutInput.Pure.bytes, 'base64').toString('hex')).toBe('3'.padStart(64, '0'));
     expect(result).toEqual({ txDigest: '0xtx', agentCardId: '0x3' });
   });
 
@@ -113,7 +126,7 @@ describe('RegistryClient', () => {
     expect(result).toEqual({ txDigest: '0xtx', agentCardId: '0x3' });
   });
 
-  it('parses encryption public keys from agent cards', async () => {
+  it('parses encryption public keys and payout addresses from agent cards', async () => {
     const client = new RegistryClient(
       {
         executeTransaction: vi.fn(),
@@ -127,6 +140,7 @@ describe('RegistryClient', () => {
           capabilities: [],
           endpoint: 'https://example.com',
           encryption_public_key: Array.from({ length: 32 }, (_value, index) => index),
+          payout_address: '0x4',
           active: true,
           version: 1,
           registered_at: 1,
@@ -139,6 +153,7 @@ describe('RegistryClient', () => {
     const card = await client.getAgentCard('0xcard');
 
     expect(card?.encryptionPublicKey).toBe('000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f');
+    expect(card?.payoutAddress).toBe('0x4');
   });
 
   it('queries AgentRegistered events for capability discovery', async () => {

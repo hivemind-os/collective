@@ -20,6 +20,7 @@ export interface NetworkConfig {
   faucetUrl: string;
   packageId: string;
   registryId: string;
+  usdcType?: string;
 }
 
 export interface IdentityConfig {

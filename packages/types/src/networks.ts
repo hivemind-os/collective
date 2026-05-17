@@ -4,6 +4,7 @@ export type NetworkName = 'testnet' | 'mainnet' | 'devnet' | 'local';
 
 export interface NetworkPreset extends NetworkConfig {
   name: NetworkName;
+  usdcType?: string;
   explorerUrl: string;
 }
 
@@ -18,6 +19,7 @@ export const NETWORK_PRESETS: Record<NetworkName, NetworkPreset> = {
     faucetUrl: 'https://faucet.testnet.sui.io',
     packageId: '0xad62fa133e2ad67889f6452fb8b8303a369be1c762e94f18896307202229c61f',
     registryId: '0x1d595fe6ac6be0d86ca233b2029ecaf3e1aed110ff947f3335aaddef7a7fec9d',
+    usdcType: '',
     explorerUrl: 'https://suiscan.xyz/testnet',
   },
   mainnet: {
@@ -26,6 +28,7 @@ export const NETWORK_PRESETS: Record<NetworkName, NetworkPreset> = {
     faucetUrl: '',
     packageId: '',
     registryId: '',
+    usdcType: '',
     explorerUrl: 'https://suiscan.xyz/mainnet',
   },
   devnet: {
@@ -34,6 +37,7 @@ export const NETWORK_PRESETS: Record<NetworkName, NetworkPreset> = {
     faucetUrl: 'https://faucet.devnet.sui.io',
     packageId: '',
     registryId: '',
+    usdcType: '',
     explorerUrl: 'https://suiscan.xyz/devnet',
   },
   local: {
@@ -42,6 +46,7 @@ export const NETWORK_PRESETS: Record<NetworkName, NetworkPreset> = {
     faucetUrl: 'http://127.0.0.1:9123',
     packageId: '',
     registryId: '',
+    usdcType: '',
     explorerUrl: '',
   },
 };

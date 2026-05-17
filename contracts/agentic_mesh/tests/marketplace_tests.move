@@ -59,7 +59,7 @@ module agentic_mesh::marketplace_tests {
     ): ID {
         scenario.next_tx(bidder);
         {
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             marketplace::place_bid(&task_obj, reputation_score, bid_price, b"proposal", test_clock, scenario.ctx());
             ts::return_shared(task_obj);
             let events = event::events_by_type<BidPlaced>();
@@ -99,7 +99,7 @@ module agentic_mesh::marketplace_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             let mut bid = scenario.take_shared_by_id<Bid>(bid_id);
             marketplace::accept_bid(&mut task_obj, &mut bid, &test_clock, scenario.ctx());
             assert!(task::task_provider(&task_obj) == PROVIDER);
@@ -156,7 +156,7 @@ module agentic_mesh::marketplace_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             let mut bid = scenario.take_shared_by_id<Bid>(bid_id);
             marketplace::reject_bid(&mut bid, &task_obj, scenario.ctx());
             assert!(marketplace::bid_status(&bid) == marketplace::status_rejected());

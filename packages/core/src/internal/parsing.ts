@@ -158,6 +158,7 @@ export function parseAgentCardFields(raw: unknown, fallbackId?: string): AgentCa
     endpoint: asString(getValue(record, 'endpoint')) || undefined,
     relayEndpoints: normalizeRelayEndpoints(getValue(record, 'relayEndpoints', 'relay_endpoints')),
     encryptionPublicKey: normalizeOptionalHex(getValue(record, 'encryption_public_key', 'encryptionPublicKey')),
+    payoutAddress: normalizeOptionalAddress(getValue(record, 'payout_address', 'payoutAddress')),
     active: asBoolean(getValue(record, 'active'), true),
     version: asNumber(getValue(record, 'version'), 1),
     registeredAt: asNumber(getValue(record, 'registered_at', 'registeredAt')),

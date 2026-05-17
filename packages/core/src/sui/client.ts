@@ -104,6 +104,11 @@ export class MeshSuiClient {
     return BigInt(balance.totalBalance);
   }
 
+  async getTokenBalance(address: string, coinType: string): Promise<bigint> {
+    const balance = await this.suiClient.getBalance({ owner: address, coinType });
+    return BigInt(balance.totalBalance);
+  }
+
   async queryEvents(
     eventType: string,
     cursor?: EventID | null,

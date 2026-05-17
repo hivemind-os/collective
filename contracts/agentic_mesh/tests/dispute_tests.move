@@ -59,7 +59,7 @@ module agentic_mesh::dispute_tests {
     fun accept_task(scenario: &mut ts::Scenario, task_id: ID, test_clock: &Clock) {
         scenario.next_tx(PROVIDER);
         {
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut task_obj, test_clock, scenario.ctx());
             ts::return_shared(task_obj);
         }
@@ -68,7 +68,7 @@ module agentic_mesh::dispute_tests {
     fun complete_task(scenario: &mut ts::Scenario, task_id: ID, test_clock: &Clock) {
         scenario.next_tx(PROVIDER);
         {
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::complete_task(&mut task_obj, b"result-blob", test_clock, scenario.ctx());
             ts::return_shared(task_obj);
         }
@@ -84,7 +84,7 @@ module agentic_mesh::dispute_tests {
     ): ID {
         scenario.next_tx(sender);
         {
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::open_dispute(
                 &mut task_obj,
                 b"requester-evidence",
@@ -133,7 +133,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(OUTSIDER);
         {
             let dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(dispute::dispute_task_id(&dispute_obj) == task_id);
             assert!(dispute::dispute_requester(&dispute_obj) == REQUESTER);
             assert!(dispute::dispute_provider(&dispute_obj) == PROVIDER);
@@ -250,7 +250,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::accept_resolution(&mut dispute_obj, &mut task_obj, &test_clock, scenario.ctx());
             assert!(dispute::dispute_status(&dispute_obj) == dispute::status_mutual_resolved());
             assert!(task::task_status(&task_obj) == task::status_released());
@@ -295,7 +295,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(OUTSIDER);
         {
             let dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(dispute::dispute_status(&dispute_obj) == dispute::status_responded());
             assert!(task::task_status(&task_obj) == task::status_disputed());
             assert!(task::task_escrow_value(&task_obj) == ONE_SUI);
@@ -306,7 +306,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::accept_resolution(&mut dispute_obj, &mut task_obj, &test_clock, scenario.ctx());
             assert!(dispute::dispute_requester_proposed_split(&dispute_obj) == TWO_HUNDRED_MILLION);
             assert!(dispute::dispute_status(&dispute_obj) == dispute::status_mutual_resolved());
@@ -345,7 +345,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(ARBITRATOR);
         {
             let mut dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::arbitrate(&mut dispute_obj, &mut task_obj, THREE_HUNDRED_MILLION, &test_clock, scenario.ctx());
             assert!(dispute::dispute_status(&dispute_obj) == dispute::status_arbitrated());
             assert!(dispute::dispute_ruling_split(&dispute_obj) == THREE_HUNDRED_MILLION);
@@ -391,7 +391,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(OUTSIDER);
         {
             let mut dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::expire_dispute(&mut dispute_obj, &mut task_obj, &test_clock, scenario.ctx());
             assert!(dispute::dispute_status(&dispute_obj) == dispute::status_expired());
             assert!(task::task_status(&task_obj) == task::status_released());
@@ -441,7 +441,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(PROVIDER);
         {
             let mut dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::accept_resolution(&mut dispute_obj, &mut task_obj, &test_clock, scenario.ctx());
             ts::return_shared(dispute_obj);
             ts::return_shared(task_obj);
@@ -470,7 +470,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(PROVIDER);
         {
             let mut dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::accept_resolution(&mut dispute_obj, &mut task_obj, &test_clock, scenario.ctx());
             ts::return_shared(dispute_obj);
             ts::return_shared(task_obj);
@@ -532,7 +532,7 @@ module agentic_mesh::dispute_tests {
         scenario.next_tx(OUTSIDER);
         {
             let mut dispute_obj = scenario.take_shared_by_id<Dispute>(dispute_id);
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             dispute::arbitrate(&mut dispute_obj, &mut task_obj, HALF_SUI, &test_clock, scenario.ctx());
             ts::return_shared(dispute_obj);
             ts::return_shared(task_obj);

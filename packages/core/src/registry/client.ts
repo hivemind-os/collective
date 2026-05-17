@@ -37,6 +37,7 @@ export class RegistryClient {
     capabilities: Capability[];
     endpoint: string;
     encryptionPublicKey?: Uint8Array;
+    payoutAddress?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string; agentCardId: string }> {
     const tx = buildRegisterAgentTx({
@@ -47,6 +48,7 @@ export class RegistryClient {
       description: params.description,
       capabilities: params.capabilities,
       endpoint: params.endpoint,
+      payoutAddress: params.payoutAddress,
     });
 
     const response = await this.suiClient.executeTransaction(tx, params.keypair);
@@ -74,6 +76,7 @@ export class RegistryClient {
     description: string;
     endpoint: string;
     encryptionPublicKey?: Uint8Array;
+    payoutAddress?: string;
     keypair: Signer;
   }): Promise<{ txDigest: string }> {
     const tx = buildUpdateAgentTx({
@@ -83,6 +86,7 @@ export class RegistryClient {
       name: params.name,
       description: params.description,
       endpoint: params.endpoint,
+      payoutAddress: params.payoutAddress,
     });
 
     const response = await this.suiClient.executeTransaction(tx, params.keypair);

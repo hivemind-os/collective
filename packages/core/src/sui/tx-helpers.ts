@@ -16,6 +16,7 @@ export interface RegisterAgentParams {
   description: string;
   capabilities: Capability[];
   endpoint: string;
+  payoutAddress?: string;
 }
 
 export interface UpdateAgentParams {
@@ -25,6 +26,7 @@ export interface UpdateAgentParams {
   name: string;
   description: string;
   endpoint: string;
+  payoutAddress?: string;
 }
 
 export interface SetEncryptionKeyParams {
@@ -61,6 +63,7 @@ export interface PostTaskParams {
   priceMist: bigint;
   disputeWindowMs: number;
   expiryHours: number;
+  coinType?: string;
 }
 
 export interface PostMeteredTaskParams {
@@ -73,11 +76,13 @@ export interface PostMeteredTaskParams {
   unitPriceMist: bigint;
   disputeWindowMs: number;
   expiryHours: number;
+  coinType?: string;
 }
 
 export interface AcceptTaskParams {
   packageId: string;
   taskId: string;
+  coinType?: string;
 }
 
 export interface CompleteTaskParams {
@@ -85,6 +90,7 @@ export interface CompleteTaskParams {
   taskId: string;
   resultBlobId: string;
   providerCardId?: string;
+  coinType?: string;
 }
 
 export interface CompleteMeteredTaskParams {
@@ -94,32 +100,38 @@ export interface CompleteMeteredTaskParams {
   meteredUnits: number;
   verificationHash: string;
   providerCardId?: string;
+  coinType?: string;
 }
 
 export interface ReleasePaymentParams {
   packageId: string;
   taskId: string;
+  coinType?: string;
 }
 
 export interface ReleaseMeteredPaymentParams {
   packageId: string;
   taskId: string;
+  coinType?: string;
 }
 
 export interface ClaimPaymentParams {
   packageId: string;
   taskId: string;
   providerCardId?: string;
+  coinType?: string;
 }
 
 export interface CancelTaskParams {
   packageId: string;
   taskId: string;
+  coinType?: string;
 }
 
 export interface RefundExpiredTaskParams {
   packageId: string;
   taskId: string;
+  coinType?: string;
 }
 
 export interface PlaceBidParams {
@@ -128,6 +140,7 @@ export interface PlaceBidParams {
   bidPriceMist: bigint;
   reputationScore: bigint;
   evidenceBlob?: string;
+  coinType?: string;
 }
 
 export interface AcceptBidParams {
@@ -135,6 +148,7 @@ export interface AcceptBidParams {
   taskId: string;
   bidId: string;
   otherBidIds?: string[];
+  coinType?: string;
 }
 
 export interface WithdrawBidParams {
@@ -146,6 +160,7 @@ export interface RejectBidParams {
   packageId: string;
   taskId: string;
   bidId: string;
+  coinType?: string;
 }
 
 export interface OpenDisputeParams {
@@ -154,6 +169,7 @@ export interface OpenDisputeParams {
   evidenceBlobId: string;
   proposedSplitMist: bigint;
   arbitratorAddress?: string;
+  coinType?: string;
 }
 
 export interface RespondToDisputeParams {
@@ -167,6 +183,7 @@ export interface AcceptResolutionParams {
   packageId: string;
   disputeId: string;
   taskId: string;
+  coinType?: string;
 }
 
 export interface ArbitrateDisputeParams {
@@ -174,6 +191,7 @@ export interface ArbitrateDisputeParams {
   disputeId: string;
   taskId: string;
   rulingSplitMist: bigint;
+  coinType?: string;
 }
 
 export interface PublishReputationAnchorParams {
@@ -250,6 +268,7 @@ export function buildRegisterAgentTx(params: RegisterAgentParams): Transaction {
       tx.pure.vector('u64', capabilityVectors.prices),
       tx.pure.vector('string', capabilityVectors.currencies),
       tx.pure.string(params.endpoint),
+      tx.pure.address(params.payoutAddress ?? '0x0000000000000000000000000000000000000000000000000000000000000000'),
       tx.object(CLOCK_OBJECT_ID),
     ],
   });
@@ -269,6 +288,7 @@ export function buildUpdateAgentTx(params: UpdateAgentParams): Transaction {
       tx.pure.string(params.name),
       tx.pure.string(params.description),
       tx.pure.string(params.endpoint),
+      tx.pure.address(params.payoutAddress ?? '0x0000000000000000000000000000000000000000000000000000000000000000'),
       tx.object(CLOCK_OBJECT_ID),
     ],
   });
@@ -346,6 +366,7 @@ export function buildPostTaskTx(params: PostTaskParams): Transaction {
 
   tx.moveCall({
     target: `${params.packageId}::task::post_open_task`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [
       tx.pure.string(params.capability),
       tx.pure.string(params.category),
@@ -369,6 +390,7 @@ export function buildPostMeteredTaskTx(params: PostMeteredTaskParams): Transacti
 
   tx.moveCall({
     target: `${params.packageId}::task::post_metered_task`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [
       tx.pure.string(params.capability),
       tx.pure.vector('u8', [...stringToBytes(params.inputBlobId)]),
@@ -391,6 +413,7 @@ export function buildAcceptTaskTx(params: AcceptTaskParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::accept_task`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
   });
 
@@ -403,6 +426,7 @@ export function buildCompleteTaskTx(params: CompleteTaskParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::${params.providerCardId ? 'complete_task_with_card' : 'complete_task'}`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: params.providerCardId
       ? [
           tx.object(params.taskId),
@@ -426,6 +450,7 @@ export function buildCompleteMeteredTaskTx(params: CompleteMeteredTaskParams): T
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::${params.providerCardId ? 'complete_metered_task_with_card' : 'complete_metered_task'}`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: params.providerCardId
       ? [
           tx.object(params.taskId),
@@ -453,6 +478,7 @@ export function buildReleasePaymentTx(params: ReleasePaymentParams): Transaction
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::release_payment`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.taskId)],
   });
 
@@ -465,6 +491,7 @@ export function buildReleaseMeteredPaymentTx(params: ReleaseMeteredPaymentParams
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::release_metered_payment`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.taskId)],
   });
 
@@ -477,6 +504,7 @@ export function buildClaimPaymentTx(params: ClaimPaymentParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::${params.providerCardId ? 'claim_payment_with_card' : 'claim_payment'}`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: params.providerCardId
       ? [tx.object(params.taskId), tx.object(params.providerCardId), tx.object(CLOCK_OBJECT_ID)]
       : [tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
@@ -491,6 +519,7 @@ export function buildCancelTaskTx(params: CancelTaskParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::cancel_task`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.taskId)],
   });
 
@@ -503,6 +532,7 @@ export function buildRefundExpiredTaskTx(params: RefundExpiredTaskParams): Trans
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::task::refund_expired_task`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
   });
 
@@ -515,6 +545,7 @@ export function buildPlaceBidTx(params: PlaceBidParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::marketplace::place_bid`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [
       tx.object(params.taskId),
       tx.pure.u64(params.reputationScore),
@@ -534,12 +565,14 @@ export function buildAcceptBidTx(params: AcceptBidParams): Transaction {
   for (const bidId of params.otherBidIds ?? []) {
     tx.moveCall({
       target: `${params.packageId}::marketplace::reject_bid`,
+      typeArguments: [params.coinType ?? '0x2::sui::SUI'],
       arguments: [tx.object(bidId), tx.object(params.taskId)],
     });
   }
 
   tx.moveCall({
     target: `${params.packageId}::marketplace::accept_bid`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.taskId), tx.object(params.bidId), tx.object(CLOCK_OBJECT_ID)],
   });
 
@@ -564,6 +597,7 @@ export function buildRejectBidTx(params: RejectBidParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::marketplace::reject_bid`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.bidId), tx.object(params.taskId)],
   });
 
@@ -576,6 +610,7 @@ export function buildOpenDisputeTx(params: OpenDisputeParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::dispute::open_dispute`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [
       tx.object(params.taskId),
       tx.pure.vector('u8', [...stringToBytes(params.evidenceBlobId)]),
@@ -611,6 +646,7 @@ export function buildAcceptResolutionTx(params: AcceptResolutionParams): Transac
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::dispute::accept_resolution`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [tx.object(params.disputeId), tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
   });
 
@@ -623,6 +659,7 @@ export function buildArbitrateDisputeTx(params: ArbitrateDisputeParams): Transac
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::dispute::arbitrate`,
+    typeArguments: [params.coinType ?? '0x2::sui::SUI'],
     arguments: [
       tx.object(params.disputeId),
       tx.object(params.taskId),
@@ -705,6 +742,7 @@ export function buildSlashExpiredEscrowTx(params: SlashStakeParams): Transaction
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::staking::slash_expired_escrow`,
+    typeArguments: ['0x2::sui::SUI'],
     arguments: [tx.object(params.stakeId), tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
   });
   return tx;
@@ -716,6 +754,7 @@ export function buildSlashNonDeliveryTx(params: SlashStakeParams): Transaction {
   const tx = new Transaction();
   tx.moveCall({
     target: `${params.packageId}::staking::slash_non_delivery`,
+    typeArguments: ['0x2::sui::SUI'],
     arguments: [tx.object(params.stakeId), tx.object(params.taskId), tx.object(CLOCK_OBJECT_ID)],
   });
   return tx;

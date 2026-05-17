@@ -35,6 +35,7 @@ module agentic_mesh::reputation_tests {
                 vector[ONE_SUI],
                 vector[string::utf8(b"MIST")],
                 string::utf8(b"https://mesh.example/provider"),
+                @0x0,
                 clock,
                 scenario.ctx(),
             );
@@ -175,14 +176,14 @@ module agentic_mesh::reputation_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut task_obj, &clock, scenario.ctx());
             ts::return_shared(task_obj);
         };
 
         scenario.next_tx(PROVIDER);
         {
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             let mut card = scenario.take_from_sender<AgentCard>();
             task::complete_task_with_card(&mut task_obj, &mut card, b"result-blob", &clock, scenario.ctx());
             assert!(registry::card_total_tasks_completed(&card) == 1);

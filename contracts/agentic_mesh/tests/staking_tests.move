@@ -71,7 +71,7 @@ module agentic_mesh::staking_tests {
     fun accept_task(scenario: &mut ts::Scenario, task_id: ID, test_clock: &Clock) {
         scenario.next_tx(PROVIDER);
         {
-            let mut task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let mut task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut task_obj, test_clock, scenario.ctx());
             ts::return_shared(task_obj);
         }
@@ -245,7 +245,7 @@ module agentic_mesh::staking_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut position = scenario.take_shared_by_id<StakePosition>(stake_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             staking::slash_expired_escrow(&mut position, &task_obj, &test_clock, scenario.ctx());
             assert!(staking::get_stake_amount(&position) == NINE_SUI());
             ts::return_shared(position);
@@ -281,7 +281,7 @@ module agentic_mesh::staking_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut position = scenario.take_shared_by_id<StakePosition>(stake_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             staking::slash_non_delivery(&mut position, &task_obj, &test_clock, scenario.ctx());
             assert!(staking::stake_slashed_amount(&position) == ONE_SUI);
             ts::return_shared(position);
@@ -308,7 +308,7 @@ module agentic_mesh::staking_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut position = scenario.take_shared_by_id<StakePosition>(stake_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             staking::slash_expired_escrow(&mut position, &task_obj, &test_clock, scenario.ctx());
             ts::return_shared(position);
             ts::return_shared(task_obj);
@@ -317,7 +317,7 @@ module agentic_mesh::staking_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut position = scenario.take_shared_by_id<StakePosition>(stake_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             staking::slash_non_delivery(&mut position, &task_obj, &test_clock, scenario.ctx());
             ts::return_shared(position);
             ts::return_shared(task_obj);
@@ -340,7 +340,7 @@ module agentic_mesh::staking_tests {
         scenario.next_tx(OUTSIDER);
         {
             let mut position = scenario.take_shared_by_id<StakePosition>(stake_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             staking::slash_expired_escrow(&mut position, &task_obj, &test_clock, scenario.ctx());
             ts::return_shared(position);
             ts::return_shared(task_obj);
@@ -362,7 +362,7 @@ module agentic_mesh::staking_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut position = scenario.take_shared_by_id<StakePosition>(stake_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             staking::slash_expired_escrow(&mut position, &task_obj, &test_clock, scenario.ctx());
             assert!(staking::get_stake_amount(&position) == 0);
             assert!(staking::stake_slashed_amount(&position) == TEN_SUI);
@@ -393,7 +393,7 @@ module agentic_mesh::staking_tests {
         scenario.next_tx(REQUESTER);
         {
             let mut position = scenario.take_shared_by_id<StakePosition>(stake_id);
-            let task_obj = scenario.take_shared_by_id<Task>(task_id);
+            let task_obj = scenario.take_shared_by_id<Task<SUI>>(task_id);
             staking::slash_expired_escrow(&mut position, &task_obj, &test_clock, scenario.ctx());
             ts::return_shared(position);
             ts::return_shared(task_obj);

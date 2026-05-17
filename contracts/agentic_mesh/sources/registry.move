@@ -28,6 +28,7 @@ module agentic_mesh::registry {
         capabilities: vector<Capability>,
         endpoint: String,
         encryption_public_key: vector<u8>,
+        payout_address: address,
         active: bool,
         version: u64,
         registered_at: u64,
@@ -55,6 +56,7 @@ module agentic_mesh::registry {
         capabilities: vector<Capability>,
         endpoint: String,
         encryption_public_key: vector<u8>,
+        payout_address: address,
         active: bool,
         version: u64,
         registered_at: u64,
@@ -74,6 +76,7 @@ module agentic_mesh::registry {
         capabilities: vector<Capability>,
         endpoint: String,
         encryption_public_key: vector<u8>,
+        payout_address: address,
         active: bool,
         version: u64,
         registered_at: u64,
@@ -93,6 +96,7 @@ module agentic_mesh::registry {
         capabilities: vector<Capability>,
         endpoint: String,
         encryption_public_key: vector<u8>,
+        payout_address: address,
         active: bool,
         version: u64,
         registered_at: u64,
@@ -159,6 +163,7 @@ module agentic_mesh::registry {
         cap_prices: vector<u64>,
         cap_currencies: vector<String>,
         endpoint: String,
+        payout_address: address,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
@@ -173,6 +178,7 @@ module agentic_mesh::registry {
             cap_prices,
             cap_currencies,
         );
+        let resolved_payout = if (payout_address == @0x0) { sender } else { payout_address };
         let card = AgentCard {
             id: object::new(ctx),
             owner: sender,
@@ -182,6 +188,7 @@ module agentic_mesh::registry {
             capabilities,
             endpoint,
             encryption_public_key: vector[],
+            payout_address: resolved_payout,
             active: true,
             version: 1,
             registered_at: timestamp,
@@ -205,6 +212,7 @@ module agentic_mesh::registry {
             capabilities: card.capabilities,
             endpoint: card.endpoint,
             encryption_public_key: card.encryption_public_key,
+            payout_address: card.payout_address,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
@@ -224,6 +232,7 @@ module agentic_mesh::registry {
         name: String,
         description: String,
         endpoint: String,
+        payout_address: address,
         clock: &Clock,
         ctx: &mut TxContext,
     ) {
@@ -235,6 +244,9 @@ module agentic_mesh::registry {
         card.name = name;
         card.description = description;
         card.endpoint = endpoint;
+        if (payout_address != @0x0) {
+            card.payout_address = payout_address;
+        };
         card.version = card.version + 1;
         card.updated_at = clock.timestamp_ms();
 
@@ -247,6 +259,7 @@ module agentic_mesh::registry {
             capabilities: card.capabilities,
             endpoint: card.endpoint,
             encryption_public_key: card.encryption_public_key,
+            payout_address: card.payout_address,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
@@ -293,6 +306,7 @@ module agentic_mesh::registry {
             capabilities: card.capabilities,
             endpoint: card.endpoint,
             encryption_public_key: card.encryption_public_key,
+            payout_address: card.payout_address,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
@@ -327,6 +341,7 @@ module agentic_mesh::registry {
             capabilities: card.capabilities,
             endpoint: card.endpoint,
             encryption_public_key: card.encryption_public_key,
+            payout_address: card.payout_address,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
@@ -366,6 +381,7 @@ module agentic_mesh::registry {
             capabilities: card.capabilities,
             endpoint: card.endpoint,
             encryption_public_key: card.encryption_public_key,
+            payout_address: card.payout_address,
             active: card.active,
             version: card.version,
             registered_at: card.registered_at,
@@ -418,6 +434,7 @@ module agentic_mesh::registry {
     public fun card_endpoint(card: &AgentCard): String { card.endpoint }
     public fun card_encryption_public_key(card: &AgentCard): vector<u8> { card.encryption_public_key }
     public fun card_active(card: &AgentCard): bool { card.active }
+    public fun card_payout_address(card: &AgentCard): address { card.payout_address }
     public fun card_version(card: &AgentCard): u64 { card.version }
     public fun card_registered_at(card: &AgentCard): u64 { card.registered_at }
     public fun card_updated_at(card: &AgentCard): u64 { card.updated_at }

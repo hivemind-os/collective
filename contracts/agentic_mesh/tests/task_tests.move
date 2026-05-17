@@ -87,7 +87,7 @@ module agentic_mesh::task_tests {
     ) {
         scenario.next_tx(provider);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut t, clock, scenario.ctx());
             ts::return_shared(t);
         }
@@ -102,7 +102,7 @@ module agentic_mesh::task_tests {
     ) {
         scenario.next_tx(provider);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::complete_task(&mut t, result_blob_id, clock, scenario.ctx());
             ts::return_shared(t);
         }
@@ -152,7 +152,7 @@ module agentic_mesh::task_tests {
     ) {
         scenario.next_tx(provider);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::complete_metered_task(
                 &mut t,
                 metered_units,
@@ -174,7 +174,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let t = scenario.take_shared_by_id<Task>(task_id);
+            let t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(task::task_requester(&t) == REQUESTER);
             assert!(task::task_provider(&t) == @0x0);
             assert!(task::task_capability(&t) == string::utf8(b"text-generation"));
@@ -203,7 +203,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let t = scenario.take_shared_by_id<Task>(task_id);
+            let t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(task::task_status(&t) == task::status_accepted());
             assert!(task::task_provider(&t) == PROVIDER);
             assert!(task::task_accepted_at(&t) == 1_000);
@@ -225,7 +225,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let t = scenario.take_shared_by_id<Task>(task_id);
+            let t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(task::task_status(&t) == task::status_completed());
             assert!(task::task_result_blob_id(&t) == b"result-blob-id");
             assert!(task::task_completed_at(&t) == 1_000);
@@ -247,7 +247,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             assert!(task::task_status(&t) == task::status_released());
             assert!(task::task_escrow_value(&t) == 0);
@@ -276,7 +276,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             assert!(task::task_requester(&t) == REQUESTER);
             assert!(task::task_provider(&t) == PROVIDER);
@@ -301,7 +301,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::claim_payment(&mut t, &clock, scenario.ctx());
             assert!(task::task_status(&t) == task::status_released());
             assert!(task::task_escrow_value(&t) == 0);
@@ -331,7 +331,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::claim_payment(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -351,7 +351,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::dispute_task(&mut t, &clock, scenario.ctx());
             assert!(task::task_status(&t) == task::status_disputed());
             assert!(task::task_escrow_value(&t) == ONE_SUI);
@@ -375,7 +375,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::dispute_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -392,7 +392,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::cancel_task(&mut t, scenario.ctx());
             assert!(task::task_status(&t) == task::status_cancelled());
             assert!(task::task_escrow_value(&t) == 0);
@@ -420,7 +420,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::cancel_task(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
@@ -438,7 +438,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -457,7 +457,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::complete_task(&mut t, b"bad-result", &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -475,7 +475,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::cancel_task(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
@@ -494,7 +494,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
@@ -514,14 +514,14 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
@@ -541,7 +541,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -569,7 +569,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -596,7 +596,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::refund_expired_task(&mut t, &clock, scenario.ctx());
             assert!(task::task_status(&t) == task::status_cancelled());
             assert!(task::task_escrow_value(&t) == 0);
@@ -623,7 +623,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::refund_expired_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -679,7 +679,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::claim_payment(&mut t, &clock, scenario.ctx());
             assert!(task::task_status(&t) == task::status_released());
             ts::return_shared(t);
@@ -732,7 +732,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let t = scenario.take_shared_by_id<Task>(task_id);
+            let t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(task::task_result_blob_id(&t) == b"walrus-result-blob");
             ts::return_shared(t);
         };
@@ -750,14 +750,14 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::cancel_task(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -777,14 +777,14 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::claim_payment(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -831,7 +831,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::accept_task(&mut t, &clock, scenario.ctx());
             let accepted = event::events_by_type<TaskAccepted>();
             assert!(accepted.length() == 1);
@@ -847,7 +847,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::complete_task(&mut t, b"event-result", &clock, scenario.ctx());
             let completed = event::events_by_type<TaskCompleted>();
             assert!(completed.length() == 1);
@@ -863,7 +863,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             let released = event::events_by_type<TaskPaymentReleased>();
             assert!(released.length() == 1);
@@ -910,15 +910,15 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(PROVIDER);
         {
-            let mut t1 = scenario.take_shared_by_id<Task>(task_id_1);
+            let mut t1 = scenario.take_shared_by_id<Task<SUI>>(task_id_1);
             task::accept_task(&mut t1, &clock, scenario.ctx());
             ts::return_shared(t1);
         };
 
         scenario.next_tx(OUTSIDER);
         {
-            let t1 = scenario.take_shared_by_id<Task>(task_id_1);
-            let t2 = scenario.take_shared_by_id<Task>(task_id_2);
+            let t1 = scenario.take_shared_by_id<Task<SUI>>(task_id_1);
+            let t2 = scenario.take_shared_by_id<Task<SUI>>(task_id_2);
             assert!(task::task_status(&t1) == task::status_accepted());
             assert!(task::task_status(&t2) == task::status_open());
             assert!(task::task_capability(&t1) == string::utf8(b"text-generation"));
@@ -944,14 +944,14 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_payment(&mut t, scenario.ctx());
             ts::return_shared(t);
         };
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::dispute_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -970,7 +970,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::refund_expired_task(&mut t, &clock, scenario.ctx());
             ts::return_shared(t);
         };
@@ -998,7 +998,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let t = scenario.take_shared_by_id<Task>(task_id);
+            let t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(task::task_payment_scheme(&t) == task::scheme_upto());
             assert!(task::task_price(&t) == TWO_SUI);
             assert!(task::task_max_price(&t) == TWO_SUI);
@@ -1065,7 +1065,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let t = scenario.take_shared_by_id<Task>(task_id);
+            let t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(task::task_status(&t) == task::status_completed());
             assert!(task::task_metered_units(&t) == 5);
             assert!(task::task_verification_hash(&t) == b"hash-root");
@@ -1108,7 +1108,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(REQUESTER);
         {
-            let mut t = scenario.take_shared_by_id<Task>(task_id);
+            let mut t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             task::release_metered_payment(&mut t, scenario.ctx());
             assert!(task::task_status(&t) == task::status_released());
             assert!(task::task_escrow_value(&t) == 0);
@@ -1166,7 +1166,7 @@ module agentic_mesh::task_tests {
 
         scenario.next_tx(OUTSIDER);
         {
-            let t = scenario.take_shared_by_id<Task>(task_id);
+            let t = scenario.take_shared_by_id<Task<SUI>>(task_id);
             assert!(!task::verify_result_hash(&t, b"other-hash"));
             ts::return_shared(t);
         };
