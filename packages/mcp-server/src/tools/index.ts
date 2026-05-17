@@ -20,6 +20,7 @@ import { meshMultiExecuteTool, runMeshMultiExecute } from './multi-execute.js';
 import { meshPolicyUpdateTool, runMeshPolicyUpdate } from './policy-update.js';
 import { meshRegisterTool, runMeshRegister } from './register.js';
 import { meshRelayRegistryTool, runMeshRelayRegistry } from './relay-registry.js';
+import { meshSettingsTool, runMeshSettings } from './settings.js';
 import { meshStakeTool, runMeshStake } from './stake.js';
 import { meshTaskHistoryTool, runMeshTaskHistory } from './task-history.js';
 import { meshTaskStatusTool, runMeshTaskStatus } from './task-status.js';
@@ -45,6 +46,7 @@ const toolDefinitions = [
   meshStakeTool,
   meshRelayRegistryTool,
   meshTaskHistoryTool,
+  meshSettingsTool,
 ];
 
 export type MeshToolHandler = (params: never, context: MeshToolContext) => Promise<unknown>;
@@ -70,6 +72,7 @@ export const meshToolHandlers: Record<string, MeshToolHandler> = {
   [meshStakeTool.name]: runMeshStake,
   [meshRelayRegistryTool.name]: runMeshRelayRegistry,
   [meshTaskHistoryTool.name]: runMeshTaskHistory,
+  [meshSettingsTool.name]: runMeshSettings,
 };
 
 export function registerToolHandlers(server: Server, context: MeshToolContext): void {

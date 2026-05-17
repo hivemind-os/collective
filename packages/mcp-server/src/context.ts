@@ -55,4 +55,6 @@ export interface MeshToolContext {
   reputationPublisher?: ReputationEventPublisher;
   reputationStore?: ReputationStore;
   taskHistoryDb?: unknown;
+  portalUrl?: string;
+  openUrl?: (url: string) => Promise<boolean>;
 }

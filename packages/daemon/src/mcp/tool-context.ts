@@ -20,7 +20,12 @@ import type { DaemonState } from '../state.js';
  * Optional clients are lazily instantiated on first access to avoid
  * allocating resources (SQLite databases, objects) that may never be used.
  */
-export function buildMeshToolContext(state: DaemonState, dataDir: string): MeshToolContext {
+export interface ToolContextOptions {
+  portalUrl?: string;
+  openUrl?: (url: string) => Promise<boolean>;
+}
+
+export function buildMeshToolContext(state: DaemonState, dataDir: string, options?: ToolContextOptions): MeshToolContext {
   const base: MeshToolContext = {
     did: state.did,
     keypair: state.keypair,
@@ -35,6 +40,8 @@ export function buildMeshToolContext(state: DaemonState, dataDir: string): MeshT
     authProvider: state.authProvider,
     relayAuthProvider: state.relayAuthProvider,
     x402Client: state.x402Client,
+    portalUrl: options?.portalUrl,
+    openUrl: options?.openUrl,
   };
 
   // Lazy getters for optional clients — instantiated on first access

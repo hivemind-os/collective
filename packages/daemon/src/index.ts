@@ -110,24 +110,25 @@ export async function main(): Promise<void> {
       };
     };
 
-    if (zkloginProvider) {
-      portal = new PortalServer({
-        config,
-        configPath,
-        authProvider: zkloginProvider,
-        state: daemonState,
-        logger,
-        getAuthStatus,
-      });
-      const portalUrl = await portal.start();
-      logger.info({ portalUrl }, 'Portal server listening');
-    }
+    portal = new PortalServer({
+      config,
+      configPath,
+      ...(zkloginProvider ? { authProvider: zkloginProvider } : {}),
+      state: daemonState,
+      logger,
+      getAuthStatus,
+    });
+    const portalUrl = await portal.start();
+    logger.info({ portalUrl }, 'Portal server listening');
 
     ipcServer = new IpcServer(config.daemon.ipcPath, daemonState, {
       getAuthStatus,
       triggerReauth: () => openReauthPortal(true),
     });
-    ipcServer.toolContext = buildMeshToolContext(daemonState, config.daemon.dataDir);
+    ipcServer.toolContext = buildMeshToolContext(daemonState, config.daemon.dataDir, {
+      portalUrl,
+      openUrl: (url: string) => openPortalUrl(url, logger, 'open settings'),
+    });
     await ipcServer.start();
     logger.info({ ipcPath: config.daemon.ipcPath }, 'IPC server listening');
 

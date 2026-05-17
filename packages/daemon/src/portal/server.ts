@@ -53,7 +53,7 @@ export interface PortalLogger {
 export interface PortalServerOptions {
   config: DaemonFullConfig;
   configPath: string;
-  authProvider: PortalAuthProvider;
+  authProvider?: PortalAuthProvider;
   state?: DaemonState;
   logger?: PortalLogger;
   getAuthStatus?: () => DaemonAuthStatus | null;
@@ -130,7 +130,8 @@ export class PortalServer {
     return this.baseUrl;
   }
 
-  getReauthUrl(): string {
+  getReauthUrl(): string | null {
+    if (!this.options.authProvider) return null;
     return `${this.baseUrl}/auth/reauth`;
   }
 
@@ -139,21 +140,7 @@ export class PortalServer {
       reply.type('text/html').send(this.renderPage());
     });
 
-    this.server.get('/auth/reauth', async (_request, reply) => {
-      reply.type('text/html').send(renderReauthPage(getConfiguredProviders(this.options.config)));
-    });
-
-    this.server.get('/auth/google', async (request, reply) => this.startAuthFlow('google', reply, readFlow(request.query)));
-    this.server.get('/auth/apple', async (request, reply) => this.startAuthFlow('apple', reply, readFlow(request.query)));
-
-    this.server.get('/auth/callback', async (request, reply) => {
-      await this.handleOAuthCallback('google', request.query as OAuthCallbackPayload, reply);
-    });
-
-    this.server.post('/auth/apple/callback', async (request, reply) => {
-      await this.handleOAuthCallback('apple', (request.body ?? {}) as OAuthCallbackPayload, reply);
-    });
-
+    // ── Dashboard routes (always available) ──────────────────────
     this.server.get('/api/status', async () => {
       const auth = this.getAuthStatus();
       return {
@@ -185,9 +172,13 @@ export class PortalServer {
         this.setupComplete = true;
         this.resolveCompletion();
 
+        const address =
+          this.options.authProvider
+            ? await this.options.authProvider.getAddress()
+            : this.options.state?.address ?? '';
         return {
           ok: true,
-          address: await this.options.authProvider.getAddress(),
+          address,
           spendingLimitMist: nextLimit.toString(),
         };
       } catch (error) {
@@ -203,6 +194,24 @@ export class PortalServer {
         });
       }
     });
+
+    // ── Auth routes (zkLogin only) ───────────────────────────────
+    if (this.options.authProvider) {
+      this.server.get('/auth/reauth', async (_request, reply) => {
+        reply.type('text/html').send(renderReauthPage(getConfiguredProviders(this.options.config)));
+      });
+
+      this.server.get('/auth/google', async (request, reply) => this.startAuthFlow('google', reply, readFlow(request.query)));
+      this.server.get('/auth/apple', async (request, reply) => this.startAuthFlow('apple', reply, readFlow(request.query)));
+
+      this.server.get('/auth/callback', async (request, reply) => {
+        await this.handleOAuthCallback('google', request.query as OAuthCallbackPayload, reply);
+      });
+
+      this.server.post('/auth/apple/callback', async (request, reply) => {
+        await this.handleOAuthCallback('apple', (request.body ?? {}) as OAuthCallbackPayload, reply);
+      });
+    }
 
     this.server.get('/network', async (_request, reply) => {
       reply.type('text/html').send(renderNetworkPage(this.options.config.network));
@@ -359,7 +368,7 @@ export class PortalServer {
       const state = randomBytes(16).toString('hex');
       const { verifier, challenge } = createPkcePair();
       this.setActiveOAuthConfig(provider);
-      const authRequest = await this.options.authProvider.createAuthorizationRequest({
+      const authRequest = await this.options.authProvider!.createAuthorizationRequest({
         redirectUri: this.getRedirectUri(provider),
         state,
         codeChallenge: challenge,
@@ -446,12 +455,12 @@ export class PortalServer {
       throw new Error('Missing authorization code.');
     }
 
-    const tokens = await this.options.authProvider.exchangeAuthorizationCode(
+    const tokens = await this.options.authProvider!.exchangeAuthorizationCode(
       code,
       pending.codeVerifier,
       this.getRedirectUri('google'),
     );
-    return this.options.authProvider.authenticateWithJwt(tokens.jwt, {
+    return this.options.authProvider!.authenticateWithJwt(tokens.jwt, {
       pendingSession: pending.pendingSession,
       refreshToken: tokens.refreshToken,
     });
@@ -465,7 +474,7 @@ export class PortalServer {
       throw new Error('Missing Apple identity token.');
     }
 
-    return this.options.authProvider.authenticateWithJwt(idToken, {
+    return this.options.authProvider!.authenticateWithJwt(idToken, {
       pendingSession: pending.pendingSession,
     });
   }
@@ -480,8 +489,8 @@ export class PortalServer {
   }
 
   private setActiveOAuthConfig(provider: PortalOAuthProvider): void {
-    this.options.authProvider.setOAuthConfig({
-      ...this.options.authProvider.getOAuthConfig(),
+    this.options.authProvider!.setOAuthConfig({
+      ...this.options.authProvider!.getOAuthConfig(),
       ...buildOAuthConfig(this.options.config, this.getRedirectUri(provider), provider),
     });
   }
@@ -491,9 +500,28 @@ export class PortalServer {
   }
 
   private getAuthStatus(): DaemonAuthStatus {
+    if (this.options.getAuthStatus) {
+      const status = this.options.getAuthStatus();
+      if (status) return status;
+    }
+
+    if (!this.options.authProvider) {
+      return {
+        authMode: 'ed25519',
+        authenticated: true,
+        state: 'authenticated',
+        address: this.options.state?.address ?? null,
+        expiresAt: null,
+        expiresInMs: null,
+        refreshAvailable: false,
+        lastError: null,
+        updatedAt: Date.now(),
+      };
+    }
+
     const fallbackSession = this.options.authProvider.getSession();
     const expiresAt = getJwtExpiryMs(fallbackSession?.jwt);
-    return this.options.getAuthStatus?.() ?? {
+    return {
       authMode: 'zklogin',
       authenticated: this.options.authProvider.isAuthenticated(),
       state: this.options.authProvider.isAuthenticated() ? 'authenticated' : 'reauth_required',
@@ -507,6 +535,15 @@ export class PortalServer {
   }
 
   private renderPage(): string {
+    if (!this.options.authProvider) {
+      // ed25519 mode — show the dashboard directly
+      return renderSetupPage({
+        address: this.options.state?.address ?? '',
+        dailyLimitMist: getCurrentDailyLimitMist(this.options.config),
+        setupComplete: true,
+      });
+    }
+
     const authStatus = this.getAuthStatus();
     if (!this.options.authProvider.isAuthenticated()) {
       return this.options.getAuthStatus && (authStatus.state === 'expired' || authStatus.state === 'reauth_required')
