@@ -1,8 +1,17 @@
+import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 
+const require = createRequire(import.meta.url);
+const { version: SHIM_VERSION } = require('../package.json') as { version: string };
+
 type MessageHandler = (message: object) => void;
 type CloseHandler = () => void;
+
+export interface HelloResult {
+  daemonVersion?: string;
+  connectionId?: string;
+}
 
 export class IpcClient {
   private socket?: net.Socket;
@@ -10,11 +19,11 @@ export class IpcClient {
   private readonly messageHandlers = new Set<MessageHandler>();
   private readonly closeHandlers = new Set<CloseHandler>();
   private helloId?: string;
-  private helloWaiter?: { resolve: () => void; reject: (error: Error) => void };
+  private helloWaiter?: { resolve: (result: HelloResult) => void; reject: (error: Error) => void };
 
   constructor(private readonly ipcPath: string) {}
 
-  async connect(appName = 'unknown'): Promise<void> {
+  async connect(appName = 'unknown'): Promise<HelloResult> {
     this.close();
     const socket = await new Promise<net.Socket>((resolve, reject) => {
       const client = net.connect(this.ipcPath, () => {
@@ -40,7 +49,7 @@ export class IpcClient {
     socket.on('error', () => undefined);
 
     this.helloId = `shim-hello-${randomUUID()}`;
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<HelloResult>((resolve, reject) => {
       this.helloWaiter = { resolve, reject };
       this.send({
         jsonrpc: '2.0',
@@ -49,6 +58,7 @@ export class IpcClient {
         params: {
           appName,
           pid: process.pid,
+          shimVersion: SHIM_VERSION,
           ...(process.env.COLLECTIVE_PROFILE ? { profile: process.env.COLLECTIVE_PROFILE } : {}),
         },
       });
@@ -100,7 +110,11 @@ export class IpcClient {
           if (message.error && typeof message.error === 'object') {
             waiter.reject(new Error(String((message.error as { message?: unknown }).message ?? 'shim_hello failed')));
           } else {
-            waiter.resolve();
+            const result = (message.result ?? {}) as Record<string, unknown>;
+            waiter.resolve({
+              daemonVersion: typeof result.daemonVersion === 'string' ? result.daemonVersion : undefined,
+              connectionId: typeof result.connectionId === 'string' ? result.connectionId : undefined,
+            });
           }
         } else {
           for (const handler of this.messageHandlers) {

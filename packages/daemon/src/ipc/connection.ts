@@ -1,7 +1,11 @@
+import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 import net from 'node:net';
 
 import pino from 'pino';
+
+const require = createRequire(import.meta.url);
+const { version: DAEMON_VERSION } = require('../../package.json') as { version: string };
 
 import { logAuditEvent } from '../audit.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';
@@ -205,6 +209,7 @@ export class Connection {
       result: {
         acknowledged: true,
         connectionId: this.id,
+        daemonVersion: DAEMON_VERSION,
       },
     });
   }

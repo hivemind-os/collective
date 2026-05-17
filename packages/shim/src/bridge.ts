@@ -8,6 +8,8 @@ import {
   getDefaultIpcPath,
   getDefaultPidFile,
   resolveDaemonBin,
+  stopDaemon,
+  SHIM_VERSION,
   type LauncherOptions,
 } from './daemon-launcher.js';
 import { IpcClient } from './ipc-client.js';
@@ -25,6 +27,7 @@ export interface BridgeOptions {
   stderr?: NodeJS.WritableStream;
   exit?: (code: number) => void;
   ensureDaemon?: (options: LauncherOptions) => Promise<void>;
+  stopDaemon?: (options: { pidFile: string; ipcPath: string }) => Promise<void>;
 }
 
 export interface BridgeHandle {
@@ -41,6 +44,7 @@ export async function createBridge(options: BridgeOptions = {}): Promise<BridgeH
   const stderr = options.stderr ?? process.stderr;
   const exit = options.exit ?? ((code: number) => process.exit(code));
   const ensureDaemon = options.ensureDaemon ?? ensureDaemonRunning;
+  const stopDaemonFn = options.stopDaemon ?? stopDaemon;
   const launcherOptions: LauncherOptions = {
     ipcPath: options.ipcPath ?? getDefaultIpcPath(),
     pidFile: options.pidFile ?? getDefaultPidFile(),
@@ -75,6 +79,8 @@ export async function createBridge(options: BridgeOptions = {}): Promise<BridgeH
     }
   };
 
+  let upgraded = false;
+
   const connect = async () => {
     await ensureDaemon(launcherOptions);
     const deadline = Date.now() + launcherOptions.startupTimeoutMs;
@@ -91,7 +97,20 @@ export async function createBridge(options: BridgeOptions = {}): Promise<BridgeH
       });
 
       try {
-        await next.connect(appName);
+        const hello = await next.connect(appName);
+
+        // Version mismatch: stop old daemon and restart (once per session)
+        if (!upgraded && hello.daemonVersion && hello.daemonVersion !== SHIM_VERSION) {
+          upgraded = true;
+          stderr.write(
+            `mesh-shim: Upgrading daemon from v${hello.daemonVersion} to v${SHIM_VERSION}\n`,
+          );
+          next.close();
+          await stopDaemonFn({ pidFile: launcherOptions.pidFile, ipcPath: launcherOptions.ipcPath });
+          await ensureDaemon(launcherOptions);
+          continue;
+        }
+
         client = next;
         flushPending();
         return;

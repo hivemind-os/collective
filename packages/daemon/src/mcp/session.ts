@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
@@ -27,6 +28,9 @@ import type { JsonRpcMessage, JsonRpcResponse } from '../ipc/protocol.js';
 import { isJsonRpcRequest } from '../ipc/protocol.js';
 import type { DaemonState } from '../state.js';
 import { McpTaskStore, type McpTaskEntry, type McpTaskStatus } from './task-store.js';
+
+const require = createRequire(import.meta.url);
+const { version: DAEMON_VERSION } = require('../../package.json') as { version: string };
 
 class IpcTransport implements Transport {
   onclose?: () => void;
@@ -109,7 +113,7 @@ export class McpSession {
     this.getAppName = params.getAppName;
     this.toolContext = params.toolContext;
     this.server = new Server(
-      { name: '@hivemind-os/collective-daemon', version: '0.1.0' },
+      { name: '@hivemind-os/collective-daemon', version: DAEMON_VERSION },
       {
         capabilities: {
           tools: {},

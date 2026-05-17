@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { readFileSync, unlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import net from 'node:net';
 import { homedir, userInfo } from 'node:os';
@@ -7,6 +8,9 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
+const { version: SHIM_VERSION } = require('../package.json') as { version: string };
+
+export { SHIM_VERSION };
 
 export interface LauncherOptions {
   ipcPath: string;
@@ -118,4 +122,49 @@ function sanitizePipeSegment(value: string): string {
   const leaf = value.split(/[\\/]+/).filter(Boolean).at(-1) ?? value;
   const sanitized = leaf.trim().toLowerCase().replace(/[^a-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '');
   return sanitized || 'unknown-user';
+}
+
+/**
+ * Stop the running daemon by reading its PID file and sending SIGTERM.
+ * Waits for the IPC socket to go down before returning.
+ */
+export async function stopDaemon(options: { pidFile: string; ipcPath: string; timeoutMs?: number }): Promise<void> {
+  const { pidFile, ipcPath, timeoutMs = 10_000 } = options;
+
+  let pid: number;
+  try {
+    pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
+  } catch {
+    // No PID file — daemon may already be dead
+    return;
+  }
+
+  if (isNaN(pid)) {
+    try { unlinkSync(pidFile); } catch { /* ignore */ }
+    return;
+  }
+
+  // Send SIGTERM (on Windows, process.kill sends a termination signal)
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    // Process already gone
+    try { unlinkSync(pidFile); } catch { /* ignore */ }
+    return;
+  }
+
+  // Wait for the IPC socket to go down
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await isDaemonRunning(ipcPath))) {
+      return;
+    }
+    await delay(200);
+  }
+
+  // Force kill if still alive
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch { /* already gone */ }
+  try { unlinkSync(pidFile); } catch { /* ignore */ }
 }
