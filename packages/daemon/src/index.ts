@@ -169,7 +169,10 @@ export async function main(): Promise<void> {
       openUrl: (url: string) => openPortalUrl(url, logger, 'open settings'),
       config,
       configPath,
+      logger: { info: (p, m) => logger.info(p, m), warn: (p, m) => logger.warn(p, m) },
       getJobQueue: () => providerRuntime?.jobQueue,
+      taskHistoryDbPath: join(config.daemon.dataDir, 'task-history.db'),
+      usdcCoinType: config.network.usdcType,
       onProviderConfigChanged: async () => {
         if (providerRuntime) {
           daemonState.setProviderRunning(false);

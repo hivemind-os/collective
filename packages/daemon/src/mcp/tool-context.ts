@@ -1,5 +1,7 @@
 import { join } from 'node:path';
 
+import Database from 'better-sqlite3';
+
 import {
   DisputeClient,
   MarketplaceClient,
@@ -28,6 +30,9 @@ export interface ToolContextOptions {
   configPath?: string;
   onProviderConfigChanged?: () => Promise<void> | void;
   getJobQueue?: () => import('../provider/adapters/job-queue.js').JobQueueAdapter | undefined;
+  taskHistoryDbPath?: string;
+  usdcCoinType?: string;
+  logger?: { info?: (payload: unknown, message?: string) => void; warn?: (payload: unknown, message?: string) => void };
 }
 
 export function buildMeshToolContext(state: DaemonState, dataDir: string, options?: ToolContextOptions): MeshToolContext {
@@ -46,6 +51,8 @@ export function buildMeshToolContext(state: DaemonState, dataDir: string, option
     relayAuthProvider: state.relayAuthProvider,
     x402Client: state.x402Client,
     portalUrl: options?.portalUrl,
+    usdcCoinType: options?.usdcCoinType,
+    logger: options?.logger,
     openUrl: options?.openUrl,
   };
 
@@ -128,6 +135,28 @@ export function buildMeshToolContext(state: DaemonState, dataDir: string, option
         return queue.list(filter);
       },
     };
+  }
+
+  if (options?.taskHistoryDbPath) {
+    defineLazy(base, 'taskHistoryDb', () => {
+      const db = new Database(options.taskHistoryDbPath);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS task_history (
+          id TEXT PRIMARY KEY,
+          capability TEXT NOT NULL,
+          requester TEXT,
+          provider TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          input_preview TEXT,
+          result_preview TEXT,
+          error TEXT,
+          price_mist INTEGER,
+          created_at INTEGER NOT NULL,
+          completed_at INTEGER
+        );
+      `);
+      return db;
+    });
   }
 
   // Lazy getters for optional clients — instantiated on first access

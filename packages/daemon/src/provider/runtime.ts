@@ -196,52 +196,67 @@ export class ProviderRuntime {
       });
     });
 
-    const rawInput = await this.params.state.blobStore.fetch(task.inputBlobId);
-    if (!rawInput) {
-      throw new Error(`Input blob ${task.inputBlobId} was not found.`);
-    }
+    try {
+      const rawInput = await this.params.state.blobStore.fetch(task.inputBlobId);
+      if (!rawInput) {
+        throw new Error(`Input blob ${task.inputBlobId} was not found.`);
+      }
 
-    const encryptedInput = parseEncryptedPayload(rawInput);
-    if (encryption.requireEncryption && !encryptedInput) {
-      throw new Error(`Task ${task.id} is missing an encrypted input payload.`);
-    }
+      const encryptedInput = parseEncryptedPayload(rawInput);
+      if (encryption.requireEncryption && !encryptedInput) {
+        throw new Error(`Task ${task.id} is missing an encrypted input payload.`);
+      }
 
-    const inputData = encryptedInput
-      ? await fetchDecryptedPayload(this.params.state.blobStore, task.inputBlobId)
-      : rawInput;
-    const result = await this.executeLocalTask(task.id, task.capability, inputData);
+      const inputData = encryptedInput
+        ? await fetchDecryptedPayload(this.params.state.blobStore, task.inputBlobId)
+        : rawInput;
+      const result = await this.executeLocalTask(task.id, task.capability, inputData);
 
-    const requesterCard = await this.params.state.registryClient.getAgentCardByOwner(task.requester);
-    const requesterEncryptionKey = decodeHexKey(requesterCard?.encryptionPublicKey);
-    if (encryption.requireEncryption && !requesterEncryptionKey) {
-      throw new Error(`Task ${task.id} requester does not publish an encryption key.`);
-    }
+      const requesterCard = await this.params.state.registryClient.getAgentCardByOwner(task.requester);
+      const requesterEncryptionKey = decodeHexKey(requesterCard?.encryptionPublicKey);
+      if (encryption.requireEncryption && !requesterEncryptionKey) {
+        throw new Error(`Task ${task.id} requester does not publish an encryption key.`);
+      }
 
-    const completionPayload = prepareCompletionPayload(task, result);
-    const storedResult = encryption.enabled && requesterEncryptionKey
-      ? await storeEncryptedPayload(this.params.state.blobStore, completionPayload.resultData, requesterEncryptionKey)
-      : await this.params.state.blobStore.store(completionPayload.resultData);
+      const completionPayload = prepareCompletionPayload(task, result);
+      const storedResult = encryption.enabled && requesterEncryptionKey
+        ? await storeEncryptedPayload(this.params.state.blobStore, completionPayload.resultData, requesterEncryptionKey)
+        : await this.params.state.blobStore.store(completionPayload.resultData);
 
-    await this.runChainOperation(async () => {
-      if (completionPayload.metered) {
-        await this.params.state.taskClient.completeMeteredTask({
+      await this.runChainOperation(async () => {
+        if (completionPayload.metered) {
+          await this.params.state.taskClient.completeMeteredTask({
+            taskId: task.id,
+            resultBlobId: storedResult.blobId,
+            meteredUnits: completionPayload.metered.actualUnits,
+            verificationHash: completionPayload.metered.verificationHash,
+            keypair: this.params.state.keypair,
+            providerCardId: this.ownAgentCardId,
+          });
+          return;
+        }
+
+        await this.params.state.taskClient.completeTask({
           taskId: task.id,
           resultBlobId: storedResult.blobId,
-          meteredUnits: completionPayload.metered.actualUnits,
-          verificationHash: completionPayload.metered.verificationHash,
           keypair: this.params.state.keypair,
           providerCardId: this.ownAgentCardId,
         });
-        return;
-      }
-
-      await this.params.state.taskClient.completeTask({
-        taskId: task.id,
-        resultBlobId: storedResult.blobId,
-        keypair: this.params.state.keypair,
-        providerCardId: this.ownAgentCardId,
       });
-    });
+    } catch (error) {
+      try {
+        await this.runChainOperation(async () => {
+          await this.params.state.taskClient.cancelTask({
+            taskId: task.id,
+            keypair: this.params.state.keypair,
+          });
+        });
+        logger.warn({ taskId: task.id, err: error }, 'Task cancelled on-chain after processing failure');
+      } catch (cancelError) {
+        logger.error({ taskId: task.id, err: cancelError, originalError: error }, 'Failed to cancel task on-chain after processing failure');
+      }
+      throw error;
+    }
   }
 
   private async executeLocalTask(taskId: string, capability: string, inputData: Uint8Array): Promise<Uint8Array> {
@@ -429,6 +444,7 @@ function createAdapter(capability: ProviderCapabilityConfig, deps: AdapterDeps):
           systemPrompt: requireString(config.systemPrompt, 'mcp-sampling systemPrompt'),
           maxTokens: optionalNumber(config.maxTokens),
           modelHint: optionalString(config.modelHint),
+          timeoutMs: optionalNumber(config.timeoutMs),
         },
         deps.mcpSamplingFn,
       );

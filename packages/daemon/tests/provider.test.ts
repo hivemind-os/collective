@@ -406,6 +406,40 @@ describe('ProviderRuntime', () => {
     expect(envelope?.proof.root).toBe((state.taskClient.completeMeteredTask as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.verificationHash);
   });
 
+  it('cancels accepted tasks when processing fails after acceptance', async () => {
+    const state = createRuntimeState();
+    state.blobStore.fetch = vi.fn().mockRejectedValue(new Error('blob fetch failed')) as never;
+    const runtime = new ProviderRuntime({
+      state,
+      providerConfig: {
+        enabled: true,
+        maxConcurrency: 1,
+        autoRegister: false,
+        capabilities: [
+          {
+            name: 'echo-capability',
+            description: 'Echo input',
+            version: '1.0.0',
+            priceMist: 1,
+            adapter: 'echo',
+          },
+        ],
+      },
+      cursorDbPath: 'provider-cursors.db',
+    });
+
+    await runtime.start();
+
+    const subscription = providerMocks.subscriptions[0];
+    await subscription.emit(createTaskPostedEvent({ taskId: 'task-fail', capability: 'echo-capability', blobId: 'blob-fail' }));
+    await runtime.stop();
+
+    expect(state.taskClient.acceptTask).toHaveBeenCalledWith({ taskId: 'task-fail', keypair: state.keypair });
+    expect(state.taskClient.cancelTask).toHaveBeenCalledWith({ taskId: 'task-fail', keypair: state.keypair });
+    expect(state.taskClient.completeTask).not.toHaveBeenCalled();
+    expect(state.taskClient.completeMeteredTask).not.toHaveBeenCalled();
+  });
+
   it('ignores non-matching capabilities', async () => {
     const state = createRuntimeState();
     const runtime = new ProviderRuntime({
@@ -458,6 +492,7 @@ function createRuntimeState(): DaemonState {
     },
     taskClient: {
       acceptTask: vi.fn().mockResolvedValue({ txDigest: '0xaccept' }),
+      cancelTask: vi.fn().mockResolvedValue({ txDigest: '0xcancel' }),
       completeTask: vi.fn().mockResolvedValue({ txDigest: '0xcomplete' }),
       completeMeteredTask: vi.fn().mockResolvedValue({ txDigest: '0xcomplete-metered' }),
     },

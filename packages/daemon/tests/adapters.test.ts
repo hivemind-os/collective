@@ -332,4 +332,16 @@ describe('McpSamplingAdapter', () => {
       adapter.execute({ taskId: 't', capability: 'c', inputData: encoder.encode('x') }),
     ).rejects.toThrow('No client connected');
   });
+
+  it('throws on sampling timeout', async () => {
+    const sampleFn: McpSamplingFn = vi.fn(() => new Promise(() => undefined));
+    const adapter = new McpSamplingAdapter(
+      { appName: 'app', systemPrompt: 'prompt', timeoutMs: 10 },
+      sampleFn,
+    );
+
+    await expect(
+      adapter.execute({ taskId: 't', capability: 'c', inputData: encoder.encode('x') }),
+    ).rejects.toThrow('MCP sampling timed out after 10ms');
+  });
 });

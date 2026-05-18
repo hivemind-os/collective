@@ -17,9 +17,11 @@ export interface McpSamplingAdapterConfig {
   systemPrompt: string;
   maxTokens?: number;
   modelHint?: string;
+  timeoutMs?: number;
 }
 
 const DEFAULT_MAX_TOKENS = 4096;
+const DEFAULT_TIMEOUT_MS = 120_000;
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const encoder = new TextEncoder();
 
@@ -29,6 +31,7 @@ export class McpSamplingAdapter implements ExecutionAdapter {
   private readonly systemPrompt: string;
   private readonly maxTokens: number;
   private readonly modelHint: string | undefined;
+  private readonly timeoutMs: number;
 
   constructor(
     config: McpSamplingAdapterConfig,
@@ -45,6 +48,7 @@ export class McpSamplingAdapter implements ExecutionAdapter {
     this.systemPrompt = config.systemPrompt;
     this.maxTokens = config.maxTokens ?? DEFAULT_MAX_TOKENS;
     this.modelHint = config.modelHint;
+    this.timeoutMs = config.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
   async execute(params: {
@@ -74,7 +78,12 @@ export class McpSamplingAdapter implements ExecutionAdapter {
         : {}),
     };
 
-    const result = await this.sample(this.appName, samplingParams);
+    const result = await Promise.race([
+      this.sample(this.appName, samplingParams),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`MCP sampling timed out after ${this.timeoutMs}ms`)), this.timeoutMs)
+      ),
+    ]);
 
     const text = extractTextContent(result);
     if (text === undefined) {

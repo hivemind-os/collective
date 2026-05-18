@@ -74,7 +74,7 @@ export async function runMeshProviderConfig(
   context: MeshToolContext,
 ): Promise<unknown> {
   if (!context.providerConfig) {
-    return { error: 'Provider configuration is not available. The daemon may not support this feature.' };
+    throw new Error('Provider configuration is not available. The daemon may not support this feature.');
   }
 
   const { action } = params;
@@ -85,7 +85,7 @@ export async function runMeshProviderConfig(
 
   if (action === 'set_enabled') {
     if (typeof params.enabled !== 'boolean') {
-      return { error: '"enabled" must be a boolean for set_enabled action.' };
+      throw new Error('"enabled" must be a boolean for set_enabled action.');
     }
 
     const current = context.providerConfig.get();
@@ -101,12 +101,12 @@ export async function runMeshProviderConfig(
   if (action === 'add_capability') {
     const cap = params.capability;
     if (!cap) {
-      return { error: '"capability" object is required for add_capability action.' };
+      throw new Error('"capability" object is required for add_capability action.');
     }
 
     const validationError = validateCapability(cap);
     if (validationError) {
-      return { error: validationError };
+      throw new Error(validationError);
     }
 
     const current = context.providerConfig.get();
@@ -117,7 +117,7 @@ export async function runMeshProviderConfig(
       (c) => c.name.toLowerCase().trim() === normalized.name.toLowerCase().trim(),
     );
     if (existingIndex >= 0) {
-      return { error: `A capability named "${normalized.name}" already exists. Use update_capability instead.` };
+      throw new Error(`A capability named "${normalized.name}" already exists. Use update_capability instead.`);
     }
 
     const next: ProviderConfigSnapshot = {
@@ -131,17 +131,17 @@ export async function runMeshProviderConfig(
   if (action === 'update_capability') {
     const targetName = params.name ?? params.capability?.name;
     if (!targetName) {
-      return { error: '"name" is required for update_capability action (identifies which capability to update).' };
+      throw new Error('"name" is required for update_capability action (identifies which capability to update).');
     }
 
     const cap = params.capability;
     if (!cap) {
-      return { error: '"capability" object is required for update_capability action.' };
+      throw new Error('"capability" object is required for update_capability action.');
     }
 
     const validationError = validateCapability(cap);
     if (validationError) {
-      return { error: validationError };
+      throw new Error(validationError);
     }
 
     const current = context.providerConfig.get();
@@ -149,7 +149,7 @@ export async function runMeshProviderConfig(
       (c) => c.name.toLowerCase().trim() === targetName.toLowerCase().trim(),
     );
     if (existingIndex < 0) {
-      return { error: `No capability named "${targetName}" found. Use add_capability to create it.` };
+      throw new Error(`No capability named "${targetName}" found. Use add_capability to create it.`);
     }
 
     const normalized = normalizeCapability(cap);
@@ -167,7 +167,7 @@ export async function runMeshProviderConfig(
   if (action === 'remove_capability') {
     const targetName = params.name;
     if (!targetName) {
-      return { error: '"name" is required for remove_capability action.' };
+      throw new Error('"name" is required for remove_capability action.');
     }
 
     const current = context.providerConfig.get();
@@ -175,7 +175,7 @@ export async function runMeshProviderConfig(
       (c) => c.name.toLowerCase().trim() === targetName.toLowerCase().trim(),
     );
     if (existingIndex < 0) {
-      return { error: `No capability named "${targetName}" found.` };
+      throw new Error(`No capability named "${targetName}" found.`);
     }
 
     const updatedCapabilities = current.capabilities.filter((_, i) => i !== existingIndex);
@@ -187,7 +187,7 @@ export async function runMeshProviderConfig(
     return await context.providerConfig.set(next);
   }
 
-  return { error: `Unknown action: ${action}. Valid actions: get, set_enabled, add_capability, update_capability, remove_capability.` };
+  throw new Error(`Unknown action: ${action}. Valid actions: get, set_enabled, add_capability, update_capability, remove_capability.`);
 }
 
 function validateCapability(cap: NonNullable<ProviderConfigParams['capability']>): string | null {

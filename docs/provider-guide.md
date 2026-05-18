@@ -118,6 +118,7 @@ capabilities:
       systemPrompt: "You are a translation agent. Translate the input to French."
       maxTokens: 4096               # optional, default 4096
       modelHint: "claude-sonnet-4-20250514"  # optional, preference hint
+      timeoutMs: 120000             # optional, default 2 minutes
 ```
 
 Behaviour:
@@ -129,7 +130,8 @@ Behaviour:
   (human-in-the-loop, per the MCP specification).
 - Extracts the text content from the LLM response.
 - Throws if no client with the given `appName` is connected, if the client
-  does not support sampling, or if the response contains no text.
+  does not support sampling, if the response contains no text, or if sampling
+  times out after `timeoutMs`.
 - Task input must be valid UTF-8.
 
 ## Starting provider mode

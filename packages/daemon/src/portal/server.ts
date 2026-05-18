@@ -274,6 +274,9 @@ export class PortalServer {
       }
 
       const balanceMist = await state.suiClient.getBalance(state.address);
+      const network = this.options.config.network;
+      const presetName = network.preset || detectPreset(network);
+      const preset = presetName ? (NETWORK_PRESETS as Record<string, { explorerUrl?: string; faucetUrl?: string }>)[presetName] : undefined;
       return {
         did: state.did,
         address: state.address,
@@ -283,6 +286,8 @@ export class PortalServer {
         spendingThisHour: formatMistToSui(state.spendingPolicy.getSpent('hour')),
         spendingThisMonth: formatMistToSui(state.spendingPolicy.getSpent('month')),
         dailyLimit: formatDailyLimit(this.options.config),
+        explorerUrl: preset?.explorerUrl || '',
+        faucetUrl: network.faucetUrl || preset?.faucetUrl || '',
       };
     });
 
@@ -890,7 +895,7 @@ function renderNetworkPage(network: { preset?: string; rpcUrl: string; faucetUrl
     Object.fromEntries(
       Object.entries(NETWORK_PRESETS).map(([k, v]) => [
         k,
-        { rpcUrl: v.rpcUrl, faucetUrl: v.faucetUrl, packageId: v.packageId, registryId: v.registryId },
+        { rpcUrl: v.rpcUrl, faucetUrl: v.faucetUrl, packageId: v.packageId, registryId: v.registryId, explorerUrl: v.explorerUrl },
       ]),
     ),
   );
@@ -936,11 +941,11 @@ function renderNetworkPage(network: { preset?: string; rpcUrl: string; faucetUrl
       </div>
       <div class="grid grid--2">
         <label for="packageId">
-          Package ID <span class="hint">(contract deployment)</span>
+          Package ID <span class="hint">(contract deployment)</span> <a id="packageId-link" class="hint" target="_blank" rel="noopener" hidden>↗ Explorer</a>
           <input id="packageId" type="text" value="${escapeAttr(network.packageId)}" placeholder="0x..." />
         </label>
         <label for="registryId">
-          Registry ID <span class="hint">(on-chain registry object)</span>
+          Registry ID <span class="hint">(on-chain registry object)</span> <a id="registryId-link" class="hint" target="_blank" rel="noopener" hidden>↗ Explorer</a>
           <input id="registryId" type="text" value="${escapeAttr(network.registryId)}" placeholder="0x..." />
         </label>
       </div>
@@ -961,6 +966,8 @@ function renderNetworkPage(network: { preset?: string; rpcUrl: string; faucetUrl
       const status = document.getElementById('status');
       const successEl = document.getElementById('success');
       const presetNote = document.getElementById('preset-note');
+      const packageIdLink = document.getElementById('packageId-link');
+      const registryIdLink = document.getElementById('registryId-link');
 
       function applyPreset(name) {
         const p = PRESETS[name];
@@ -987,6 +994,20 @@ function renderNetworkPage(network: { preset?: string; rpcUrl: string; faucetUrl
           presetNote.hidden = false;
         } else {
           presetNote.hidden = true;
+        }
+        // Update explorer links
+        const explorerBase = p?.explorerUrl || '';
+        if (explorerBase && packageId.value) {
+          packageIdLink.href = explorerBase + '/object/' + packageId.value;
+          packageIdLink.hidden = false;
+        } else {
+          packageIdLink.hidden = true;
+        }
+        if (explorerBase && registryId.value) {
+          registryIdLink.href = explorerBase + '/object/' + registryId.value;
+          registryIdLink.hidden = false;
+        } else {
+          registryIdLink.hidden = true;
         }
       }
 
@@ -1164,6 +1185,12 @@ function renderWalletPage(): string {
           <div class="stat"><span class="stat-label">Spent this month</span><span class="stat-value" id="spent-month"></span></div>
           <div class="stat"><span class="stat-label">Daily limit</span><span class="stat-value" id="limit"></span></div>
         </div>
+        <div class="top-actions" id="wallet-actions" hidden>
+          <button class="button button--secondary" id="copy-address">📋 Copy Address</button>
+          <a class="button button--secondary" id="explorer-link" target="_blank" rel="noopener" hidden>🔗 View on Explorer</a>
+          <button class="button button--secondary" id="request-faucet" hidden>💧 Request Faucet</button>
+        </div>
+        <div class="notice notice--success" id="wallet-notice" hidden></div>
       </div>
     </section>
     <script>
@@ -1180,6 +1207,57 @@ function renderWalletPage(): string {
           document.getElementById('limit').textContent = data.dailyLimit ?? '—';
           document.getElementById('loading').hidden = true;
           document.getElementById('content').hidden = false;
+
+          const actions = document.getElementById('wallet-actions');
+          actions.hidden = false;
+
+          // Copy address
+          document.getElementById('copy-address').addEventListener('click', () => {
+            navigator.clipboard.writeText(data.address || '').then(() => {
+              const notice = document.getElementById('wallet-notice');
+              notice.textContent = 'Address copied to clipboard.';
+              notice.hidden = false;
+              setTimeout(() => { notice.hidden = true; }, 2000);
+            });
+          });
+
+          // Explorer link
+          if (data.explorerUrl && data.address) {
+            const link = document.getElementById('explorer-link');
+            link.href = data.explorerUrl + '/account/' + data.address;
+            link.hidden = false;
+          }
+
+          // Faucet button
+          if (data.faucetUrl && data.address) {
+            const faucetBtn = document.getElementById('request-faucet');
+            faucetBtn.hidden = false;
+            faucetBtn.addEventListener('click', async () => {
+              faucetBtn.disabled = true;
+              faucetBtn.textContent = '💧 Requesting…';
+              try {
+                const faucetRes = await fetch(data.faucetUrl + '/gas', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ FixedAmountRequest: { recipient: data.address } }),
+                });
+                if (faucetRes.ok) {
+                  const notice = document.getElementById('wallet-notice');
+                  notice.textContent = 'Faucet tokens requested successfully. Balance will update shortly.';
+                  notice.hidden = false;
+                } else {
+                  throw new Error('Faucet returned ' + faucetRes.status);
+                }
+              } catch (err) {
+                const notice = document.getElementById('wallet-notice');
+                notice.textContent = 'Faucet request failed: ' + (err.message || 'Unknown error');
+                notice.className = 'notice notice--error';
+                notice.hidden = false;
+              }
+              faucetBtn.disabled = false;
+              faucetBtn.textContent = '💧 Request Faucet';
+            });
+          }
         } catch (e) {
           document.getElementById('loading').textContent = 'Failed to load wallet data.';
         }
@@ -1435,7 +1513,7 @@ function renderServicesPage(): string {
             <div id="adapter-fields" class="grid"></div>
             <label for="capability-extra-config">
               Additional adapter config (JSON)
-              <span class="field-hint">Optional extra adapter fields such as headers, timeouts, or model hints.</span>
+              <span class="field-hint">Optional extra fields. Webhook: headers, timeoutMs. Subprocess: env, cwd. MCP-sampling: maxTokens, modelHint. Job-queue: timeoutMs.</span>
               <textarea id="capability-extra-config" placeholder="{\n  \"timeoutMs\": 30000\n}"></textarea>
             </label>
             <div class="top-actions">
@@ -1897,6 +1975,8 @@ function renderServicesPage(): string {
           return;
         }
         if (target.dataset.action === 'delete') {
+          const capName = providerConfig.capabilities[index]?.name || 'this capability';
+          if (!confirm('Delete "' + capName + '"? This is not persisted until you save.')) return;
           providerConfig.capabilities.splice(index, 1);
           renderCapabilityList();
           if (editingIndex === index) {
@@ -2040,9 +2120,11 @@ function renderQueuePage(): string {
           if (!action || !id) return;
 
           if (action === 'retry') {
+            if (!confirm('Retry this work item? It will be re-queued as pending.')) return;
             await fetch('/api/work-queue/' + encodeURIComponent(id) + '/retry', { method: 'POST' });
             loadQueue();
           } else if (action === 'delete') {
+            if (!confirm('Permanently delete this work item?')) return;
             await fetch('/api/work-queue/' + encodeURIComponent(id), { method: 'DELETE' });
             loadQueue();
           } else if (action === 'view') {
