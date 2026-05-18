@@ -9,5 +9,6 @@ export default defineConfig({
         singleFork: true,
       },
     },
+    exclude: ['**/playwright/**', '**/node_modules/**'],
   },
 });
