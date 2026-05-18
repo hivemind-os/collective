@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Run unit tests
-        run: pnpm exec turbo test -- --run --passWithNoTests
+        run: pnpm exec turbo test --filter='!@hivemind-os/collective-e2e-tests' -- --run --passWithNoTests
 
   move-tests:
     name: Move contract tests
@@ -102,8 +102,9 @@ jobs:
           $env:TMPDIR = $tmpDir
           $env:TMP = $tmpDir
           $env:TEMP = $tmpDir
-          $logPath = Join-Path $tmpDir 'sui.log'
-          $process = Start-Process -FilePath 'sui' -ArgumentList @('start', '--with-faucet', '--force-regenesis') -WorkingDirectory $PWD -RedirectStandardOutput $logPath -RedirectStandardError $logPath -PassThru
+          $stdoutPath = Join-Path $tmpDir 'sui-stdout.log'
+          $stderrPath = Join-Path $tmpDir 'sui-stderr.log'
+          $process = Start-Process -FilePath 'sui' -ArgumentList @('start', '--with-faucet', '--force-regenesis') -WorkingDirectory $PWD -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath -PassThru
           "SUI_PID=$($process.Id)" >> $env:GITHUB_ENV
       - name: Wait for local Sui RPC
         if: steps.move-package.outputs.present == 'true'
