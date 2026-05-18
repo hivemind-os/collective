@@ -39,7 +39,7 @@ async function createPortalFixture(options?: {
     },
     identity: { dataDir: join(baseDir, 'identity') },
     auth: {
-      mode: 'ephemeral-keypair',
+      mode: 'ed25519',
       portal: { port: 0 },
     },
     daemon: {
