@@ -299,6 +299,7 @@ function buildDefaultConfig(dataDir: string): DaemonFullConfig {
 
   return {
     network: {
+      preset: 'testnet',
       rpcUrl: defaultNetwork.rpcUrl,
       faucetUrl: defaultNetwork.faucetUrl,
       packageId: defaultNetwork.packageId,
@@ -432,11 +433,12 @@ function applyEnvironmentOverrides(
 function resolveNetworkEnvOverrides(base: NetworkConfig): Partial<NetworkConfig> {
   // COLLECTIVE_NETWORK=testnet|mainnet|devnet|local applies a full preset
   const networkName = process.env.COLLECTIVE_NETWORK as NetworkName | undefined;
-  const preset = networkName ? getNetworkPreset(networkName) : undefined;
-  const merged = preset ? { ...base, ...preset } : base;
+  const presetConfig = networkName ? getNetworkPreset(networkName) : undefined;
+  const merged = presetConfig ? { ...base, ...presetConfig } : base;
 
   // Individual env vars override the preset
   return {
+    preset: networkName ?? base.preset,
     rpcUrl: process.env.COLLECTIVE_RPC_URL ?? merged.rpcUrl,
     faucetUrl: merged.faucetUrl,
     packageId: process.env.COLLECTIVE_PACKAGE_ID ?? merged.packageId,
@@ -864,15 +866,16 @@ function expandHome(value: string): string {
 }
 
 /**
- * Resolve the network config from YAML. If a `name` field is present (e.g. "testnet"),
+ * Resolve the network config from YAML. If a `name` or `preset` field is present (e.g. "testnet"),
  * use the corresponding preset as the base, then overlay any explicit fields.
  */
 function resolveNetworkFromConfig(network: LooseRecord, defaults: NetworkConfig): NetworkConfig {
-  const nameField = readString(network.name);
-  const preset = nameField ? getNetworkPreset(nameField) : undefined;
-  const base = preset ?? defaults;
+  const nameField = readString(network.name) ?? readString(network.preset);
+  const presetConfig = nameField ? getNetworkPreset(nameField) : undefined;
+  const base = presetConfig ?? defaults;
 
   return {
+    preset: nameField ?? defaults.preset,
     rpcUrl: readString(network.rpcUrl) ?? base.rpcUrl,
     faucetUrl: readString(network.faucetUrl) ?? base.faucetUrl,
     packageId: readHexString(network.packageId) ?? base.packageId,

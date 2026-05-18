@@ -16,6 +16,8 @@ export interface RelayClientConfig {
 }
 
 export interface NetworkConfig {
+  /** Selected network preset name (testnet, mainnet, devnet, local) or 'custom' */
+  preset?: string;
   rpcUrl: string;
   faucetUrl: string;
   packageId: string;

@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 
 import type { AuthProvider, OAuthConfig, StoredZkLoginSession } from '@hivemind-os/collective-core';
 import { createPkcePair, type ZkLoginPendingSession } from '@hivemind-os/collective-core';
+import { NETWORK_PRESETS, type NetworkName } from '@hivemind-os/collective-types';
 
 import { saveConfig, type DaemonFullConfig } from '../config.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';
@@ -233,6 +234,7 @@ export class PortalServer {
 
       try {
         const body = (request.body ?? {}) as {
+          preset?: string;
           rpcUrl?: string;
           faucetUrl?: string;
           packageId?: string;
@@ -880,54 +882,77 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
     </script>`;
 }
 
-function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; packageId: string; registryId: string }): string {
+function renderNetworkPage(network: { preset?: string; rpcUrl: string; faucetUrl: string; packageId: string; registryId: string }): string {
+  const presetNames: Array<NetworkName | 'custom'> = ['testnet', 'mainnet', 'devnet', 'local', 'custom'];
+  const currentPreset = network.preset || detectPreset(network) || 'custom';
+
+  const presetsJson = JSON.stringify(
+    Object.fromEntries(
+      Object.entries(NETWORK_PRESETS).map(([k, v]) => [
+        k,
+        { rpcUrl: v.rpcUrl, faucetUrl: v.faucetUrl, packageId: v.packageId, registryId: v.registryId },
+      ]),
+    ),
+  );
+
+  const networkOptions = presetNames
+    .map((n) => {
+      const label = n === 'custom' ? 'Custom' : n.charAt(0).toUpperCase() + n.slice(1);
+      const selected = n === currentPreset ? ' selected' : '';
+      return `<option value="${n}"${selected}>${label}</option>`;
+    })
+    .join('');
+
   return `
     <section class="page-header">
       <div class="page-header__content">
-        <h1>Network configuration</h1>
-        <p>Choose the Sui network and registry coordinates used by your daemon.</p>
+        <h1>Network</h1>
+        <p>Select a Sui network. Each network has its own contract deployment and registry.</p>
       </div>
     </section>
     <section class="card stack">
       <div class="section-header section-header--compact">
         <div>
-          <h2>RPC and registry settings</h2>
-          <p>Use a preset or enter custom endpoints for local, testnet, or devnet environments.</p>
+          <h2>Active network</h2>
+          <p>Choose a preset or configure a custom endpoint.</p>
         </div>
       </div>
-      <div class="preset-list">
-        <button class="button button--secondary preset" data-rpc="https://fullnode.devnet.sui.io:443" data-faucet="https://faucet.devnet.sui.io">Devnet</button>
-        <button class="button button--secondary preset" data-rpc="https://fullnode.testnet.sui.io:443" data-faucet="https://faucet.testnet.sui.io">Testnet</button>
-        <button class="button button--secondary preset" data-rpc="http://127.0.0.1:9000" data-faucet="http://127.0.0.1:9123">Local</button>
-      </div>
+      <label for="preset">
+        Network
+        <select id="preset">
+          ${networkOptions}
+        </select>
+      </label>
+      <div id="preset-note" class="notice" hidden></div>
       <div class="grid grid--2">
         <label for="rpcUrl">
           RPC URL <span class="required">*</span>
-          <input id="rpcUrl" type="url" value="${escapeAttr(network.rpcUrl)}" placeholder="https://fullnode.devnet.sui.io:443" required />
+          <input id="rpcUrl" type="url" value="${escapeAttr(network.rpcUrl)}" placeholder="https://fullnode.testnet.sui.io:443" required />
         </label>
         <label for="faucetUrl">
           Faucet URL
-          <input id="faucetUrl" type="url" value="${escapeAttr(network.faucetUrl)}" placeholder="https://faucet.devnet.sui.io" />
+          <input id="faucetUrl" type="url" value="${escapeAttr(network.faucetUrl)}" placeholder="https://faucet.testnet.sui.io" />
         </label>
       </div>
       <div class="grid grid--2">
         <label for="packageId">
-          Package ID
+          Package ID <span class="hint">(contract deployment)</span>
           <input id="packageId" type="text" value="${escapeAttr(network.packageId)}" placeholder="0x..." />
         </label>
         <label for="registryId">
-          Registry ID
+          Registry ID <span class="hint">(on-chain registry object)</span>
           <input id="registryId" type="text" value="${escapeAttr(network.registryId)}" placeholder="0x..." />
         </label>
       </div>
-      <div class="notice" id="hint" hidden></div>
       <div class="top-actions">
-        <button class="button" id="save">Save network config</button>
+        <button class="button" id="save">Save</button>
       </div>
       <div class="notice notice--error" id="status" hidden></div>
       <div class="notice notice--success" id="success" hidden></div>
     </section>
     <script>
+      const PRESETS = ${presetsJson};
+      const presetEl = document.getElementById('preset');
       const rpcUrl = document.getElementById('rpcUrl');
       const faucetUrl = document.getElementById('faucetUrl');
       const packageId = document.getElementById('packageId');
@@ -935,30 +960,60 @@ function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; package
       const saveBtn = document.getElementById('save');
       const status = document.getElementById('status');
       const successEl = document.getElementById('success');
-      const hint = document.getElementById('hint');
+      const presetNote = document.getElementById('preset-note');
 
-      document.querySelectorAll('.preset').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          rpcUrl.value = btn.dataset.rpc || '';
-          faucetUrl.value = btn.dataset.faucet || '';
-          hint.textContent = 'Preset applied to RPC and Faucet URLs. Package and Registry IDs are unchanged.';
-          hint.className = 'notice';
-          hint.hidden = false;
-          successEl.hidden = true;
-          status.hidden = true;
+      function applyPreset(name) {
+        const p = PRESETS[name];
+        if (!p) return;
+        rpcUrl.value = p.rpcUrl;
+        faucetUrl.value = p.faucetUrl;
+        packageId.value = p.packageId;
+        registryId.value = p.registryId;
+        updateFieldState(name);
+      }
+
+      function updateFieldState(name) {
+        const isCustom = name === 'custom';
+        const fields = [rpcUrl, faucetUrl, packageId, registryId];
+        fields.forEach(f => {
+          f.readOnly = !isCustom;
+          f.style.opacity = isCustom ? '1' : '0.7';
+          f.style.cursor = isCustom ? '' : 'default';
         });
+        const p = PRESETS[name];
+        if (!isCustom && p && !p.packageId) {
+          presetNote.textContent = 'This network does not have deployed contracts yet. Package ID and Registry ID are empty.';
+          presetNote.className = 'notice notice--warning';
+          presetNote.hidden = false;
+        } else {
+          presetNote.hidden = true;
+        }
+      }
+
+      presetEl.addEventListener('change', () => {
+        const name = presetEl.value;
+        if (name !== 'custom') {
+          applyPreset(name);
+        } else {
+          updateFieldState('custom');
+        }
+        successEl.hidden = true;
+        status.hidden = true;
       });
+
+      // Initialize field state
+      updateFieldState(presetEl.value);
 
       saveBtn.addEventListener('click', async () => {
         saveBtn.disabled = true;
         status.hidden = true;
         successEl.hidden = true;
-        hint.hidden = true;
         try {
           const response = await fetch('/api/network', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
+              preset: presetEl.value,
               rpcUrl: rpcUrl.value.trim(),
               faucetUrl: faucetUrl.value.trim(),
               packageId: packageId.value.trim(),
@@ -969,7 +1024,7 @@ function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; package
           if (!response.ok) {
             throw new Error(typeof body.error === 'string' ? body.error : 'Unable to save network settings.');
           }
-          successEl.textContent = 'Network configuration saved. The daemon will reconnect using the updated settings.';
+          successEl.textContent = 'Network settings saved. The daemon will reconnect.';
           successEl.hidden = false;
         } catch (error) {
           status.textContent = error instanceof Error ? error.message : 'Unable to save network settings.';
@@ -978,6 +1033,15 @@ function renderNetworkPage(network: { rpcUrl: string; faucetUrl: string; package
         saveBtn.disabled = false;
       });
     </script>`;
+}
+
+function detectPreset(network: { rpcUrl: string; packageId: string; registryId: string }): string | undefined {
+  for (const [name, preset] of Object.entries(NETWORK_PRESETS)) {
+    if (preset.rpcUrl === network.rpcUrl && preset.packageId === network.packageId && preset.registryId === network.registryId) {
+      return name;
+    }
+  }
+  return undefined;
 }
 
 function renderMessagePage(title: string, detail: string): string {
@@ -1026,6 +1090,7 @@ const INNER_PAGE_STYLES = `
   .range-footer { display: flex; justify-content: flex-start; }
   .preset-list { display: flex; gap: 12px; flex-wrap: wrap; }
   .required { color: #ef4444; }
+  .hint { font-weight: 400; font-size: 0.85em; color: #94a3b8; margin-left: 4px; }
   .hero-card { max-width: 720px; display: grid; gap: 20px; padding: 32px; border-radius: 24px; border: 1px solid #1e293b; background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(11, 18, 32, 0.92)); box-shadow: 0 24px 60px rgba(2, 6, 23, 0.45); }
   .hero-card__content { display: grid; gap: 16px; }
   .auth-buttons { display: flex; gap: 12px; flex-wrap: wrap; }
@@ -2525,11 +2590,13 @@ function escapeAttr(value: string): string {
 }
 
 function validateNetworkInput(body: {
+  preset?: string;
   rpcUrl?: string;
   faucetUrl?: string;
   packageId?: string;
   registryId?: string;
-}): { rpcUrl: string; faucetUrl: string; packageId: string; registryId: string } {
+}): { preset: string; rpcUrl: string; faucetUrl: string; packageId: string; registryId: string } {
+  const preset = (body.preset ?? 'custom').trim();
   const rpcUrl = (body.rpcUrl ?? '').trim();
   const faucetUrl = (body.faucetUrl ?? '').trim();
   const packageId = (body.packageId ?? '').trim();
@@ -2553,7 +2620,7 @@ function validateNetworkInput(body: {
     throw new NetworkValidationError('Registry ID must be a valid hex address starting with 0x.');
   }
 
-  return { rpcUrl, faucetUrl, packageId, registryId };
+  return { preset, rpcUrl, faucetUrl, packageId, registryId };
 }
 
 function validateHttpUrl(value: string, label: string): void {
