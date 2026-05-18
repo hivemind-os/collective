@@ -1116,7 +1116,7 @@ function renderDiscoverPage(): string {
           }
           results.innerHTML = '<div class="agent-grid">' + data.agents.map((agent) => {
             const caps = (agent.capabilities || []).map((capability) => {
-              return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' MIST</span>';
+              return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' ' + esc(capability.currency || 'USDC') + '</span>';
             }).join('');
             return '<article class="agent-card">' +
               '<div class="agent-name">' + esc(agent.name) + (agent.active ? '<span class="pill pill--success">Active</span>' : '<span class="pill pill--danger">Inactive</span>') + '</div>' +
@@ -1300,13 +1300,17 @@ function renderServicesPage(): string {
               <textarea id="capability-description" placeholder="Explain what this capability does for requesters."></textarea>
             </label>
             <div class="grid grid--2">
-              <label for="capability-price-mist">
-                Price (MIST)
+              <label for="capability-price-mist" id="capability-price-label">
+                Price
                 <input id="capability-price-mist" type="number" min="1" step="1" placeholder="1000" />
               </label>
               <label for="capability-currency">
-                Currency (optional)
-                <input id="capability-currency" type="text" placeholder="MIST" />
+                Currency
+                <select id="capability-currency">
+                  <option value="USDC" selected>USDC</option>
+                  <option value="SUI">SUI</option>
+                  <option value="MIST">MIST</option>
+                </select>
               </label>
             </div>
             <label for="capability-adapter">
@@ -1419,7 +1423,7 @@ function renderServicesPage(): string {
           description: '',
           version: '1.0.0',
           priceMist: 1,
-          currency: '',
+          currency: 'USDC',
           adapter: 'echo',
           adapterConfig: {},
         };
@@ -1435,7 +1439,7 @@ function renderServicesPage(): string {
           description: typeof capability?.description === 'string' ? capability.description : '',
           version: typeof capability?.version === 'string' ? capability.version : '1.0.0',
           priceMist: Number.isInteger(capability?.priceMist) && capability.priceMist > 0 ? capability.priceMist : 1,
-          currency: typeof capability?.currency === 'string' ? capability.currency : '',
+          currency: typeof capability?.currency === 'string' && capability.currency ? capability.currency : 'USDC',
           adapter,
           adapterConfig,
         };
@@ -1512,7 +1516,7 @@ function renderServicesPage(): string {
         els.description.value = next.description;
         els.version.value = next.version;
         els.priceMist.value = String(next.priceMist);
-        els.currency.value = next.currency || '';
+        els.currency.value = next.currency || 'USDC';
         els.adapter.value = next.adapter;
         els.extraConfig.value = Object.keys(getVisibleExtraConfig(next)).length > 0 ? JSON.stringify(getVisibleExtraConfig(next), null, 2) : '';
         renderAdapterFields(next);
@@ -1695,7 +1699,7 @@ function renderServicesPage(): string {
           }
           const agent = data.agent;
           const capabilities = (agent.capabilities || []).map((capability) => {
-            return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' MIST</span>';
+            return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' ' + esc(capability.currency || 'USDC') + '</span>';
           }).join('');
           els.registration.innerHTML = '<div class="stat-list">' +
             '<div class="stat"><span class="stat-label">Name</span><span class="stat-value">' + esc(agent.name) + ' ' + (agent.active ? '<span class="pill pill--success">Active</span>' : '<span class="pill pill--danger">Inactive</span>') + '</span></div>' +
