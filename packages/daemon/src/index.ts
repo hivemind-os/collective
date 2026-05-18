@@ -118,6 +118,7 @@ export async function main(): Promise<void> {
       logger,
       getAuthStatus,
       getConnectedApps: () => ipcServer?.getConnectedApps() ?? [],
+      disconnectClient: (pid: number) => ipcServer?.disconnectByPid(pid) ?? false,
       getJobQueue: () => providerRuntime?.jobQueue,
       getProviderRuntime: () => providerRuntime,
       onProviderConfigChanged: async () => {

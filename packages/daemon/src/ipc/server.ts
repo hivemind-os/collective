@@ -114,6 +114,16 @@ export class IpcServer {
     return this.connectionRegistry.getConnectedApps();
   }
 
+  disconnectByPid(pid: number): boolean {
+    for (const connection of this.connections.values()) {
+      if (connection.connectedAppPid === pid) {
+        connection.close();
+        return true;
+      }
+    }
+    return false;
+  }
+
   getStatus(): DaemonStatusSnapshot {
     return {
       ...this.state.getStatusBase(),

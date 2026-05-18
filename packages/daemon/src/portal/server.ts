@@ -17,6 +17,26 @@ type PortalProviderCapability = PortalProviderConfig['capabilities'][number];
 
 type PortalAuthFlow = 'setup' | 'reauth';
 
+type PortalFullSettings = {
+  daemon: Pick<DaemonFullConfig['daemon'], 'logLevel' | 'dataDir' | 'pidFile'>;
+  relay: Pick<DaemonFullConfig['relay'], 'autoConnect' | 'providerMode'> & { endpoints: string[] };
+  encryption: DaemonFullConfig['encryption'];
+  spending: {
+    allowedApps: string[];
+    deniedApps: string[];
+  };
+};
+
+type PortalSettingsUpdate = {
+  dailyLimitMist: bigint;
+  relay: Pick<DaemonFullConfig['relay'], 'autoConnect' | 'providerMode' | 'endpoints'>;
+  encryption: DaemonFullConfig['encryption'];
+  spending: {
+    allowlist?: string[];
+    denylist?: string[];
+  };
+};
+
 interface PendingAuthState {
   provider: PortalOAuthProvider;
   flow: PortalAuthFlow;
@@ -61,6 +81,7 @@ export interface PortalServerOptions {
   logger?: PortalLogger;
   getAuthStatus?: () => DaemonAuthStatus | null;
   getConnectedApps?: () => { appName: string; appPid: number; profile?: string; connectedAt: number }[];
+  disconnectClient?: (pid: number) => boolean;
   getJobQueue?: () => import('../provider/adapters/job-queue.js').JobQueueAdapter | undefined;
   getProviderRuntime?: () => import('../provider/runtime.js').ProviderRuntime | undefined;
   onAuthenticated?: (session: StoredZkLoginSession) => Promise<void> | void;
@@ -174,16 +195,23 @@ export class PortalServer {
       };
     });
 
-    this.server.post('/api/settings', async (request, reply) => {
+    this.server.get('/api/full-settings', async () => {
+      return getPortalFullSettings(this.options.config);
+    });
+
+    const savePortalSettings = async (request: { body?: unknown }, reply: FastifyReply) => {
       const previousSettings = snapshotPortalSettings(this.options.config);
 
       try {
-        const body = (request.body ?? {}) as {
-          dailyLimitMist?: number | string;
-          dailyLimitSui?: number | string;
+        const nextSettings = validatePortalSettingsInput(request.body, this.options.config);
+        updateDailyLimit(this.options.config, nextSettings.dailyLimitMist);
+        this.options.config.relay = { ...this.options.config.relay, ...nextSettings.relay };
+        this.options.config.encryption = { ...nextSettings.encryption };
+        this.options.config.spending = {
+          ...this.options.config.spending,
+          allowlist: nextSettings.spending.allowlist,
+          denylist: nextSettings.spending.denylist,
         };
-        const nextLimit = normalizeDailyLimit(body);
-        updateDailyLimit(this.options.config, nextLimit);
         this.options.state?.spendingPolicy.updatePolicy(this.options.config.spending);
         await this.options.onSettingsSaved?.(this.options.config);
         await saveConfig(this.options.config, this.options.configPath);
@@ -198,7 +226,8 @@ export class PortalServer {
         return {
           ok: true,
           address,
-          spendingLimitMist: nextLimit.toString(),
+          spendingLimitMist: nextSettings.dailyLimitMist.toString(),
+          settings: getPortalFullSettings(this.options.config),
         };
       } catch (error) {
         restorePortalSettings(this.options.config, previousSettings);
@@ -212,7 +241,10 @@ export class PortalServer {
           error: getSafeErrorMessage(error, 'Unable to save settings.'),
         });
       }
-    });
+    };
+
+    this.server.post('/api/settings', savePortalSettings);
+    this.server.post('/api/full-settings', savePortalSettings);
 
     // ── Auth routes (zkLogin only) ───────────────────────────────
     if (this.options.authProvider) {
@@ -540,6 +572,19 @@ export class PortalServer {
           connectedAgo: formatDuration(Date.now() - app.connectedAt),
         })),
       };
+    });
+
+    this.server.delete('/api/clients/:pid', async (request, reply) => {
+      const { pid } = request.params as { pid: string };
+      const numPid = parseInt(pid, 10);
+      if (isNaN(numPid)) {
+        return reply.code(400).send({ error: 'Invalid PID.' });
+      }
+      const disconnected = this.options.disconnectClient?.(numPid) ?? false;
+      if (!disconnected) {
+        return reply.code(404).send({ error: 'Client not found.' });
+      }
+      return { ok: true };
     });
 
     this.server.get('/api/tasks', async () => {
@@ -872,6 +917,7 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
   const buttonLabel = params.setupComplete ? 'Save portal settings' : 'Finish setup';
   const versionBadge = params.version ? `<span class="pill">v${escapeHtml(params.version)}</span>` : '';
   const successMessage = params.setupComplete ? '<div class="notice notice--success">Setup complete. You can return to your app at any time.</div>' : '';
+  const versionValue = params.version ? `v${escapeHtml(params.version)}` : 'Unavailable';
 
   return `
     <section class="page-header">
@@ -910,8 +956,77 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
           <div class="range-footer">
             <span class="pill pill--accent" id="limit-value">${escapeHtml(currentLimitSui)} SUI</span>
           </div>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Daemon info</h2>
+              <p>Inspect the local daemon runtime and file locations.</p>
+            </div>
+          </div>
+          <div class="stat-list">
+            <div class="stat"><span class="stat-label">Daemon version</span><span class="stat-value mono">${versionValue}</span></div>
+            <div class="stat"><span class="stat-label">Log level</span><span class="stat-value" id="daemon-log-level">Loading…</span></div>
+            <div class="stat"><span class="stat-label">Data directory</span><span class="stat-value mono" id="daemon-data-dir">Loading…</span></div>
+            <div class="stat"><span class="stat-label">PID file path</span><span class="stat-value mono" id="daemon-pid-file">Loading…</span></div>
+          </div>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Relay settings</h2>
+              <p>Control how the daemon connects to configured relay services.</p>
+            </div>
+          </div>
+          <label for="relay-auto-connect">
+            <span><input type="checkbox" id="relay-auto-connect" />Auto-connect</span>
+            <span class="field-hint">Reconnect automatically to saved relay endpoints.</span>
+          </label>
+          <label for="relay-provider-mode">
+            <span><input type="checkbox" id="relay-provider-mode" />Provider mode</span>
+            <span class="field-hint">Advertise provider capabilities over relay connections.</span>
+          </label>
+          <label for="relay-endpoints">
+            Relay endpoints
+            <span class="field-hint">Enter one ws:// or wss:// relay URL per line.</span>
+            <textarea id="relay-endpoints" rows="4" placeholder="wss://relay.example.com/v1/ws"></textarea>
+          </label>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Encryption settings</h2>
+              <p>Choose whether local execution requires encrypted payloads.</p>
+            </div>
+          </div>
+          <label for="encryption-enabled">
+            <span><input type="checkbox" id="encryption-enabled" />Enabled</span>
+            <span class="field-hint">Encrypt supported daemon traffic with the local keypair.</span>
+          </label>
+          <label for="require-encryption">
+            <span><input type="checkbox" id="require-encryption" />Require encryption</span>
+            <span class="field-hint">Reject requests that do not include encryption metadata.</span>
+          </label>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Spending policy</h2>
+              <p>Allow or block specific apps in addition to the global daily limit.</p>
+            </div>
+          </div>
+          <label for="allowed-apps">
+            Per-app allowlist
+            <span class="field-hint">One app name per line. Leave blank to allow all apps.</span>
+            <textarea id="allowed-apps" rows="4" placeholder="my-app"></textarea>
+          </label>
+          <label for="denied-apps">
+            Per-app denylist
+            <span class="field-hint">One app name per line. Matching apps are always blocked.</span>
+            <textarea id="denied-apps" rows="4" placeholder="untrusted-app"></textarea>
+          </label>
           <div class="top-actions">
-            <button class="button" id="finish">${escapeHtml(buttonLabel)}</button>
+            <button class="button" id="finish" disabled>${escapeHtml(buttonLabel)}</button>
           </div>
           <div class="notice notice--error" id="status" hidden></div>
         </div>
@@ -922,17 +1037,95 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
       const output = document.getElementById('limit-value');
       const button = document.getElementById('finish');
       const status = document.getElementById('status');
+      const relayAutoConnect = document.getElementById('relay-auto-connect');
+      const relayProviderMode = document.getElementById('relay-provider-mode');
+      const relayEndpoints = document.getElementById('relay-endpoints');
+      const encryptionEnabled = document.getElementById('encryption-enabled');
+      const requireEncryption = document.getElementById('require-encryption');
+      const allowedApps = document.getElementById('allowed-apps');
+      const deniedApps = document.getElementById('denied-apps');
+      let settingsLoaded = false;
+
+      function setText(id, value) {
+        const element = document.getElementById(id);
+        if (element) {
+          element.textContent = value || 'Unavailable';
+        }
+      }
+
+      function splitLines(value) {
+        return value
+          .split(/\r?\n/)
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+      }
+
+      function syncEncryptionState() {
+        if (!encryptionEnabled.checked) {
+          requireEncryption.checked = false;
+        }
+        requireEncryption.disabled = !encryptionEnabled.checked;
+      }
+
       slider.addEventListener('input', () => {
         output.textContent = slider.value + ' SUI';
       });
+
+      encryptionEnabled.addEventListener('change', syncEncryptionState);
+
+      async function loadSettings() {
+        status.hidden = true;
+        try {
+          const response = await fetch('/api/full-settings');
+          if (!response.ok) {
+            throw new Error('Unable to load settings.');
+          }
+          const body = await response.json();
+          setText('daemon-log-level', body.daemon && body.daemon.logLevel ? body.daemon.logLevel : 'Unavailable');
+          setText('daemon-data-dir', body.daemon && body.daemon.dataDir ? body.daemon.dataDir : 'Unavailable');
+          setText('daemon-pid-file', body.daemon && body.daemon.pidFile ? body.daemon.pidFile : 'Unavailable');
+          relayAutoConnect.checked = Boolean(body.relay && body.relay.autoConnect);
+          relayProviderMode.checked = Boolean(body.relay && body.relay.providerMode);
+          relayEndpoints.value = Array.isArray(body.relay && body.relay.endpoints) ? body.relay.endpoints.join('\n') : '';
+          encryptionEnabled.checked = Boolean(body.encryption && body.encryption.enabled);
+          requireEncryption.checked = Boolean(body.encryption && body.encryption.requireEncryption);
+          allowedApps.value = Array.isArray(body.spending && body.spending.allowedApps) ? body.spending.allowedApps.join('\n') : '';
+          deniedApps.value = Array.isArray(body.spending && body.spending.deniedApps) ? body.spending.deniedApps.join('\n') : '';
+          syncEncryptionState();
+          settingsLoaded = true;
+          button.disabled = false;
+        } catch (error) {
+          status.textContent = error instanceof Error ? error.message : 'Unable to load settings.';
+          status.hidden = false;
+        }
+      }
+
       button.addEventListener('click', async () => {
+        if (!settingsLoaded) {
+          return;
+        }
         button.disabled = true;
         status.hidden = true;
         try {
           const response = await fetch('/api/settings', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ dailyLimitSui: slider.value }),
+            body: JSON.stringify({
+              dailyLimitSui: slider.value,
+              relay: {
+                autoConnect: relayAutoConnect.checked,
+                providerMode: relayProviderMode.checked,
+                endpoints: splitLines(relayEndpoints.value),
+              },
+              encryption: {
+                enabled: encryptionEnabled.checked,
+                requireEncryption: requireEncryption.checked,
+              },
+              spending: {
+                allowedApps: splitLines(allowedApps.value),
+                deniedApps: splitLines(deniedApps.value),
+              },
+            }),
           });
           if (!response.ok) {
             const body = await response.json().catch(() => ({}));
@@ -945,6 +1138,8 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
           button.disabled = false;
         }
       });
+
+      void loadSettings();
     </script>`;
 }
 
@@ -2048,10 +2243,21 @@ function renderServicesPage(): string {
             return '<div class="client-row">' +
               '<div><div class="client-name">' + esc(client.appName) + '</div>' +
               (client.profile ? '<div class="client-meta">Profile: ' + esc(client.profile) + '</div>' : '') +
+              '<div class="client-meta">PID ' + esc(String(client.pid)) + ' · Connected ' + esc(client.connectedAgo) + '</div>' +
               '</div>' +
-              '<div class="client-meta">PID ' + esc(String(client.pid)) + ' · ' + esc(client.connectedAgo) + '</div>' +
+              '<button class="button button--secondary button--small disconnect-btn" data-pid="' + client.pid + '">Disconnect</button>' +
             '</div>';
           }).join('');
+          els.clients.querySelectorAll('.disconnect-btn').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              if (!confirm('Disconnect this client? It will need to reconnect.')) return;
+              btn.disabled = true;
+              try {
+                await fetch('/api/clients/' + btn.dataset.pid, { method: 'DELETE' });
+                await loadClients();
+              } catch (e) { btn.disabled = false; }
+            });
+          });
         } catch (error) {
           els.clients.innerHTML = '<div class="notice notice--error">Failed to load client data.</div>';
         }
@@ -2342,21 +2548,185 @@ function formatDuration(ms: number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-function snapshotPortalSettings(config: DaemonFullConfig): Pick<DaemonFullConfig, 'auth' | 'payment' | 'spending'> {
+function snapshotPortalSettings(config: DaemonFullConfig): Pick<DaemonFullConfig, 'auth' | 'payment' | 'spending' | 'relay' | 'encryption'> {
   return structuredClone({
     auth: config.auth,
     payment: config.payment,
     spending: config.spending,
+    relay: config.relay,
+    encryption: config.encryption,
   });
 }
 
 function restorePortalSettings(
   target: DaemonFullConfig,
-  snapshot: Pick<DaemonFullConfig, 'auth' | 'payment' | 'spending'>,
+  snapshot: Pick<DaemonFullConfig, 'auth' | 'payment' | 'spending' | 'relay' | 'encryption'>,
 ): void {
   target.auth = snapshot.auth;
   target.payment = snapshot.payment;
   target.spending = snapshot.spending;
+  target.relay = snapshot.relay;
+  target.encryption = snapshot.encryption;
+}
+
+function getPortalFullSettings(config: DaemonFullConfig): PortalFullSettings {
+  return {
+    daemon: {
+      logLevel: config.daemon.logLevel,
+      dataDir: config.daemon.dataDir,
+      pidFile: config.daemon.pidFile,
+    },
+    relay: {
+      autoConnect: config.relay.autoConnect,
+      providerMode: config.relay.providerMode,
+      endpoints: config.relay.endpoints.map((endpoint) => endpoint.url),
+    },
+    encryption: {
+      enabled: config.encryption.enabled,
+      requireEncryption: config.encryption.requireEncryption,
+    },
+    spending: {
+      allowedApps: [...(config.spending.allowlist ?? [])],
+      deniedApps: [...(config.spending.denylist ?? [])],
+    },
+  };
+}
+
+function validatePortalSettingsInput(body: unknown, current: DaemonFullConfig): PortalSettingsUpdate {
+  if (!isRecord(body)) {
+    throw new PortalSettingsValidationError('Settings payload must be an object.');
+  }
+
+  let dailyLimitMist: bigint;
+  try {
+    dailyLimitMist = normalizeDailyLimit(body);
+  } catch (error) {
+    throw new PortalSettingsValidationError(getSafeErrorMessage(error, 'A daily spending limit is required.'));
+  }
+
+  const relay = isRecord(body.relay) ? body.relay : {};
+  const autoConnect =
+    relay.autoConnect === undefined
+      ? current.relay.autoConnect
+      : readOptionalBoolean(relay.autoConnect);
+  if (autoConnect === undefined) {
+    throw new PortalSettingsValidationError('relay.autoConnect must be a boolean.');
+  }
+
+  const providerMode =
+    relay.providerMode === undefined
+      ? current.relay.providerMode
+      : readOptionalBoolean(relay.providerMode);
+  if (providerMode === undefined) {
+    throw new PortalSettingsValidationError('relay.providerMode must be a boolean.');
+  }
+
+  const endpoints =
+    relay.endpoints === undefined
+      ? current.relay.endpoints.map((endpoint) => ({ ...endpoint }))
+      : normalizeRelayEndpoints(relay.endpoints, current.relay.endpoints);
+
+  const encryption = isRecord(body.encryption) ? body.encryption : {};
+  const encryptionEnabled =
+    encryption.enabled === undefined
+      ? current.encryption.enabled
+      : readOptionalBoolean(encryption.enabled);
+  if (encryptionEnabled === undefined) {
+    throw new PortalSettingsValidationError('encryption.enabled must be a boolean.');
+  }
+
+  const requireEncryption =
+    encryption.requireEncryption === undefined
+      ? current.encryption.requireEncryption
+      : readOptionalBoolean(encryption.requireEncryption);
+  if (requireEncryption === undefined) {
+    throw new PortalSettingsValidationError('encryption.requireEncryption must be a boolean.');
+  }
+
+  if (requireEncryption && !encryptionEnabled) {
+    throw new PortalSettingsValidationError('Require encryption cannot be enabled when encryption is disabled.');
+  }
+
+  const spending = isRecord(body.spending) ? body.spending : {};
+
+  return {
+    dailyLimitMist,
+    relay: {
+      autoConnect,
+      providerMode,
+      endpoints,
+    },
+    encryption: {
+      enabled: encryptionEnabled,
+      requireEncryption,
+    },
+    spending: {
+      allowlist:
+        spending.allowedApps === undefined
+          ? current.spending.allowlist
+          : normalizeOptionalStringList(spending.allowedApps, 'spending.allowedApps'),
+      denylist:
+        spending.deniedApps === undefined
+          ? current.spending.denylist
+          : normalizeOptionalStringList(spending.deniedApps, 'spending.deniedApps'),
+    },
+  };
+}
+
+function normalizeRelayEndpoints(
+  value: unknown,
+  current: DaemonFullConfig['relay']['endpoints'],
+): DaemonFullConfig['relay']['endpoints'] {
+  const currentRelayDidByUrl = new Map(current.map((endpoint) => [endpoint.url, endpoint.relayDid]));
+
+  return normalizeStringList(value, 'relay.endpoints').map((url, index) => {
+    validateRelayEndpointUrl(url, index);
+    const relayDid = currentRelayDidByUrl.get(url);
+    return relayDid ? { url, relayDid } : { url };
+  });
+}
+
+function normalizeOptionalStringList(value: unknown, field: string): string[] | undefined {
+  const entries = normalizeStringList(value, field);
+  return entries.length > 0 ? entries : undefined;
+}
+
+function normalizeStringList(value: unknown, field: string): string[] {
+  if (typeof value === 'string') {
+    return value
+      .split(/\r?\n/)
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+
+  if (!Array.isArray(value)) {
+    throw new PortalSettingsValidationError(`${field} must be an array of strings.`);
+  }
+
+  return value
+    .map((entry, index) => {
+      if (typeof entry !== 'string') {
+        throw new PortalSettingsValidationError(`${field}[${index}] must be a string.`);
+      }
+      return entry.trim();
+    })
+    .filter(Boolean);
+}
+
+function validateRelayEndpointUrl(value: string, index: number): void {
+  const label = `relay.endpoints[${index}]`;
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'ws:' && parsed.protocol !== 'wss:') {
+      throw new PortalSettingsValidationError(`${label} must use ws or wss protocol.`);
+    }
+  } catch (error) {
+    if (error instanceof PortalSettingsValidationError) {
+      throw error;
+    }
+    throw new PortalSettingsValidationError(`${label} is not a valid URL.`);
+  }
 }
 
 function normalizeDailyLimit(body: { dailyLimitMist?: number | string; dailyLimitSui?: number | string }): bigint {
@@ -2652,8 +3022,9 @@ function capitalize(value: string): string {
 
 function isInputValidationError(error: unknown): boolean {
   return (
-    error instanceof Error &&
-    /(dailyLimit|required|valid SUI amount|non-negative integer)/i.test(error.message)
+    error instanceof PortalSettingsValidationError ||
+    (error instanceof Error &&
+      /(dailyLimit|required|valid SUI amount|non-negative integer)/i.test(error.message))
   );
 }
 
@@ -2707,6 +3078,7 @@ const BASE_STYLES = `
   strong { color: var(--text); }
   label { display: grid; gap: 8px; color: var(--text); font-weight: 600; }
   input, textarea, select { width: 100%; border-radius: 12px; border: 1px solid #334155; background: #09101c; color: var(--text); padding: 12px 14px; font: inherit; }
+  input[type="checkbox"] { width: auto; margin-right: 8px; }
   textarea { min-height: 120px; resize: vertical; }
   input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
   input[type='range'] { padding: 0; background: transparent; border: 0; box-shadow: none; }
@@ -2729,6 +3101,7 @@ const BASE_STYLES = `
   button:hover, .button:hover { transform: translateY(-1px); box-shadow: 0 14px 30px rgba(59, 130, 246, 0.18); }
   button:disabled, .button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; }
   .button--secondary { background: rgba(59, 130, 246, 0.1); border-color: rgba(59, 130, 246, 0.35); color: #bfdbfe; }
+  .button--small { padding: 6px 12px; font-size: 0.82rem; }
   .button--danger { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.35); color: #fecaca; }
   .button--apple { background: #020617; border-color: #334155; color: #e2e8f0; }
   .button__icon { font-size: 1rem; line-height: 1; }
@@ -2863,6 +3236,13 @@ class NetworkValidationError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'NetworkValidationError';
+  }
+}
+
+class PortalSettingsValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PortalSettingsValidationError';
   }
 }
 

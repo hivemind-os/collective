@@ -44,6 +44,11 @@ export class Connection {
     return this.appName;
   }
 
+  /** The PID of the connected app, or undefined if not yet received. */
+  get connectedAppPid(): number | undefined {
+    return this.appPid;
+  }
+
   /** The low-level MCP Server for this connection (for sampling requests). */
   get mcpServer(): Server {
     return this.session.mcpServer;
