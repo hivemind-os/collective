@@ -3,7 +3,7 @@ import type { MeshToolContext } from '../context.js';
 export const meshWorkQueueTool = {
   name: 'collective_work_queue',
   description:
-    'Manage the provider work queue. Poll for incoming tasks, complete or fail work items, and list queue contents.',
+    'Manage the provider work queue. Poll for incoming tasks (includes processing instructions if configured), complete or fail work items, and list queue contents.',
   inputSchema: {
     type: 'object' as const,
     properties: {
@@ -57,6 +57,15 @@ export async function runMeshWorkQueue(params: WorkQueueParams, context: MeshToo
       if (!item) {
         return { status: 'empty', message: 'No pending work items in the queue.' };
       }
+      // Look up instructions from the capability's adapterConfig
+      let instructions: string | undefined;
+      if (context.providerConfig) {
+        const snapshot = context.providerConfig.get();
+        const cap = snapshot.capabilities.find(
+          (c) => c.name === item.capability && c.adapter === 'job-queue',
+        );
+        instructions = cap?.adapterConfig?.instructions as string | undefined;
+      }
       return {
         status: 'claimed',
         item: {
@@ -66,6 +75,7 @@ export async function runMeshWorkQueue(params: WorkQueueParams, context: MeshToo
           inputData: item.inputData,
           createdAt: item.createdAt,
         },
+        ...(instructions ? { instructions } : {}),
       };
     }
 

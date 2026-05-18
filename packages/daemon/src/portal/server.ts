@@ -1473,6 +1473,7 @@ function renderServicesPage(): string {
         webhook: ['url'],
         subprocess: ['command', 'allowSubprocess'],
         'mcp-sampling': ['appName', 'systemPrompt'],
+        'job-queue': ['instructions'],
       };
 
       const els = {
@@ -1585,6 +1586,7 @@ function renderServicesPage(): string {
         if (capability.adapter === 'webhook' && typeof config.url === 'string') return config.url;
         if (capability.adapter === 'subprocess' && typeof config.command === 'string') return config.command;
         if (capability.adapter === 'mcp-sampling' && typeof config.appName === 'string') return config.appName;
+        if (capability.adapter === 'job-queue') return config.instructions ? 'Instructions configured' : 'Job queue (no instructions)';
         return 'No additional adapter config';
       }
 
@@ -1658,6 +1660,11 @@ function renderServicesPage(): string {
             '<label for="adapter-mcp-system-prompt">System prompt<textarea id="adapter-mcp-system-prompt" data-field="systemPrompt" placeholder="Describe the assistant behavior for the MCP sampling adapter.">' + esc(config.systemPrompt || '') + '</textarea></label>';
           return;
         }
+        if (capability.adapter === 'job-queue') {
+          els.adapterFields.innerHTML = '<label for="adapter-jobqueue-instructions">Instructions<textarea id="adapter-jobqueue-instructions" data-field="instructions" rows="4" placeholder="Describe how the agent should process incoming work items for this capability.">' + esc(config.instructions || '') + '</textarea></label>' +
+            '<div class="notice">Work items arrive in a persistent queue. Your agent polls via the <code>collective_work_queue</code> tool, processes items according to these instructions, then marks them complete.</div>';
+          return;
+        }
       }
 
       function parseExtraConfig(lenient) {
@@ -1709,6 +1716,9 @@ function renderServicesPage(): string {
           if (!lenient && !systemPrompt) throw new Error('mcp-sampling adapter requires a system prompt.');
           if (appName) capability.adapterConfig.appName = appName;
           if (systemPrompt) capability.adapterConfig.systemPrompt = systemPrompt;
+        } else if (adapter === 'job-queue') {
+          const instructions = (document.getElementById('adapter-jobqueue-instructions')?.value || '').trim();
+          if (instructions) capability.adapterConfig.instructions = instructions;
         }
 
         if (adapter === 'echo' && Object.keys(capability.adapterConfig).length === 0) {
@@ -2391,6 +2401,8 @@ function validateProviderAdapterConfig(
       const systemPrompt = requireNonEmptyString(adapterConfig.systemPrompt, `capabilities[${index}].adapterConfig.systemPrompt`);
       return { ...adapterConfig, appName, systemPrompt };
     }
+    case 'job-queue':
+      return Object.keys(adapterConfig).length > 0 ? adapterConfig : undefined;
     default:
       return Object.keys(adapterConfig).length > 0 ? adapterConfig : undefined;
   }
