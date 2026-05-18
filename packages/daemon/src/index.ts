@@ -118,6 +118,7 @@ export async function main(): Promise<void> {
       logger,
       getAuthStatus,
       getConnectedApps: () => ipcServer?.getConnectedApps() ?? [],
+      getJobQueue: () => providerRuntime?.jobQueue,
       onProviderConfigChanged: async () => {
         // Stop existing provider runtime
         if (providerRuntime) {
@@ -135,6 +136,7 @@ export async function main(): Promise<void> {
             state: daemonState,
             providerConfig: nextProviderConfig,
             cursorDbPath: join(config.daemon.dataDir, 'provider-cursors.db'),
+            jobQueueDbPath: join(config.daemon.dataDir, 'work-queue.db'),
             relayConfig: config.relay,
             mcpSamplingFn: ipcRef
               ? async (appName, params) => {
@@ -167,6 +169,7 @@ export async function main(): Promise<void> {
       openUrl: (url: string) => openPortalUrl(url, logger, 'open settings'),
       config,
       configPath,
+      getJobQueue: () => providerRuntime?.jobQueue,
       onProviderConfigChanged: async () => {
         if (providerRuntime) {
           daemonState.setProviderRunning(false);
@@ -181,6 +184,7 @@ export async function main(): Promise<void> {
             state: daemonState,
             providerConfig: nextProviderConfig,
             cursorDbPath: join(config.daemon.dataDir, 'provider-cursors.db'),
+            jobQueueDbPath: join(config.daemon.dataDir, 'work-queue.db'),
             relayConfig: config.relay,
             mcpSamplingFn: ipcRef
               ? async (appName, params) => {
@@ -229,6 +233,7 @@ export async function main(): Promise<void> {
         state: daemonState,
         providerConfig,
         cursorDbPath: join(config.daemon.dataDir, 'provider-cursors.db'),
+            jobQueueDbPath: join(config.daemon.dataDir, 'work-queue.db'),
         relayConfig: config.relay,
         mcpSamplingFn: ipcRef
           ? async (appName, params) => {

@@ -646,4 +646,17 @@ describe('portal API endpoints', () => {
       await portal.stop();
     }
   });
+
+  it('GET /api/work-queue returns empty when no job queue is active', async () => {
+    const state = createMockState();
+    const { portal, url } = await startPortalWithState(state);
+    try {
+      const res = await fetch(`${url}/api/work-queue`);
+      const body = (await res.json()) as { items: unknown[]; count: number };
+      expect(body.items).toEqual([]);
+      expect(body.count).toBe(0);
+    } finally {
+      await portal.stop();
+    }
+  });
 });

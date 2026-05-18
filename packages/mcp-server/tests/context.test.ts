@@ -70,7 +70,7 @@ describe('MeshToolContext and registration', () => {
     const listResources = await handlers.get(ListResourcesRequestSchema)?.();
     const listTemplates = await handlers.get(ListResourceTemplatesRequestSchema)?.();
 
-    expect(listTools.tools).toHaveLength(23);
+    expect(listTools.tools).toHaveLength(24);
     expect(listTools.tools.map((tool: { name: string }) => tool.name)).toContain('collective_relay_registry');
     expect(listTools.tools.map((tool: { name: string }) => tool.name)).toContain('collective_settings');
     expect(listResources.resources).toHaveLength(2);

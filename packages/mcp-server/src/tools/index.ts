@@ -26,6 +26,7 @@ import { meshStakeTool, runMeshStake } from './stake.js';
 import { meshTaskHistoryTool, runMeshTaskHistory } from './task-history.js';
 import { meshTaskStatusTool, runMeshTaskStatus } from './task-status.js';
 import { meshWithdrawTool, runMeshWithdraw } from './withdraw.js';
+import { meshWorkQueueTool, runMeshWorkQueue } from './work-queue.js';
 
 const toolDefinitions = [
   meshAnalyticsTool,
@@ -51,6 +52,7 @@ const toolDefinitions = [
   meshSettingsTool,
   meshProviderConfigTool,
   meshWithdrawTool,
+  meshWorkQueueTool,
 ];
 
 export type MeshToolHandler = (params: never, context: MeshToolContext) => Promise<unknown>;
@@ -79,6 +81,7 @@ export const meshToolHandlers: Record<string, MeshToolHandler> = {
   [meshSettingsTool.name]: runMeshSettings,
   [meshProviderConfigTool.name]: runMeshProviderConfig,
   [meshWithdrawTool.name]: runMeshWithdraw,
+  [meshWorkQueueTool.name]: runMeshWorkQueue,
 };
 
 export function registerToolHandlers(server: Server, context: MeshToolContext): void {

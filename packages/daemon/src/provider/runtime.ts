@@ -20,6 +20,7 @@ import { RelayClient, type RelayClientConfig } from '../relay/relay-client.js';
 import type { DaemonState } from '../state.js';
 import { EchoAdapter } from './adapters/echo.js';
 import type { ExecutionAdapter } from './adapters/interface.js';
+import { JobQueueAdapter } from './adapters/job-queue.js';
 import { LocalFunctionAdapter, type LocalFunction } from './adapters/local-fn.js';
 import { McpSamplingAdapter, type McpSamplingFn } from './adapters/mcp-sampling.js';
 import { SubprocessAdapter } from './adapters/subprocess.js';
@@ -41,12 +42,14 @@ export class ProviderRuntime {
   private registeredCapabilities: string[] = [];
   private chainOperations: Promise<void> = Promise.resolve();
   private ownAgentCardId?: string;
+  private _jobQueue?: JobQueueAdapter;
 
   constructor(
     private readonly params: {
       state: DaemonState;
       providerConfig: ProviderConfig;
       cursorDbPath: string;
+      jobQueueDbPath: string;
       relayConfig?: DaemonFullConfig['relay'];
       relayClientFactory?: (config: RelayClientConfig, identity: DaemonState['relayAuthProvider']) => RelayClient;
       mcpSamplingFn?: McpSamplingFn;
@@ -54,6 +57,10 @@ export class ProviderRuntime {
     },
   ) {
     this.taskQueue = new TaskQueue(params.providerConfig.maxConcurrency);
+  }
+
+  get jobQueue(): JobQueueAdapter | undefined {
+    return this._jobQueue;
   }
 
   async start(): Promise<void> {
@@ -94,6 +101,8 @@ export class ProviderRuntime {
     await this.taskQueue.drain();
     this.cursorStore?.close();
     this.cursorStore = undefined;
+    this._jobQueue?.close();
+    this._jobQueue = undefined;
   }
 
   private async connectRelays(): Promise<void> {
@@ -264,8 +273,14 @@ export class ProviderRuntime {
     this.capabilityConfigs.clear();
     this.registeredCapabilities = [];
 
+    const hasJobQueue = this.params.providerConfig.capabilities.some((c) => c.adapter === 'job-queue');
+    if (hasJobQueue && !this._jobQueue) {
+      this._jobQueue = new JobQueueAdapter({ dbPath: this.params.jobQueueDbPath });
+    }
+
     const deps: AdapterDeps = {
       mcpSamplingFn: this.params.mcpSamplingFn,
+      jobQueue: this._jobQueue,
     };
 
     for (const capability of this.params.providerConfig.capabilities) {
@@ -365,6 +380,7 @@ export class ProviderRuntime {
 
 interface AdapterDeps {
   mcpSamplingFn?: McpSamplingFn;
+  jobQueue?: JobQueueAdapter;
 }
 
 function createAdapter(capability: ProviderCapabilityConfig, deps: AdapterDeps): ExecutionAdapter {
@@ -373,6 +389,12 @@ function createAdapter(capability: ProviderCapabilityConfig, deps: AdapterDeps):
   switch (capability.adapter) {
     case 'echo':
       return new EchoAdapter();
+    case 'job-queue': {
+      if (!deps.jobQueue) {
+        throw new Error('Job queue adapter was not initialized.');
+      }
+      return deps.jobQueue;
+    }
     case 'local-function': {
       const fnCandidate = config.fn ?? config.function;
       if (typeof fnCandidate !== 'function') {

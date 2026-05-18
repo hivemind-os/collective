@@ -71,6 +71,7 @@ describe('Phase 1 E2E: Provider runtime', () => {
           ],
         },
         cursorDbPath: await createCursorDbPath('provider-auto-cursor'),
+        jobQueueDbPath: await createCursorDbPath('provider-auto-cursor-queue'),
       });
       activeRuntimes.push(runtime);
 
@@ -127,6 +128,7 @@ describe('Phase 1 E2E: Provider runtime', () => {
           ],
         },
         cursorDbPath: await createCursorDbPath('provider-echo-cursor'),
+        jobQueueDbPath: await createCursorDbPath('provider-echo-cursor-queue'),
       });
       activeRuntimes.push(runtime);
 
@@ -183,6 +185,7 @@ describe('Phase 1 E2E: Provider runtime', () => {
           ],
         },
         cursorDbPath: await createCursorDbPath('provider-ignore-cursor'),
+        jobQueueDbPath: await createCursorDbPath('provider-ignore-cursor-queue'),
       });
       activeRuntimes.push(runtime);
 
@@ -255,6 +258,7 @@ describe('Phase 1 E2E: Provider runtime', () => {
           ],
         } as ProviderConfig,
         cursorDbPath: await createCursorDbPath('provider-concurrency-cursor'),
+        jobQueueDbPath: await createCursorDbPath('provider-concurrency-cursor-queue'),
       });
       activeRuntimes.push(runtime);
 
@@ -339,6 +343,7 @@ describe('Phase 1 E2E: Provider runtime', () => {
           ],
         } as ProviderConfig,
         cursorDbPath: await createCursorDbPath('provider-shutdown-cursor'),
+        jobQueueDbPath: await createCursorDbPath('provider-shutdown-cursor-queue'),
       });
       activeRuntimes.push(runtime);
 

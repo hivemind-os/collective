@@ -62,6 +62,27 @@ export interface MeshToolContext {
     get: () => ProviderConfigSnapshot;
     set: (config: ProviderConfigSnapshot) => Promise<{ ok: boolean; error?: string }>;
   };
+  workQueue?: WorkQueueAccessor;
+}
+
+export interface WorkQueueItem {
+  id: string;
+  taskId: string;
+  capability: string;
+  inputData: string;
+  status: 'pending' | 'claimed' | 'completed' | 'failed';
+  resultData?: string;
+  error?: string;
+  createdAt: number;
+  claimedAt?: number;
+  completedAt?: number;
+}
+
+export interface WorkQueueAccessor {
+  poll: () => WorkQueueItem | null;
+  complete: (itemId: string, resultData: string) => { ok: boolean; error?: string };
+  fail: (itemId: string, error: string) => { ok: boolean; error?: string };
+  list: (filter?: { status?: string }) => WorkQueueItem[];
 }
 
 export interface ProviderConfigSnapshot {

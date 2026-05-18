@@ -31,7 +31,7 @@ export const meshProviderConfigTool = {
         description:
           'For add_capability/update_capability: the capability definition. ' +
           'Fields: name (string), description (string), version (string), priceMist (integer), ' +
-          'adapter (echo|webhook|mcp-sampling|subprocess), adapterConfig (object, optional).',
+          'adapter (job-queue|echo|webhook|mcp-sampling|subprocess), adapterConfig (object, optional).',
         properties: {
           name: { type: 'string' },
           description: { type: 'string' },
@@ -67,7 +67,7 @@ interface ProviderConfigParams {
   name?: string;
 }
 
-const VALID_ADAPTERS = new Set(['echo', 'webhook', 'mcp-sampling', 'subprocess']);
+const VALID_ADAPTERS = new Set(['job-queue', 'echo', 'webhook', 'mcp-sampling', 'subprocess']);
 
 export async function runMeshProviderConfig(
   params: ProviderConfigParams,

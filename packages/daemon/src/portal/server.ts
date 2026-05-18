@@ -60,6 +60,7 @@ export interface PortalServerOptions {
   logger?: PortalLogger;
   getAuthStatus?: () => DaemonAuthStatus | null;
   getConnectedApps?: () => { appName: string; appPid: number; profile?: string; connectedAt: number }[];
+  getJobQueue?: () => import('../provider/adapters/job-queue.js').JobQueueAdapter | undefined;
   onAuthenticated?: (session: StoredZkLoginSession) => Promise<void> | void;
   onSettingsSaved?: (config: DaemonFullConfig) => Promise<void> | void;
   onProviderConfigChanged?: () => Promise<void> | void;
@@ -337,6 +338,10 @@ export class PortalServer {
       reply.type('text/html').send(wrapInLayout('Services', 'services', renderServicesPage()));
     });
 
+    this.server.get('/queue', async (_request, reply) => {
+      reply.type('text/html').send(wrapInLayout('Queue', 'queue', renderQueuePage()));
+    });
+
     this.server.get('/api/provider/config', async () => {
       return getProviderConfigForPortal(this.options.config);
     });
@@ -382,6 +387,44 @@ export class PortalServer {
           error: getSafeErrorMessage(error, 'Unable to save provider settings.'),
         });
       }
+    });
+
+    // ── Work queue API ───────────────────────────────────────────────
+    this.server.get('/api/work-queue', async (request) => {
+      const queue = this.options.getJobQueue?.();
+      if (!queue) {
+        return { items: [], count: 0 };
+      }
+      const query = (request.query ?? {}) as { status?: string };
+      const filter = query.status ? { status: query.status } : undefined;
+      const items = queue.list(filter);
+      return { items, count: items.length };
+    });
+
+    this.server.post('/api/work-queue/:id/retry', async (request, reply) => {
+      const queue = this.options.getJobQueue?.();
+      if (!queue) {
+        return reply.code(404).send({ ok: false, error: 'Work queue is not active.' });
+      }
+      const { id } = request.params as { id: string };
+      const result = queue.retry(id);
+      if (!result.ok) {
+        return reply.code(400).send(result);
+      }
+      return result;
+    });
+
+    this.server.delete('/api/work-queue/:id', async (request, reply) => {
+      const queue = this.options.getJobQueue?.();
+      if (!queue) {
+        return reply.code(404).send({ ok: false, error: 'Work queue is not active.' });
+      }
+      const { id } = request.params as { id: string };
+      const result = queue.remove(id);
+      if (!result.ok) {
+        return reply.code(404).send(result);
+      }
+      return result;
     });
 
     this.server.get('/api/services', async () => {
@@ -959,6 +1002,7 @@ const PORTAL_NAV = [
   { id: 'settings', href: '/', icon: '⚙', label: 'Settings' },
   { id: 'wallet', href: '/wallet', icon: '👛', label: 'Wallet' },
   { id: 'services', href: '/services', icon: '🧩', label: 'Services' },
+  { id: 'queue', href: '/queue', icon: '📥', label: 'Queue' },
   { id: 'discover', href: '/discover', icon: '🔎', label: 'Discover' },
   { id: 'tasks', href: '/tasks', icon: '📋', label: 'Tasks' },
   { id: 'network', href: '/network', icon: '🌐', label: 'Network' },
@@ -1316,6 +1360,7 @@ function renderServicesPage(): string {
             <label for="capability-adapter">
               Adapter type
               <select id="capability-adapter">
+                <option value="job-queue" selected>job-queue</option>
                 <option value="echo">echo</option>
                 <option value="webhook">webhook</option>
                 <option value="subprocess">subprocess</option>
@@ -1357,7 +1402,7 @@ function renderServicesPage(): string {
       </section>
     </div>
     <script>
-      const UI_ADAPTERS = ['echo', 'webhook', 'subprocess', 'mcp-sampling'];
+      const UI_ADAPTERS = ['job-queue', 'echo', 'webhook', 'subprocess', 'mcp-sampling'];
       const REQUIRED_KEYS = {
         echo: [],
         webhook: ['url'],
@@ -1424,13 +1469,13 @@ function renderServicesPage(): string {
           version: '1.0.0',
           priceMist: 1,
           currency: 'USDC',
-          adapter: 'echo',
+          adapter: 'job-queue',
           adapterConfig: {},
         };
       }
 
       function normalizeCapability(capability) {
-        const adapter = UI_ADAPTERS.includes(capability?.adapter) ? capability.adapter : 'echo';
+        const adapter = UI_ADAPTERS.includes(capability?.adapter) ? capability.adapter : 'job-queue';
         const adapterConfig = capability && capability.adapterConfig && typeof capability.adapterConfig === 'object' && !Array.isArray(capability.adapterConfig)
           ? { ...capability.adapterConfig }
           : {};
@@ -1787,6 +1832,183 @@ function renderServicesPage(): string {
       });
 
       Promise.all([loadProviderConfig(), loadRegistration(), loadClients()]).catch(() => undefined);
+    </script>`;
+}
+
+function renderQueuePage(): string {
+  return `
+    <style>
+      ${INNER_PAGE_STYLES}
+      .queue-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+      .queue-tabs button { padding: 6px 14px; border-radius: 6px; border: 1px solid #334155; background: transparent; color: #94a3b8; cursor: pointer; font-size: 13px; transition: all 0.15s; }
+      .queue-tabs button.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+      .queue-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .queue-table th { text-align: left; padding: 10px 12px; color: #94a3b8; border-bottom: 1px solid #1e293b; font-weight: 500; }
+      .queue-table td { padding: 10px 12px; border-bottom: 1px solid #1e293b; color: #e2e8f0; vertical-align: top; }
+      .queue-table tr:hover td { background: #1e293b; }
+      .queue-table .mono { font-family: monospace; font-size: 12px; color: #94a3b8; }
+      .queue-table .preview { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+      .status-badge--pending { background: #422006; color: #fbbf24; }
+      .status-badge--claimed { background: #172554; color: #60a5fa; }
+      .status-badge--completed { background: #052e16; color: #4ade80; }
+      .status-badge--failed { background: #450a0a; color: #f87171; }
+      .queue-actions { display: flex; gap: 6px; }
+      .queue-actions button { padding: 4px 10px; font-size: 11px; border-radius: 4px; border: none; cursor: pointer; }
+      .queue-actions .btn-retry { background: #1e40af; color: #fff; }
+      .queue-actions .btn-retry:hover { background: #2563eb; }
+      .queue-actions .btn-delete { background: #7f1d1d; color: #fff; }
+      .queue-actions .btn-delete:hover { background: #991b1b; }
+      .empty-queue { text-align: center; padding: 48px 16px; color: #64748b; }
+      .queue-count { color: #64748b; font-size: 13px; }
+      .detail-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
+      .detail-modal__content { background: #1e293b; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+      .detail-modal__content h3 { margin: 0 0 12px; color: #f1f5f9; }
+      .detail-modal__content pre { background: #0f172a; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 12px; color: #94a3b8; white-space: pre-wrap; word-break: break-all; }
+      .detail-modal__close { float: right; background: transparent; border: none; color: #94a3b8; font-size: 20px; cursor: pointer; }
+    </style>
+
+    <div class="page-header">
+      <div class="page-header__content">
+        <div class="title-row">
+          <h1>Work Queue</h1>
+          <span class="queue-count" id="queue-count"></span>
+        </div>
+        <p class="text-muted">Incoming tasks waiting to be processed by your agent.</p>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="queue-tabs" id="queue-tabs">
+        <button class="active" data-status="">All</button>
+        <button data-status="pending">Pending</button>
+        <button data-status="claimed">Claimed</button>
+        <button data-status="completed">Completed</button>
+        <button data-status="failed">Failed</button>
+      </div>
+
+      <div id="queue-content">
+        <div class="empty-queue">Loading...</div>
+      </div>
+    </div>
+
+    <div id="detail-modal" style="display:none"></div>
+
+    <script>
+      (function() {
+        let currentFilter = '';
+        let refreshTimer;
+
+        const content = document.getElementById('queue-content');
+        const countEl = document.getElementById('queue-count');
+        const tabs = document.getElementById('queue-tabs');
+        const modal = document.getElementById('detail-modal');
+
+        function esc(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+        function formatTime(ts) {
+          if (!ts) return '—';
+          const d = new Date(ts);
+          return d.toLocaleTimeString() + ' ' + d.toLocaleDateString();
+        }
+
+        async function loadQueue() {
+          try {
+            const url = currentFilter ? '/api/work-queue?status=' + encodeURIComponent(currentFilter) : '/api/work-queue';
+            const res = await fetch(url);
+            const data = await res.json();
+            renderQueue(data.items || [], data.count || 0);
+          } catch (err) {
+            content.innerHTML = '<div class="empty-queue">Failed to load queue.</div>';
+          }
+        }
+
+        function renderQueue(items, count) {
+          countEl.textContent = count + ' item' + (count === 1 ? '' : 's');
+          if (items.length === 0) {
+            content.innerHTML = '<div class="empty-queue">No work items' + (currentFilter ? ' with status "' + esc(currentFilter) + '"' : '') + '.</div>';
+            return;
+          }
+
+          let html = '<table class="queue-table"><thead><tr><th>Status</th><th>Capability</th><th>Input</th><th>Created</th><th>Actions</th></tr></thead><tbody>';
+          for (const item of items) {
+            html += '<tr>' +
+              '<td><span class="status-badge status-badge--' + esc(item.status) + '">' + esc(item.status) + '</span></td>' +
+              '<td>' + esc(item.capability) + '</td>' +
+              '<td class="preview mono" title="' + esc(item.inputData || '') + '">' + esc((item.inputData || '').slice(0, 80)) + '</td>' +
+              '<td class="mono">' + formatTime(item.createdAt) + '</td>' +
+              '<td class="queue-actions">' +
+                '<button class="btn-retry" data-action="view" data-id="' + esc(item.id) + '">View</button>' +
+                (item.status === 'failed' || item.status === 'claimed' ? '<button class="btn-retry" data-action="retry" data-id="' + esc(item.id) + '">Retry</button>' : '') +
+                '<button class="btn-delete" data-action="delete" data-id="' + esc(item.id) + '">Delete</button>' +
+              '</td>' +
+            '</tr>';
+          }
+          html += '</tbody></table>';
+          content.innerHTML = html;
+        }
+
+        tabs.addEventListener('click', (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          tabs.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentFilter = btn.dataset.status || '';
+          loadQueue();
+        });
+
+        content.addEventListener('click', async (e) => {
+          const btn = e.target.closest('button');
+          if (!btn) return;
+          const action = btn.dataset.action;
+          const id = btn.dataset.id;
+          if (!action || !id) return;
+
+          if (action === 'retry') {
+            await fetch('/api/work-queue/' + encodeURIComponent(id) + '/retry', { method: 'POST' });
+            loadQueue();
+          } else if (action === 'delete') {
+            await fetch('/api/work-queue/' + encodeURIComponent(id), { method: 'DELETE' });
+            loadQueue();
+          } else if (action === 'view') {
+            showDetail(id);
+          }
+        });
+
+        async function showDetail(id) {
+          try {
+            const res = await fetch('/api/work-queue?status=');
+            const data = await res.json();
+            const item = (data.items || []).find(i => i.id === id);
+            if (!item) { modal.style.display = 'none'; return; }
+            modal.style.display = 'flex';
+            modal.innerHTML = '<div class="detail-modal__content">' +
+              '<button class="detail-modal__close" id="close-modal">&times;</button>' +
+              '<h3>Work Item</h3>' +
+              '<p><strong>ID:</strong> <span class="mono">' + esc(item.id) + '</span></p>' +
+              '<p><strong>Task ID:</strong> <span class="mono">' + esc(item.taskId) + '</span></p>' +
+              '<p><strong>Capability:</strong> ' + esc(item.capability) + '</p>' +
+              '<p><strong>Status:</strong> <span class="status-badge status-badge--' + esc(item.status) + '">' + esc(item.status) + '</span></p>' +
+              '<p><strong>Created:</strong> ' + formatTime(item.createdAt) + '</p>' +
+              (item.claimedAt ? '<p><strong>Claimed:</strong> ' + formatTime(item.claimedAt) + '</p>' : '') +
+              (item.completedAt ? '<p><strong>Completed:</strong> ' + formatTime(item.completedAt) + '</p>' : '') +
+              '<h4>Input</h4><pre>' + esc(item.inputData || '(empty)') + '</pre>' +
+              (item.resultData ? '<h4>Result</h4><pre>' + esc(item.resultData) + '</pre>' : '') +
+              (item.error ? '<h4>Error</h4><pre style="color:#f87171">' + esc(item.error) + '</pre>' : '') +
+            '</div>';
+            document.getElementById('close-modal').addEventListener('click', () => { modal.style.display = 'none'; });
+          } catch (err) {
+            modal.style.display = 'none';
+          }
+        }
+
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) modal.style.display = 'none';
+        });
+
+        loadQueue();
+        refreshTimer = setInterval(loadQueue, 5000);
+      })();
     </script>`;
 }
 
@@ -2170,6 +2392,7 @@ const HTML_ESCAPES: Record<string, string> = {
 };
 
 const VALID_PROVIDER_ADAPTERS = new Set<PortalProviderCapability['adapter']>([
+  'job-queue',
   'echo',
   'local-function',
   'webhook',

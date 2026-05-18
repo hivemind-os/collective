@@ -22,7 +22,7 @@ const SERVER_INSTRUCTIONS = [
   '• Proactively suggest opening settings when the user asks about configuration, wallet setup, or network options',
 ].join('\n');
 
-export type { MeshToolContext, ProviderConfigSnapshot } from './context.js';
+export type { MeshToolContext, ProviderConfigSnapshot, WorkQueueAccessor, WorkQueueItem } from './context.js';
 export { meshToolDefinitions, meshToolHandlers, type MeshToolHandler } from './tools/index.js';
 export { registerResourceHandlers } from './resources/index.js';
 export { meshMultiExecuteTool, runMeshMultiExecute, type MeshMultiExecuteParams, type MeshMultiExecuteResult } from './tools/multi-execute.js';

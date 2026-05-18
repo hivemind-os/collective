@@ -27,6 +27,7 @@ export interface ToolContextOptions {
   config?: DaemonFullConfig;
   configPath?: string;
   onProviderConfigChanged?: () => Promise<void> | void;
+  getJobQueue?: () => import('../provider/adapters/job-queue.js').JobQueueAdapter | undefined;
 }
 
 export function buildMeshToolContext(state: DaemonState, dataDir: string, options?: ToolContextOptions): MeshToolContext {
@@ -98,6 +99,33 @@ export function buildMeshToolContext(state: DaemonState, dataDir: string, option
           config.provider = previousProvider;
           return { ok: false, error: error instanceof Error ? error.message : 'Failed to save provider config.' };
         }
+      },
+    };
+  }
+
+  // Work queue accessor — allows MCP tools to interact with the job queue
+  if (options?.getJobQueue) {
+    const getQueue = options.getJobQueue;
+    base.workQueue = {
+      poll() {
+        const queue = getQueue();
+        if (!queue) return null;
+        return queue.poll();
+      },
+      complete(itemId: string, resultData: string) {
+        const queue = getQueue();
+        if (!queue) return { ok: false, error: 'Job queue is not active' };
+        return queue.complete(itemId, resultData);
+      },
+      fail(itemId: string, error: string) {
+        const queue = getQueue();
+        if (!queue) return { ok: false, error: 'Job queue is not active' };
+        return queue.fail(itemId, error);
+      },
+      list(filter?: { status?: string }) {
+        const queue = getQueue();
+        if (!queue) return [];
+        return queue.list(filter);
       },
     };
   }
