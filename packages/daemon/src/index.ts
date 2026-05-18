@@ -119,6 +119,7 @@ export async function main(): Promise<void> {
       getAuthStatus,
       getConnectedApps: () => ipcServer?.getConnectedApps() ?? [],
       getJobQueue: () => providerRuntime?.jobQueue,
+      getProviderRuntime: () => providerRuntime,
       onProviderConfigChanged: async () => {
         // Stop existing provider runtime
         if (providerRuntime) {

@@ -5,6 +5,7 @@ export const meshProviderConfigTool = {
   description:
     'Manage the local provider configuration. ' +
     'Actions: "get" returns the current provider config; ' +
+    '"get_status" returns runtime status (queue depth, adapter health); ' +
     '"set_enabled" enables or disables provider mode; ' +
     '"add_capability" adds a new capability; ' +
     '"update_capability" updates an existing capability by name; ' +
@@ -15,7 +16,7 @@ export const meshProviderConfigTool = {
     properties: {
       action: {
         type: 'string',
-        enum: ['get', 'set_enabled', 'add_capability', 'update_capability', 'remove_capability'],
+        enum: ['get', 'get_status', 'set_enabled', 'add_capability', 'update_capability', 'remove_capability'],
         description: 'The action to perform.',
       },
       enabled: {
@@ -52,7 +53,7 @@ export const meshProviderConfigTool = {
 };
 
 interface ProviderConfigParams {
-  action: 'get' | 'set_enabled' | 'add_capability' | 'update_capability' | 'remove_capability';
+  action: 'get' | 'get_status' | 'set_enabled' | 'add_capability' | 'update_capability' | 'remove_capability';
   enabled?: boolean;
   autoRegister?: boolean;
   capability?: {
@@ -81,6 +82,20 @@ export async function runMeshProviderConfig(
 
   if (action === 'get') {
     return context.providerConfig.get();
+  }
+
+  if (action === 'get_status') {
+    const config = context.providerConfig.get();
+    const queueItems = context.workQueue?.list() ?? [];
+    return {
+      enabled: config.enabled,
+      autoRegister: config.autoRegister,
+      capabilityCount: config.capabilities.length,
+      capabilities: config.capabilities.map((c) => c.name),
+      queueDepth: queueItems.length,
+      queuePending: queueItems.filter((i) => i.status === 'pending').length,
+      queueProcessing: queueItems.filter((i) => i.status === 'processing').length,
+    };
   }
 
   if (action === 'set_enabled') {
@@ -187,7 +202,7 @@ export async function runMeshProviderConfig(
     return await context.providerConfig.set(next);
   }
 
-  throw new Error(`Unknown action: ${action}. Valid actions: get, set_enabled, add_capability, update_capability, remove_capability.`);
+  throw new Error(`Unknown action: ${action}. Valid actions: get, get_status, set_enabled, add_capability, update_capability, remove_capability.`);
 }
 
 function validateCapability(cap: NonNullable<ProviderConfigParams['capability']>): string | null {

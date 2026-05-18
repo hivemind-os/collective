@@ -5,7 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 
 import type { AuthProvider, OAuthConfig, StoredZkLoginSession } from '@hivemind-os/collective-core';
 import { createPkcePair, type ZkLoginPendingSession } from '@hivemind-os/collective-core';
-import { NETWORK_PRESETS, type NetworkName } from '@hivemind-os/collective-types';
+import { NETWORK_PRESETS, PaymentRail, type NetworkName } from '@hivemind-os/collective-types';
 
 import { saveConfig, type DaemonFullConfig } from '../config.js';
 import type { DaemonAuthStatus } from '../auth/session-monitor.js';
@@ -62,6 +62,7 @@ export interface PortalServerOptions {
   getAuthStatus?: () => DaemonAuthStatus | null;
   getConnectedApps?: () => { appName: string; appPid: number; profile?: string; connectedAt: number }[];
   getJobQueue?: () => import('../provider/adapters/job-queue.js').JobQueueAdapter | undefined;
+  getProviderRuntime?: () => import('../provider/runtime.js').ProviderRuntime | undefined;
   onAuthenticated?: (session: StoredZkLoginSession) => Promise<void> | void;
   onSettingsSaved?: (config: DaemonFullConfig) => Promise<void> | void;
   onProviderConfigChanged?: () => Promise<void> | void;
@@ -160,6 +161,16 @@ export class PortalServer {
         did: this.options.state?.did ?? null,
         setupComplete: this.setupComplete,
         spendingLimitMist: getCurrentDailyLimitMist(this.options.config).toString(),
+      };
+    });
+
+    this.server.get('/api/provider/status', async () => {
+      const providerRuntime = this.options.getProviderRuntime?.();
+      return {
+        status: providerRuntime?.registrationStatus.status ?? 'idle',
+        error: providerRuntime?.registrationStatus.error ?? null,
+        capabilities: providerRuntime?.capabilityCount ?? 0,
+        queueDepth: providerRuntime?.queueDepth ?? 0,
       };
     });
 
@@ -464,6 +475,56 @@ export class PortalServer {
         };
       } catch (err) {
         return { error: 'Failed to query the registry.', registered: false, agent: null };
+      }
+    });
+
+    // ── Registration actions ─────────────────────────────────────
+    this.server.post('/api/provider/register', async (_request, reply) => {
+      const state = this.options.state;
+      if (!state) {
+        return reply.code(500).send({ error: 'Daemon state not available.' });
+      }
+      const providerConfig = this.options.config.provider;
+      if (!providerConfig?.capabilities?.length) {
+        return reply.code(400).send({ error: 'No capabilities configured. Add capabilities in Provider Services first.' });
+      }
+      try {
+        const capabilities = providerConfig.capabilities.map((c) => ({
+          name: c.name,
+          description: c.description,
+          version: c.version,
+          pricing: { rail: (c.currency === 'USDC' ? PaymentRail.USDC_ESCROW : PaymentRail.SUI_ESCROW), amount: BigInt(c.priceMist ?? 0), currency: c.currency || 'USDC' },
+        }));
+        const result = await state.registryClient.registerAgent({
+          name: 'Agentic Mesh Provider',
+          description: `Provider for ${state.did}`,
+          did: state.did,
+          capabilities,
+          endpoint: `mesh://agent/${state.did}`,
+          keypair: state.keypair,
+        });
+        return { ok: true, agentCardId: result.agentCardId, txDigest: result.txDigest };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Registration failed.';
+        return reply.code(500).send({ error: msg });
+      }
+    });
+
+    this.server.post('/api/provider/unregister', async (_request, reply) => {
+      const state = this.options.state;
+      if (!state) {
+        return reply.code(500).send({ error: 'Daemon state not available.' });
+      }
+      try {
+        const card = await state.registryClient.getAgentCardByOwner(state.address);
+        if (!card) {
+          return reply.code(404).send({ error: 'No agent card found to unregister.' });
+        }
+        await state.registryClient.deactivateAgent({ cardId: card.id, keypair: state.keypair });
+        return { ok: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unregistration failed.';
+        return reply.code(500).send({ error: msg });
       }
     });
 
@@ -808,7 +869,7 @@ function renderAuthButton(provider: PortalOAuthProvider, flow: PortalAuthFlow): 
 function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setupComplete: boolean; version?: string }): string {
   const currentLimitSui = formatMistToSui(params.dailyLimitMist || 1n) || '1';
   const title = params.setupComplete ? 'HiveMind Collective' : 'Finish setup';
-  const buttonLabel = params.setupComplete ? 'Save settings' : 'Finish setup';
+  const buttonLabel = params.setupComplete ? 'Save portal settings' : 'Finish setup';
   const versionBadge = params.version ? `<span class="pill">v${escapeHtml(params.version)}</span>` : '';
   const successMessage = params.setupComplete ? '<div class="notice notice--success">Setup complete. You can return to your app at any time.</div>' : '';
 
@@ -1126,6 +1187,10 @@ const INNER_PAGE_STYLES = `
   .agent-card { display: grid; gap: 12px; padding: 20px; border-radius: 16px; border: 1px solid #1e293b; background: #0b1220; }
   .agent-name { display: flex; align-items: center; gap: 10px; font-size: 1rem; font-weight: 700; }
   .agent-did { color: #94a3b8; font-size: 0.88rem; overflow-wrap: anywhere; }
+  .agent-details summary { cursor: pointer; color: #94a3b8; font-size: 0.85rem; margin-top: 4px; }
+  .agent-details[open] summary { margin-bottom: 8px; }
+  .detail-row td { padding-top: 0 !important; border-bottom: none !important; }
+  .detail-row details summary { cursor: pointer; color: #94a3b8; font-size: 0.82rem; }
   .tag-list { display: flex; gap: 8px; flex-wrap: wrap; }
   .tag { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.24); color: #bfdbfe; font-size: 0.82rem; }
   .table-wrap { overflow-x: auto; }
@@ -1305,13 +1370,31 @@ function renderDiscoverPage(): string {
             const caps = (agent.capabilities || []).map((capability) => {
               return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' ' + esc(capability.currency || 'USDC') + '</span>';
             }).join('');
+            const detailRows = [
+              '<div class="stat"><span class="stat-label">DID</span><span class="stat-value mono">' + esc(agent.did) + '</span></div>',
+              agent.endpoint ? '<div class="stat"><span class="stat-label">Endpoint</span><span class="stat-value mono">' + esc(agent.endpoint) + '</span></div>' : '',
+              '<div class="stat"><span class="stat-label">Status</span><span class="stat-value">' + (agent.active ? 'Active' : 'Inactive') + '</span></div>',
+            ].filter(Boolean).join('');
             return '<article class="agent-card">' +
               '<div class="agent-name">' + esc(agent.name) + (agent.active ? '<span class="pill pill--success">Active</span>' : '<span class="pill pill--danger">Inactive</span>') + '</div>' +
-              '<div class="agent-did mono">' + esc(agent.did) + '</div>' +
               (caps ? '<div class="tag-list">' + caps + '</div>' : '') +
-              (agent.endpoint ? '<div class="client-meta mono">' + esc(agent.endpoint) + '</div>' : '') +
+              '<details class="agent-details"><summary>Details</summary><div class="stat-list">' + detailRows + '</div></details>' +
+              (agent.active ? '<div class="top-actions"><button class="button button--secondary execute-btn" data-did="' + esc(agent.did) + '" data-cap="' + esc((agent.capabilities?.[0]?.name) || '') + '">▶ Execute</button></div>' : '') +
               '</article>';
           }).join('') + '</div>';
+
+          // Wire execute buttons
+          results.querySelectorAll('.execute-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+              const did = btn.dataset.did;
+              const cap = btn.dataset.cap;
+              const cmd = 'collective_execute --provider ' + did + ' --capability ' + cap + ' --input "<your input>"';
+              navigator.clipboard.writeText(cmd).then(() => {
+                btn.textContent = '✓ Copied MCP command';
+                setTimeout(() => { btn.textContent = '▶ Execute'; }, 2000);
+              });
+            });
+          });
         } catch (e) {
           results.innerHTML = '<div class="notice notice--error">Search failed.</div>';
         } finally {
@@ -1380,13 +1463,20 @@ function renderTasksPage(): string {
             document.getElementById('entries').innerHTML = '<div class="empty-state">No transactions yet.</div>';
           } else {
             const rows = entries.map((entry) => {
+              const details = [
+                entry.taskId ? '<div class="stat"><span class="stat-label">Task ID</span><span class="stat-value mono">' + esc(entry.taskId) + '</span></div>' : '',
+                entry.appId ? '<div class="stat"><span class="stat-label">App</span><span class="stat-value">' + esc(entry.appId) + '</span></div>' : '',
+                entry.capability ? '<div class="stat"><span class="stat-label">Capability</span><span class="stat-value">' + esc(entry.capability) + '</span></div>' : '',
+                entry.status ? '<div class="stat"><span class="stat-label">Status</span><span class="stat-value">' + esc(entry.status) + '</span></div>' : '',
+              ].filter(Boolean).join('');
               return '<tr>' +
                 '<td>' + esc(new Date(entry.timestamp).toLocaleString()) + '</td>' +
                 '<td>' + esc(entry.amountSui) + ' SUI</td>' +
                 '<td>' + esc(entry.rail) + '</td>' +
                 '<td>' + esc(entry.taskId ?? '—') + '</td>' +
                 '<td>' + esc(entry.appId ?? '—') + '</td>' +
-                '</tr>';
+                '</tr>' +
+                (details ? '<tr class="detail-row"><td colspan="5"><details><summary>Details</summary><div class="stat-list">' + details + '</div></details></td></tr>' : '');
             }).join('');
             document.getElementById('entries').innerHTML = '<div class="table-wrap"><table class="tx-table"><thead><tr><th>Time</th><th>Amount</th><th>Rail</th><th>Task</th><th>App</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
           }
@@ -1888,26 +1978,60 @@ function renderServicesPage(): string {
           const res = await fetch('/api/services');
           const data = await res.json();
           if (data.error) {
-            els.registration.innerHTML = '<div class="notice notice--error">' + esc(data.error) + '</div>';
+            els.registration.innerHTML = '<div class="notice notice--error">' + esc(data.error) + '</div>' +
+              '<div class="top-actions"><button class="button button--secondary" id="refresh-reg">🔄 Refresh</button></div>';
+            document.getElementById('refresh-reg')?.addEventListener('click', loadRegistration);
             return;
           }
+          const actionButtons = '<div class="top-actions">' +
+            '<button class="button button--secondary" id="refresh-reg">🔄 Refresh</button>' +
+            (data.registered
+              ? '<button class="button button--danger" id="unregister-btn">Unregister</button>'
+              : '<button class="button" id="register-btn">Register now</button>') +
+            '</div>';
           if (!data.registered) {
-            els.registration.innerHTML = '<div class="empty-state">No agent is registered on-chain for this wallet yet. Use the <span class="mono">collective_register</span> tool to publish a provider card.</div>';
-            return;
+            els.registration.innerHTML = '<div class="empty-state">No agent is registered on-chain for this wallet yet.</div>' + actionButtons;
+          } else {
+            const agent = data.agent;
+            const capabilities = (agent.capabilities || []).map((capability) => {
+              return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' ' + esc(capability.currency || 'USDC') + '</span>';
+            }).join('');
+            els.registration.innerHTML = '<div class="stat-list">' +
+              '<div class="stat"><span class="stat-label">Name</span><span class="stat-value">' + esc(agent.name) + ' ' + (agent.active ? '<span class="pill pill--success">Active</span>' : '<span class="pill pill--danger">Inactive</span>') + '</span></div>' +
+              '<div class="stat"><span class="stat-label">DID</span><span class="stat-value mono">' + esc(agent.did) + '</span></div>' +
+              (agent.endpoint ? '<div class="stat"><span class="stat-label">Endpoint</span><span class="stat-value mono">' + esc(agent.endpoint) + '</span></div>' : '') +
+              (agent.payoutAddress ? '<div class="stat"><span class="stat-label">Payout address</span><span class="stat-value mono">' + esc(agent.payoutAddress) + '</span></div>' : '') +
+              '</div>' +
+              (capabilities ? '<div class="tag-list">' + capabilities + '</div>' : '<div class="empty-state">No capabilities are currently registered on-chain.</div>') +
+              actionButtons;
           }
-          const agent = data.agent;
-          const capabilities = (agent.capabilities || []).map((capability) => {
-            return '<span class="tag">' + esc(capability.name) + ' · ' + esc(capability.priceMist) + ' ' + esc(capability.currency || 'USDC') + '</span>';
-          }).join('');
-          els.registration.innerHTML = '<div class="stat-list">' +
-            '<div class="stat"><span class="stat-label">Name</span><span class="stat-value">' + esc(agent.name) + ' ' + (agent.active ? '<span class="pill pill--success">Active</span>' : '<span class="pill pill--danger">Inactive</span>') + '</span></div>' +
-            '<div class="stat"><span class="stat-label">DID</span><span class="stat-value mono">' + esc(agent.did) + '</span></div>' +
-            (agent.endpoint ? '<div class="stat"><span class="stat-label">Endpoint</span><span class="stat-value mono">' + esc(agent.endpoint) + '</span></div>' : '') +
-            (agent.payoutAddress ? '<div class="stat"><span class="stat-label">Payout address</span><span class="stat-value mono">' + esc(agent.payoutAddress) + '</span></div>' : '') +
-            '</div>' +
-            (capabilities ? '<div class="tag-list">' + capabilities + '</div>' : '<div class="empty-state">No capabilities are currently registered on-chain.</div>');
+          document.getElementById('refresh-reg')?.addEventListener('click', loadRegistration);
+          document.getElementById('register-btn')?.addEventListener('click', async () => {
+            if (!confirm('Register your provider on-chain? This will submit a transaction.')) return;
+            const btn = document.getElementById('register-btn');
+            btn.disabled = true; btn.textContent = 'Registering…';
+            try {
+              const r = await fetch('/api/provider/register', { method: 'POST' });
+              const d = await r.json();
+              if (d.error) throw new Error(d.error);
+              await loadRegistration();
+            } catch (e) { alert('Registration failed: ' + e.message); btn.disabled = false; btn.textContent = 'Register now'; }
+          });
+          document.getElementById('unregister-btn')?.addEventListener('click', async () => {
+            if (!confirm('Unregister from the on-chain registry? You can re-register later.')) return;
+            const btn = document.getElementById('unregister-btn');
+            btn.disabled = true; btn.textContent = 'Unregistering…';
+            try {
+              const r = await fetch('/api/provider/unregister', { method: 'POST' });
+              const d = await r.json();
+              if (d.error) throw new Error(d.error);
+              await loadRegistration();
+            } catch (e) { alert('Unregister failed: ' + e.message); btn.disabled = false; btn.textContent = 'Unregister'; }
+          });
         } catch (error) {
-          els.registration.innerHTML = '<div class="notice notice--error">Failed to load registry data.</div>';
+          els.registration.innerHTML = '<div class="notice notice--error">Failed to load registry data.</div>' +
+            '<div class="top-actions"><button class="button button--secondary" id="refresh-reg">🔄 Refresh</button></div>';
+          document.getElementById('refresh-reg')?.addEventListener('click', loadRegistration);
         }
       }
 

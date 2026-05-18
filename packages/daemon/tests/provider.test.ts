@@ -256,6 +256,78 @@ describe('ProviderRuntime', () => {
     providerMocks.cursorStores.length = 0;
   });
 
+  it('tracks registration status through startup and shutdown', async () => {
+    const state = createRuntimeState();
+    let resolveRegistration!: (value: { agentCardId: string }) => void;
+    state.registryClient.registerAgent = vi.fn().mockImplementation(
+      () => new Promise<{ agentCardId: string }>((resolve) => {
+        resolveRegistration = resolve;
+      }),
+    ) as never;
+    state.registryClient.getAgentCard = vi.fn().mockResolvedValue({ id: '0xregistered-card' }) as never;
+    const runtime = new ProviderRuntime({
+      state,
+      providerConfig: {
+        enabled: true,
+        maxConcurrency: 1,
+        autoRegister: true,
+        capabilities: [
+          {
+            name: 'echo-capability',
+            description: 'Echo input',
+            version: '1.0.0',
+            priceMist: 1,
+            adapter: 'echo',
+          },
+        ],
+      },
+      cursorDbPath: 'provider-cursors.db',
+    });
+
+    expect(runtime.registrationStatus).toEqual({ status: 'idle', error: null });
+
+    const startPromise = runtime.start();
+    await Promise.resolve();
+    expect(runtime.registrationStatus).toEqual({ status: 'registering', error: null });
+
+    resolveRegistration({ agentCardId: '0xregistered-card' });
+    await startPromise;
+
+    expect(runtime.registrationStatus).toEqual({ status: 'registered', error: null });
+
+    await runtime.stop();
+    expect(runtime.registrationStatus).toEqual({ status: 'stopped', error: null });
+  });
+
+  it('captures registration failures', async () => {
+    const state = createRuntimeState();
+    state.registryClient.registerAgent = vi.fn().mockRejectedValue(new Error('registration failed')) as never;
+    const runtime = new ProviderRuntime({
+      state,
+      providerConfig: {
+        enabled: true,
+        maxConcurrency: 1,
+        autoRegister: true,
+        capabilities: [
+          {
+            name: 'echo-capability',
+            description: 'Echo input',
+            version: '1.0.0',
+            priceMist: 1,
+            adapter: 'echo',
+          },
+        ],
+      },
+      cursorDbPath: 'provider-cursors.db',
+    });
+
+    await runtime.start();
+
+    expect(runtime.registrationStatus).toEqual({ status: 'failed', error: 'registration failed' });
+
+    await runtime.stop();
+  });
+
   it('filters events by capability and processes matching tasks', async () => {
     const state = createRuntimeState();
     const runtime = new ProviderRuntime({
@@ -404,6 +476,52 @@ describe('ProviderRuntime', () => {
     const envelope = parseMeteredResultEnvelope(storedPayload as Uint8Array);
     expect(envelope).not.toBeNull();
     expect(envelope?.proof.root).toBe((state.taskClient.completeMeteredTask as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.verificationHash);
+  });
+
+  it('rejects posted tasks when the queue is already full', async () => {
+    const state = createRuntimeState();
+    let releaseFetch!: () => void;
+    const blockedFetch = new Promise<Uint8Array>((resolve) => {
+      releaseFetch = () => resolve(encoder.encode('payload'));
+    });
+    state.blobStore.fetch = vi.fn().mockImplementation((blobId: string) => {
+      if (blobId === 'blob-1') {
+        return blockedFetch;
+      }
+      return Promise.resolve(encoder.encode('payload'));
+    }) as never;
+    const runtime = new ProviderRuntime({
+      state,
+      providerConfig: {
+        enabled: true,
+        maxConcurrency: 1,
+        autoRegister: false,
+        capabilities: [
+          {
+            name: 'echo-capability',
+            description: 'Echo input',
+            version: '1.0.0',
+            priceMist: 1,
+            adapter: 'echo',
+          },
+        ],
+      },
+      cursorDbPath: 'provider-cursors.db',
+    });
+
+    await runtime.start();
+
+    const subscription = providerMocks.subscriptions[0];
+    await subscription.emit(createTaskPostedEvent({ taskId: 'task-1', capability: 'echo-capability', blobId: 'blob-1' }));
+    await subscription.emit(createTaskPostedEvent({ taskId: 'task-2', capability: 'echo-capability', blobId: 'blob-2' }));
+    releaseFetch();
+    await runtime.stop();
+
+    expect(state.taskClient.acceptTask).toHaveBeenCalledTimes(1);
+    expect(state.taskClient.acceptTask).toHaveBeenCalledWith({ taskId: 'task-1', keypair: state.keypair });
+    expect(state.taskClient.cancelTask).toHaveBeenCalledTimes(1);
+    expect(state.taskClient.cancelTask).toHaveBeenCalledWith({ taskId: 'task-2', keypair: state.keypair });
+    expect(state.taskClient.completeTask).toHaveBeenCalledTimes(1);
   });
 
   it('cancels accepted tasks when processing fails after acceptance', async () => {

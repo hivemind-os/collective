@@ -439,12 +439,18 @@ describe('portal API endpoints', () => {
     options?: {
       configure?: (config: DaemonFullConfig) => void;
       onProviderConfigChanged?: () => Promise<void> | void;
+      getProviderRuntime?: () => {
+        registrationStatus: { status: string; error: string | null };
+        capabilityCount: number;
+        queueDepth: number;
+      } | undefined;
     },
   ): Promise<{ portal: PortalServer; url: string; configPath: string; config: DaemonFullConfig }> {
     const dir = await createTestDir();
     const configPath = resolve(dir, 'config.yaml');
     await writeFile(configPath, 'auth:\n  mode: keypair\ndaemon:\n  dataDir: ' + resolve(dir, 'daemon'), 'utf8');
     const config = getDefaultConfig();
+    config.auth.portal = { port: 0 };
     config.daemon.dataDir = resolve(dir, 'daemon');
     config.daemon.pidFile = resolve(dir, 'daemon.pid');
     options?.configure?.(config);
@@ -453,6 +459,7 @@ describe('portal API endpoints', () => {
       configPath,
       authProvider: { createAuthorizationRequest: vi.fn(), exchangeCode: vi.fn() } as never,
       state: state as never,
+      getProviderRuntime: options?.getProviderRuntime as never,
       onProviderConfigChanged: options?.onProviderConfigChanged,
     });
     const url = await portal.start();
@@ -534,6 +541,34 @@ describe('portal API endpoints', () => {
       expect(body.recentEntries).toHaveLength(1);
       expect(body.recentEntries[0].amountSui).toBe('0.5');
       expect(body.recentEntries[0].taskId).toBe('task-abc');
+    } finally {
+      await portal.stop();
+    }
+  });
+
+  it('GET /api/provider/status returns provider runtime status', async () => {
+    const state = createMockState();
+    const { portal, url } = await startPortalWithState(state, {
+      getProviderRuntime: () => ({
+        registrationStatus: { status: 'registered', error: null },
+        capabilityCount: 3,
+        queueDepth: 5,
+      }),
+    });
+    try {
+      const res = await fetch(`${url}/api/provider/status`);
+      const body = (await res.json()) as {
+        status: string;
+        error: string | null;
+        capabilities: number;
+        queueDepth: number;
+      };
+      expect(body).toEqual({
+        status: 'registered',
+        error: null,
+        capabilities: 3,
+        queueDepth: 5,
+      });
     } finally {
       await portal.stop();
     }

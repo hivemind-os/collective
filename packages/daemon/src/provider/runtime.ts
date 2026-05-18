@@ -32,6 +32,13 @@ const logger = pino({ name: '@hivemind-os/collective-daemon:provider' });
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
+export type ProviderRegistrationState = 'idle' | 'registering' | 'registered' | 'failed' | 'stopped';
+
+export interface ProviderRegistrationStatus {
+  status: ProviderRegistrationState;
+  error: string | null;
+}
+
 export class ProviderRuntime {
   private subscription?: EventSubscription;
   private cursorStore?: SqliteCursorStore;
@@ -43,6 +50,7 @@ export class ProviderRuntime {
   private chainOperations: Promise<void> = Promise.resolve();
   private ownAgentCardId?: string;
   private _jobQueue?: JobQueueAdapter;
+  private _registrationStatus: ProviderRegistrationStatus = { status: 'idle', error: null };
 
   constructor(
     private readonly params: {
@@ -63,16 +71,31 @@ export class ProviderRuntime {
     return this._jobQueue;
   }
 
+  get registrationStatus(): ProviderRegistrationStatus {
+    return this._registrationStatus;
+  }
+
+  get capabilityCount(): number {
+    return this.registeredCapabilities.length;
+  }
+
+  get queueDepth(): number {
+    return this.taskQueue.activeCount;
+  }
+
   async start(): Promise<void> {
     if (this.subscription) {
       return;
     }
 
+    this.setRegistrationStatus('idle');
     this.initializeAdapters();
     await this.connectRelays();
 
     if (this.params.providerConfig.autoRegister) {
-      await this.registerAgentCard();
+      this.setRegistrationStatus('registering');
+      const registration = await this.registerAgentCard();
+      this.setRegistrationStatus(registration.status, registration.error);
     }
 
     await this.resolveOwnAgentCardId();
@@ -103,6 +126,7 @@ export class ProviderRuntime {
     this.cursorStore = undefined;
     this._jobQueue?.close();
     this._jobQueue = undefined;
+    this.setRegistrationStatus('stopped');
   }
 
   private async connectRelays(): Promise<void> {
@@ -161,7 +185,8 @@ export class ProviderRuntime {
     }
 
     if (this.taskQueue.isFull) {
-      logger.warn({ taskId: event.task.id, capability: event.task.capability }, 'Provider queue is full');
+      logger.warn({ taskId: event.task.id, capability: event.task.capability }, 'Provider queue is full; rejecting task on-chain');
+      await this.rejectTask(event.task);
       return;
     }
 
@@ -259,6 +284,19 @@ export class ProviderRuntime {
     }
   }
 
+  private async rejectTask(task: Task): Promise<void> {
+    try {
+      await this.runChainOperation(async () => {
+        await this.params.state.taskClient.cancelTask({
+          taskId: task.id,
+          keypair: this.params.state.keypair,
+        });
+      });
+    } catch (error) {
+      logger.error({ err: error, taskId: task.id }, 'Failed to reject task on-chain after queue-full check');
+    }
+  }
+
   private async executeLocalTask(taskId: string, capability: string, inputData: Uint8Array): Promise<Uint8Array> {
     const adapter = this.adapters.get(normalizeCapability(capability));
     if (!adapter) {
@@ -311,15 +349,16 @@ export class ProviderRuntime {
     }
   }
 
-  private async registerAgentCard(): Promise<void> {
+  private async registerAgentCard(): Promise<Pick<ProviderRegistrationStatus, 'status' | 'error'>> {
     const encryption = this.params.state.encryption ?? { enabled: false, requireEncryption: false };
     const capabilities = this.params.providerConfig.capabilities
       .filter((capability) => this.capabilityConfigs.has(normalizeCapability(capability.name)))
       .map((capability) => toCapability(capability, this.hasRelaySupport));
 
     if (capabilities.length === 0) {
-      logger.warn('Skipping auto-registration because no provider capabilities are available');
-      return;
+      const error = 'Skipping auto-registration because no provider capabilities are available';
+      logger.warn(error);
+      return { status: 'failed', error };
     }
 
     try {
@@ -345,8 +384,11 @@ export class ProviderRuntime {
         });
       }
       logger.info({ agentCardId: registration.agentCardId }, 'Provider agent card registered');
+      return { status: 'registered', error: null };
     } catch (error) {
+      const errorMessage = getErrorMessage(error);
       logger.error({ err: error }, 'Provider auto-registration failed');
+      return { status: 'failed', error: errorMessage };
     }
   }
 
@@ -362,6 +404,10 @@ export class ProviderRuntime {
       this.ownAgentCardId = discovered.id;
       this.params.state.agentCache.upsertAgent(discovered);
     }
+  }
+
+  private setRegistrationStatus(status: ProviderRegistrationState, error: string | null = null): void {
+    this._registrationStatus = { status, error };
   }
 
   private get hasRelaySupport(): boolean {
@@ -502,6 +548,10 @@ function toCapability(capability: ProviderCapabilityConfig, hasRelaySupport: boo
 
 function normalizeCapability(capability: string): string {
   return capability.trim().toLowerCase();
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function prepareCompletionPayload(task: Task, resultData: Uint8Array): {
