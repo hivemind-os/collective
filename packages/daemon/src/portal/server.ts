@@ -25,6 +25,10 @@ type PortalFullSettings = {
     allowedApps: string[];
     deniedApps: string[];
   };
+  auth: { mode: string; googleClientId: string; appleClientId: string };
+  blobstore: { mode: string; filesystemDir: string; walrusPublisherUrl: string; walrusAggregatorUrl: string };
+  payment: { preferredRail: string; evmEnabled: boolean; evmNetwork: string };
+  identity: { dataDir: string };
 };
 
 type PortalSettingsUpdate = {
@@ -1025,6 +1029,62 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
             <span class="field-hint">One app name per line. Matching apps are always blocked.</span>
             <textarea id="denied-apps" rows="4" placeholder="untrusted-app"></textarea>
           </label>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Authentication</h2>
+              <p>Auth mode and OAuth provider configuration.</p>
+            </div>
+          </div>
+          <div class="stat-list">
+            <div class="stat"><span class="stat-label">Mode</span><span class="stat-value" id="auth-mode">Loading…</span></div>
+            <div class="stat"><span class="stat-label">Google Client ID</span><span class="stat-value mono" id="auth-google-id">—</span></div>
+            <div class="stat"><span class="stat-label">Apple Client ID</span><span class="stat-value mono" id="auth-apple-id">—</span></div>
+          </div>
+          <span class="field-hint">Auth settings are read-only. Edit the config file to change auth mode.</span>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Blob storage</h2>
+              <p>Backend and locations for file persistence.</p>
+            </div>
+          </div>
+          <div class="stat-list">
+            <div class="stat"><span class="stat-label">Mode</span><span class="stat-value" id="blob-mode">Loading…</span></div>
+            <div class="stat"><span class="stat-label">Filesystem dir</span><span class="stat-value mono" id="blob-fs-dir">—</span></div>
+            <div class="stat"><span class="stat-label">Walrus publisher</span><span class="stat-value mono" id="blob-walrus-pub">—</span></div>
+            <div class="stat"><span class="stat-label">Walrus aggregator</span><span class="stat-value mono" id="blob-walrus-agg">—</span></div>
+          </div>
+          <span class="field-hint">Blob storage is configured via the config file.</span>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Payment</h2>
+              <p>Preferred payment rail and EVM configuration.</p>
+            </div>
+          </div>
+          <div class="stat-list">
+            <div class="stat"><span class="stat-label">Preferred rail</span><span class="stat-value" id="payment-rail">Loading…</span></div>
+            <div class="stat"><span class="stat-label">EVM enabled</span><span class="stat-value" id="payment-evm-enabled">—</span></div>
+            <div class="stat"><span class="stat-label">EVM network</span><span class="stat-value" id="payment-evm-network">—</span></div>
+          </div>
+          <span class="field-hint">Payment settings are configured via the config file.</span>
+        </div>
+        <div class="surface stack stack--tight">
+          <div class="section-header section-header--compact">
+            <div>
+              <h2>Identity</h2>
+              <p>Key storage and identity data directory.</p>
+            </div>
+          </div>
+          <div class="stat-list">
+            <div class="stat"><span class="stat-label">Data directory</span><span class="stat-value mono" id="identity-dir">Loading…</span></div>
+          </div>
+          <span class="field-hint">Identity paths are set at daemon startup.</span>
+        </div>
           <div class="top-actions">
             <button class="button" id="finish" disabled>${escapeHtml(buttonLabel)}</button>
           </div>
@@ -1092,6 +1152,26 @@ function renderSetupPage(params: { address: string; dailyLimitMist: bigint; setu
           allowedApps.value = Array.isArray(body.spending && body.spending.allowedApps) ? body.spending.allowedApps.join('\n') : '';
           deniedApps.value = Array.isArray(body.spending && body.spending.deniedApps) ? body.spending.deniedApps.join('\n') : '';
           syncEncryptionState();
+          // Auth, blobstore, payment, identity (read-only)
+          if (body.auth) {
+            setText('auth-mode', body.auth.mode || '—');
+            setText('auth-google-id', body.auth.googleClientId || '—');
+            setText('auth-apple-id', body.auth.appleClientId || '—');
+          }
+          if (body.blobstore) {
+            setText('blob-mode', body.blobstore.mode || '—');
+            setText('blob-fs-dir', body.blobstore.filesystemDir || '—');
+            setText('blob-walrus-pub', body.blobstore.walrusPublisherUrl || '—');
+            setText('blob-walrus-agg', body.blobstore.walrusAggregatorUrl || '—');
+          }
+          if (body.payment) {
+            setText('payment-rail', body.payment.preferredRail || '—');
+            setText('payment-evm-enabled', body.payment.evmEnabled ? 'Yes' : 'No');
+            setText('payment-evm-network', body.payment.evmNetwork || '—');
+          }
+          if (body.identity) {
+            setText('identity-dir', body.identity.dataDir || '—');
+          }
           settingsLoaded = true;
           button.disabled = false;
         } catch (error) {
@@ -2588,6 +2668,25 @@ function getPortalFullSettings(config: DaemonFullConfig): PortalFullSettings {
     spending: {
       allowedApps: [...(config.spending.allowlist ?? [])],
       deniedApps: [...(config.spending.denylist ?? [])],
+    },
+    auth: {
+      mode: config.auth.mode,
+      googleClientId: config.auth.google?.clientId ?? '',
+      appleClientId: config.auth.apple?.clientId ?? '',
+    },
+    blobstore: {
+      mode: config.blobstore.mode,
+      filesystemDir: config.blobstore.filesystem?.dataDir ?? '',
+      walrusPublisherUrl: config.blobstore.walrus?.publisherUrl ?? '',
+      walrusAggregatorUrl: config.blobstore.walrus?.aggregatorUrl ?? '',
+    },
+    payment: {
+      preferredRail: config.payment.preferredRail,
+      evmEnabled: config.payment.evm?.enabled ?? false,
+      evmNetwork: config.payment.evm?.network ?? '',
+    },
+    identity: {
+      dataDir: config.identity.dataDir,
     },
   };
 }
