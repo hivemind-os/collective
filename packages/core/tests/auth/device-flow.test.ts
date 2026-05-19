@@ -42,6 +42,23 @@ describe('device flow', () => {
     });
   });
 
+  it('surfaces non-JSON errors when starting the device authorization flow', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>server error</html>', { status: 500 })));
+
+    await expect(startDeviceFlow(config)).rejects.toThrow('OAuth request failed with status 500 (non-JSON response)');
+  });
+
+  it('preserves JSON OAuth errors when starting the device authorization flow', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'invalid_client', error_description: 'client rejected' }), { status: 401 }),
+      ),
+    );
+
+    await expect(startDeviceFlow(config)).rejects.toThrow('client rejected (401)');
+  });
+
   it('returns null while authorization is pending and then returns tokens', async () => {
     const fetchMock = vi
       .fn()
@@ -58,5 +75,22 @@ describe('device flow', () => {
       jwt: 'jwt-token',
       refreshToken: 'refresh-token',
     });
+  });
+
+  it('surfaces non-JSON errors while polling the device flow', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('gateway error', { status: 502 })));
+
+    await expect(pollDeviceFlow('device-code', config)).rejects.toThrow('OAuth request failed with status 502 (non-JSON response)');
+  });
+
+  it('preserves JSON OAuth errors while polling the device flow', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: 'access_denied', error_description: 'authorization denied' }), { status: 403 }),
+      ),
+    );
+
+    await expect(pollDeviceFlow('device-code', config)).rejects.toThrow('authorization denied (403)');
   });
 });

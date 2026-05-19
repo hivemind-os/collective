@@ -228,6 +228,30 @@ describe('TaskClient', () => {
     });
   });
 
+  it('treats typed object-not-found errors as missing tasks', async () => {
+    const client = new TaskClient(
+      {
+        executeTransaction: vi.fn(),
+        getObject: vi.fn().mockRejectedValue({ code: 'objectNotFound' }),
+      } as unknown as MeshSuiClient,
+      networkConfig,
+    );
+
+    await expect(client.getTask('0xmissing')).resolves.toBeNull();
+  });
+
+  it('treats nested JSON-RPC object-not-found codes as missing tasks', async () => {
+    const client = new TaskClient(
+      {
+        executeTransaction: vi.fn(),
+        getObject: vi.fn().mockRejectedValue({ data: { code: -32000 } }),
+      } as unknown as MeshSuiClient,
+      networkConfig,
+    );
+
+    await expect(client.getTask('0xmissing')).resolves.toBeNull();
+  });
+
   it('rejects invalid task ids before submitting task mutations', async () => {
     const executeTransaction = vi.fn();
     const client = new TaskClient(

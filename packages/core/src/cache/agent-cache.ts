@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
+import pino from 'pino';
 
-import type { AgentCard, Capability, ReputationScore } from '@hivemind-os/collective-types';
+import { PaymentRail, type AgentCard, type Capability, type ReputationScore } from '@hivemind-os/collective-types';
 
 import { ReputationScoreCalculator } from '../reputation/score-calculator.js';
 
@@ -15,6 +16,8 @@ export interface AdvancedAgentQueryFilters {
 }
 
 export type AdvancedAgentQueryDelegate = (filters: AdvancedAgentQueryFilters) => Promise<AgentCard[]>;
+
+const logger = pino({ name: '@hivemind-os/collective-core:cache' });
 
 interface AgentRow {
   rowid: number;
@@ -191,7 +194,8 @@ export class AgentCache {
         )
         .all(ftsQuery, limit) as AgentRow[];
       return rankAgents(rows.map(mapAgentRow), options, this.scoreCalculator).slice(0, limit);
-    } catch {
+    } catch (error) {
+      logger.debug({ err: error, query: ftsQuery }, 'FTS query failed, falling back to LIKE search.');
       const like = `%${query}%`;
       const rows = this.db
         .prepare(
@@ -298,14 +302,69 @@ function parseCapabilities(value: string | null): Capability[] {
     return [];
   }
 
-  const parsed = JSON.parse(value) as Array<Capability & { pricing: Capability['pricing'] & { amount: string } }>;
-  return parsed.map((entry) => ({
-    ...entry,
-    pricing: {
-      ...entry.pricing,
-      amount: BigInt(entry.pricing.amount),
-    },
-  }));
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed
+      .filter(
+        (entry): entry is Record<string, unknown> & { name: string } =>
+          typeof entry === 'object' && entry !== null && typeof (entry as Record<string, unknown>).name === 'string',
+      )
+      .map((entry) => {
+        const pricing =
+          typeof entry.pricing === 'object' && entry.pricing !== null
+            ? (entry.pricing as Record<string, unknown>)
+            : {};
+        const executionMode = entry.executionMode === 'sync' || entry.executionMode === 'async'
+          ? entry.executionMode
+          : undefined;
+        const paymentRails = Array.isArray(entry.paymentRails)
+          ? entry.paymentRails.filter(
+              (rail): rail is NonNullable<Capability['paymentRails']>[number] =>
+                rail === PaymentRail.SUI_ESCROW ||
+                rail === PaymentRail.USDC_ESCROW ||
+                rail === PaymentRail.SUI_TRANSFER ||
+                rail === PaymentRail.X402_BASE,
+            )
+          : undefined;
+
+        return {
+          name: entry.name,
+          description: typeof entry.description === 'string' ? entry.description : '',
+          version: typeof entry.version === 'string' ? entry.version : '',
+          pricing: {
+            rail: (typeof pricing.rail === 'string' ? pricing.rail : 'SUI_ESCROW') as Capability['pricing']['rail'],
+            amount: toBigInt(pricing.amount),
+            currency: typeof pricing.currency === 'string' ? pricing.currency : 'MIST',
+          },
+          ...(executionMode ? { executionMode } : {}),
+          ...(paymentRails ? { paymentRails } : {}),
+        };
+      });
+  } catch {
+    logger.warn({ value: value.slice(0, 200) }, 'Failed to parse capabilities JSON.');
+    return [];
+  }
+}
+
+function toBigInt(value: unknown): bigint {
+  if (typeof value === 'bigint') {
+    return value;
+  }
+  if (typeof value === 'number' && Number.isInteger(value)) {
+    return BigInt(value);
+  }
+  if (typeof value === 'string') {
+    try {
+      return BigInt(value);
+    } catch {
+      return 0n;
+    }
+  }
+  return 0n;
 }
 
 function bigintReplacer(_key: string, value: unknown): unknown {

@@ -59,11 +59,15 @@ function createUnavailableKeytarMock(): KeytarMock {
   };
 }
 
-async function loadKeypairModule(options?: { keytar?: KeytarMock }) {
+async function loadKeypairModule(options?: { keytar?: KeytarMock; keytarImportError?: Error }) {
   vi.resetModules();
   vi.doUnmock('keytar');
 
-  if (options?.keytar) {
+  if (options?.keytarImportError) {
+    vi.doMock('keytar', () => {
+      throw options.keytarImportError;
+    });
+  } else if (options?.keytar) {
     vi.doMock('keytar', () => ({
       default: options.keytar,
       ...options.keytar,
@@ -82,14 +86,14 @@ describe('identity', () => {
     expect(keypair.secretKey).toHaveLength(32);
   });
 
-  it('stores and loads identity keys from the OS keychain when available', async () => {
+  it('uses the OS keychain when available regardless of file storage options', async () => {
     const dataDir = await createDataDir();
     const keyPath = join(dataDir, 'identity.key');
     const { keytar, secrets } = createKeytarMock();
     const { loadOrCreateKeypair } = await loadKeypairModule({ keytar });
 
-    const first = await loadOrCreateKeypair(dataDir);
-    const second = await loadOrCreateKeypair(dataDir);
+    const first = await loadOrCreateKeypair(dataDir, { allowInsecureFileStorage: false });
+    const second = await loadOrCreateKeypair(dataDir, { allowInsecureFileStorage: true });
 
     expect(Buffer.from(second.secretKey)).toEqual(Buffer.from(first.secretKey));
     expect(Buffer.from(second.publicKey)).toEqual(Buffer.from(first.publicKey));
@@ -113,13 +117,44 @@ describe('identity', () => {
     expect(secrets.get('hivemind-collective:identity-key')).toBe(Buffer.from(legacyKeypair.secretKey).toString('hex'));
   });
 
-  it('falls back to file storage when keychain support is unavailable', async () => {
+  it('throws when keytar cannot be imported and insecure file storage is not enabled', async () => {
+    const dataDir = await createDataDir();
+    const { loadOrCreateKeypair } = await loadKeypairModule({ keytarImportError: new Error('keytar unavailable') });
+
+    await expect(loadOrCreateKeypair(dataDir)).rejects.toThrow(
+      'OS keychain is unavailable and insecure file-based key storage is not permitted.',
+    );
+  });
+
+  it('uses file storage only when explicitly allowed after keytar import failure', async () => {
+    const dataDir = await createDataDir();
+    const keyPath = join(dataDir, 'identity.key');
+    const { loadOrCreateKeypair } = await loadKeypairModule({ keytarImportError: new Error('keytar unavailable') });
+
+    const first = await loadOrCreateKeypair(dataDir, { allowInsecureFileStorage: true });
+    const second = await loadOrCreateKeypair(dataDir, { allowInsecureFileStorage: true });
+
+    expect(Buffer.from(second.secretKey)).toEqual(Buffer.from(first.secretKey));
+    expect(await fileExists(keyPath)).toBe(true);
+    expect((await readFile(keyPath, 'utf8')).trim()).toBe(Buffer.from(first.secretKey).toString('hex'));
+  });
+
+  it('throws when keychain operations fail and insecure file storage is not enabled', async () => {
+    const dataDir = await createDataDir();
+    const { loadOrCreateKeypair } = await loadKeypairModule({ keytar: createUnavailableKeytarMock() });
+
+    await expect(loadOrCreateKeypair(dataDir)).rejects.toThrow(
+      'OS keychain operation failed and insecure file storage is not permitted: keytar unavailable',
+    );
+  });
+
+  it('falls back to file storage when explicitly allowed after keychain operation failures', async () => {
     const dataDir = await createDataDir();
     const keyPath = join(dataDir, 'identity.key');
     const { loadOrCreateKeypair } = await loadKeypairModule({ keytar: createUnavailableKeytarMock() });
 
-    const first = await loadOrCreateKeypair(dataDir);
-    const second = await loadOrCreateKeypair(dataDir);
+    const first = await loadOrCreateKeypair(dataDir, { allowInsecureFileStorage: true });
+    const second = await loadOrCreateKeypair(dataDir, { allowInsecureFileStorage: true });
 
     expect(Buffer.from(second.secretKey)).toEqual(Buffer.from(first.secretKey));
     expect(await fileExists(keyPath)).toBe(true);

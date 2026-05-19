@@ -19,8 +19,14 @@ export class RelayIdentity {
     mkdirSync(dirname(resolvedKeyPath), { recursive: true, mode: 0o700 });
 
     if (existsSync(resolvedKeyPath)) {
+      const content = readFileSync(resolvedKeyPath, 'utf8').trim();
+      if (!/^[0-9a-f]{64}$/i.test(content)) {
+        throw new Error(
+          `Invalid relay identity key at ${resolvedKeyPath}: expected 64-character hex string (32 bytes ed25519 secret key).`,
+        );
+      }
       chmodSync(resolvedKeyPath, 0o600);
-      const secretKey = Uint8Array.from(Buffer.from(readFileSync(resolvedKeyPath, 'utf8').trim(), 'hex'));
+      const secretKey = Uint8Array.from(Buffer.from(content, 'hex'));
       return new RelayIdentity(resolvedKeyPath, keypairFromSecretKey(secretKey));
     }
 

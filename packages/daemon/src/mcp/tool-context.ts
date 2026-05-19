@@ -12,6 +12,7 @@ import {
   StakingClient,
 } from '@hivemind-os/collective-core';
 import type { MeshToolContext, ProviderConfigSnapshot } from '@hivemind-os/collective-mcp-server';
+import type { Logger } from 'pino';
 
 import { saveConfig, type DaemonFullConfig } from '../config.js';
 import type { DaemonState } from '../state.js';
@@ -32,7 +33,7 @@ export interface ToolContextOptions {
   getJobQueue?: () => import('../provider/adapters/job-queue.js').JobQueueAdapter | undefined;
   taskHistoryDbPath?: string;
   usdcCoinType?: string;
-  logger?: { info?: (payload: unknown, message?: string) => void; warn?: (payload: unknown, message?: string) => void };
+  logger?: Pick<Logger, 'info' | 'warn'>;
 }
 
 export function buildMeshToolContext(state: DaemonState, dataDir: string, options?: ToolContextOptions): MeshToolContext {

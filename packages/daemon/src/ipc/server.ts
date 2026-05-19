@@ -1,5 +1,6 @@
 import { chmod, rm } from 'node:fs/promises';
 import net from 'node:net';
+import { basename, dirname, resolve } from 'node:path';
 
 import pino from 'pino';
 
@@ -17,6 +18,24 @@ import {
 } from './pipe-security.js';
 
 const logger = pino({ name: '@hivemind-os/collective-daemon:ipc-server' });
+const BLOCKED_UNIX_SOCKET_PATHS = new Set([
+  '/',
+  '/bin',
+  '/boot',
+  '/dev',
+  '/etc',
+  '/lib',
+  '/lib64',
+  '/proc',
+  '/root',
+  '/run',
+  '/sbin',
+  '/srv',
+  '/sys',
+  '/usr',
+  '/var',
+  '/var/run',
+]);
 
 export interface DaemonStatusSnapshot extends DaemonStatusBase {
   connectedApps: ConnectedApp[];
@@ -27,6 +46,45 @@ export interface IpcServerOptions {
   verifyPipeSecurity?: (ipcPath: string) => Promise<PipeSecurityStatus>;
   getAuthStatus?: () => DaemonAuthStatus;
   triggerReauth?: () => Promise<{ portalUrl: string | null; browserOpened: boolean; status: DaemonAuthStatus }>;
+}
+
+function validateUnixSocketPath(ipcPath: string): string {
+  const normalizedPath = resolve(ipcPath);
+  const parentDir = dirname(normalizedPath);
+  const socketName = basename(normalizedPath);
+
+  if (!ipcPath || normalizedPath === '/' || socketName.length === 0 || !socketName.endsWith('.sock')) {
+    throw new Error(`Refusing to delete suspicious IPC path: ${ipcPath}`);
+  }
+
+  if (BLOCKED_UNIX_SOCKET_PATHS.has(normalizedPath) || BLOCKED_UNIX_SOCKET_PATHS.has(parentDir)) {
+    throw new Error(`Refusing to delete suspicious IPC path: ${ipcPath}`);
+  }
+
+  return normalizedPath;
+}
+
+async function removeUnixSocketFile(ipcPath: string): Promise<void> {
+  await rm(validateUnixSocketPath(ipcPath), { force: true });
+}
+
+async function closeServer(server: net.Server): Promise<void> {
+  try {
+    await new Promise<void>((resolvePromise, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolvePromise();
+      });
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+      throw error;
+    }
+  }
 }
 
 export class IpcServer {
@@ -47,7 +105,7 @@ export class IpcServer {
     }
 
     if (process.platform !== 'win32') {
-      await rm(this.ipcPath, { force: true });
+      await removeUnixSocketFile(this.ipcPath);
     }
 
     const server = net.createServer((socket) => {
@@ -70,11 +128,19 @@ export class IpcServer {
       });
     });
 
-    if (process.platform !== 'win32') {
-      await chmod(this.ipcPath, 0o600);
-      logger.debug({ ipcPath: this.ipcPath }, 'IPC socket permissions set to 0600 for local-user isolation.');
-    } else {
-      await this.logPipeSecurity();
+    try {
+      if (process.platform !== 'win32') {
+        await chmod(this.ipcPath, 0o600);
+        logger.debug({ ipcPath: this.ipcPath }, 'IPC socket permissions set to 0600 for local-user isolation.');
+      } else {
+        await this.logPipeSecurity();
+      }
+    } catch (error) {
+      await closeServer(server);
+      if (process.platform !== 'win32') {
+        await removeUnixSocketFile(this.ipcPath);
+      }
+      throw error;
     }
 
     server.on('error', (error) => {
@@ -94,19 +160,10 @@ export class IpcServer {
       connection.close();
     }
 
-    await new Promise<void>((resolvePromise, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolvePromise();
-      });
-    });
+    await closeServer(server);
 
     if (process.platform !== 'win32') {
-      await rm(this.ipcPath, { force: true });
+      await removeUnixSocketFile(this.ipcPath);
     }
   }
 

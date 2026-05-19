@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, rm } from 'node:fs/promises';
+import * as fsPromises from 'node:fs/promises';
 import net from 'node:net';
 import { resolve } from 'node:path';
 
@@ -18,7 +18,8 @@ afterEach(async () => {
     await closeSocket(socket);
   }
 
-  await Promise.all(createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
+  vi.restoreAllMocks();
+  await Promise.all(createdPaths.splice(0).map((path) => fsPromises.rm(path, { recursive: true, force: true }).catch(() => undefined)));
 });
 
 class TestClient {
@@ -75,7 +76,7 @@ class TestClient {
 async function createTestDir(): Promise<string> {
   const dir = resolve(process.cwd(), '.test-data', randomUUID());
   createdPaths.push(dir);
-  await mkdir(dir, { recursive: true });
+  await fsPromises.mkdir(dir, { recursive: true });
   return dir;
 }
 
@@ -88,9 +89,12 @@ function createIpcPath(_dir: string): string {
   return `/tmp/hm-test-${short}.sock`;
 }
 
-async function startServer(options: IpcServerOptions = {}): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {
+async function createServerHarness(
+  options: IpcServerOptions = {},
+  ipcPathOverride?: string,
+): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {
   const dir = await createTestDir();
-  const ipcPath = createIpcPath(dir);
+  const ipcPath = ipcPathOverride ?? createIpcPath(dir);
   const defaults = getDefaultConfig();
   const config: DaemonFullConfig = {
     ...defaults,
@@ -124,8 +128,17 @@ async function startServer(options: IpcServerOptions = {}): Promise<{ server: Ip
     }),
     ...options,
   });
-  await server.start();
+
   return { server, state, ipcPath };
+}
+
+async function startServer(
+  options: IpcServerOptions = {},
+  ipcPathOverride?: string,
+): Promise<{ server: IpcServer; state: DaemonState; ipcPath: string }> {
+  const harness = await createServerHarness(options, ipcPathOverride);
+  await harness.server.start();
+  return harness;
 }
 
 async function connectClient(ipcPath: string): Promise<TestClient> {
@@ -267,6 +280,39 @@ describe('ipc server', () => {
 
     await server.stop();
     await closed;
+    await state.shutdown();
+  });
+
+  it('closes the listener if post-listen setup fails', async () => {
+    const closeSpy = vi.spyOn(net.Server.prototype, 'close');
+    const failure = new Error(process.platform === 'win32' ? 'pipe security failed' : 'chmod failed');
+    const { server, state, ipcPath } = await createServerHarness();
+
+    if (process.platform === 'win32') {
+      vi.spyOn(server as never, 'logPipeSecurity').mockRejectedValueOnce(failure);
+    } else {
+      vi.spyOn(fsPromises, 'chmod').mockRejectedValueOnce(failure);
+    }
+
+    await expect(server.start()).rejects.toThrow(failure.message);
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+
+    if (process.platform !== 'win32') {
+      await expect(fsPromises.access(ipcPath)).rejects.toBeDefined();
+    }
+
+    await state.shutdown();
+  });
+
+  it('rejects suspicious unix socket cleanup paths', async () => {
+    if (process.platform === 'win32') {
+      return;
+    }
+
+    const { server, state } = await createServerHarness({}, '/etc/passwd');
+
+    await expect(server.start()).rejects.toThrow('Refusing to delete suspicious IPC path: /etc/passwd');
+
     await state.shutdown();
   });
 

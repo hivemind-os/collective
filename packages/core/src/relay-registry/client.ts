@@ -138,7 +138,13 @@ export class RelayRegistryClient {
         heartbeatAgeMs,
         isHeartbeatFresh: heartbeatAgeMs <= this.heartbeatFreshnessMs,
       };
-    } catch {
+    } catch (error) {
+      if (isObjectMissingError(error)) {
+        logger.debug({ relayId: relay.id, stakePositionId: relay.stakePositionId }, 'Stake position not found.');
+      } else {
+        logger.warn({ err: error, relayId: relay.id, stakePositionId: relay.stakePositionId }, 'Unexpected error enriching relay with stake data.');
+      }
+
       return {
         ...relay,
         heartbeatAgeMs,
@@ -291,5 +297,18 @@ function compareNumber(left: number, right: number, ascending = false): number {
 }
 
 function isObjectMissingError(error: unknown): boolean {
-  return error instanceof Error && /not found|does not contain move object data/i.test(error.message);
+  if (error && typeof error === 'object') {
+    const err = error as Record<string, unknown>;
+    if (err.code === 'objectNotFound' || err.code === 'notExists') {
+      return true;
+    }
+    if (typeof err.data === 'object' && err.data !== null) {
+      const data = err.data as Record<string, unknown>;
+      if (data.code === -32000 || data.code === 'objectNotFound') {
+        return true;
+      }
+    }
+  }
+
+  return error instanceof Error && /could not find.*object|object.*not found|does not exist|no data.*objectId|dynamicFieldNotFound|does not contain move object data/i.test(error.message);
 }

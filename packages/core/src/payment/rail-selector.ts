@@ -12,10 +12,22 @@ export interface RailSelectionContext {
 
 export class PaymentRailSelector {
   selectRail(context: RailSelectionContext): SelectedPaymentRail {
+    if (context.amount < 0n) {
+      throw new Error(`Invalid payment amount: ${context.amount}. Amount must be non-negative.`);
+    }
+
+    if (!context.currency || context.currency.trim().length === 0) {
+      throw new Error('Payment currency is required for rail selection.');
+    }
+
     const available = this.getAvailableRails(context);
     const selected = available[0];
     if (!selected) {
-      throw new Error('No compatible payment rail is available for this task.');
+      throw new Error(
+        `No compatible payment rail is available for ${context.amount} ${context.currency} ` +
+        `(mode: ${context.executionMode}, sui: ${context.consumerHasSuiWallet}/${context.providerAcceptsSui}, ` +
+        `evm: ${context.consumerHasEvmWallet}/${context.providerAcceptsX402}).`,
+      );
     }
 
     return selected;

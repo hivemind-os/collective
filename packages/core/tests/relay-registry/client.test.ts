@@ -3,6 +3,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { RelayDiscovery, RelayNodeStatus, RelayRegistryClient, StakingClient, type MeshSuiClient, type RelayNode } from '../../src/index.js';
 
+interface RelayRegistryLoggerMock {
+  debug: ReturnType<typeof vi.fn>;
+  warn: ReturnType<typeof vi.fn>;
+}
+
 const contractConfig = { packageId: '0x1' };
 
 function getMoveTargets(tx: { getData: () => { commands: Array<Record<string, unknown>> } }): string[] {
@@ -45,8 +50,36 @@ function createRelay(overrides: Partial<RelayNode> = {}): RelayNode {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.resetModules();
+  vi.doUnmock('pino');
+  vi.doUnmock('../../src/staking/client.js');
   vi.useRealTimers();
 });
+
+async function loadRelayRegistryClientModule(options?: {
+  logger?: RelayRegistryLoggerMock;
+  getStakePosition?: ReturnType<typeof vi.fn>;
+}) {
+  vi.resetModules();
+  vi.doUnmock('pino');
+  vi.doUnmock('../../src/staking/client.js');
+
+  const logger = options?.logger ?? { debug: vi.fn(), warn: vi.fn() };
+  vi.doMock('pino', () => ({
+    default: vi.fn(() => logger),
+  }));
+
+  if (options?.getStakePosition) {
+    vi.doMock('../../src/staking/client.js', () => ({
+      StakingClient: class {
+        getStakePosition = options.getStakePosition;
+      },
+    }));
+  }
+
+  const module = await import('../../src/relay-registry/client.js');
+  return { ...module, logger };
+}
 
 describe('RelayRegistryClient', () => {
   it('builds relay registry transactions', async () => {
@@ -218,6 +251,91 @@ describe('RelayRegistryClient', () => {
     expect(activeRelays.map((relay) => relay.id)).toEqual(['0x111']);
     expect(westRelays.map((relay) => relay.id)).toEqual(['0x112']);
     await expect(client.getRelaysByRegion('us-east')).resolves.toHaveLength(1);
+  });
+
+  it('logs missing stake lookups at debug level and unexpected stake errors at warn level', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2_000);
+
+    const missingStakeLogger = { debug: vi.fn(), warn: vi.fn() };
+    const { RelayRegistryClient: MissingStakeRelayRegistryClient } = await loadRelayRegistryClientModule({
+      logger: missingStakeLogger,
+      getStakePosition: vi.fn().mockRejectedValue({ code: 'objectNotFound' }),
+    });
+    const missingStakeClient = new MissingStakeRelayRegistryClient(
+      {
+        executeTransaction: vi.fn(),
+        queryEvents: vi.fn(),
+        getObject: vi.fn().mockResolvedValue({
+          objectId: '0x111',
+          operator: '0xaaa',
+          endpoint: 'wss://relay.mesh.example/ws',
+          stake_position_id: '0x123',
+          capabilities: ['routing'],
+          region: 'us-east',
+          status: 0,
+          registered_at: 1_000,
+          last_heartbeat: 1_500,
+          routing_fee_bps: 50,
+          total_routed: 7,
+          total_fees_earned: '999',
+        }),
+      } as unknown as MeshSuiClient,
+      contractConfig,
+    );
+
+    const missingStakeRelay = await missingStakeClient.getRelay('0x111');
+    expect(missingStakeRelay).toMatchObject({
+      id: '0x111',
+      heartbeatAgeMs: 500,
+      isHeartbeatFresh: true,
+    });
+    expect(missingStakeRelay?.stakeAmountMist).toBeUndefined();
+    expect(missingStakeLogger.debug).toHaveBeenCalledWith(
+      { relayId: '0x111', stakePositionId: '0x123' },
+      'Stake position not found.',
+    );
+    expect(missingStakeLogger.warn).not.toHaveBeenCalled();
+
+    const unexpectedLogger = { debug: vi.fn(), warn: vi.fn() };
+    const { RelayRegistryClient: UnexpectedRelayRegistryClient } = await loadRelayRegistryClientModule({
+      logger: unexpectedLogger,
+      getStakePosition: vi.fn().mockRejectedValue(new Error('rpc timeout')),
+    });
+    const unexpectedClient = new UnexpectedRelayRegistryClient(
+      {
+        executeTransaction: vi.fn(),
+        queryEvents: vi.fn(),
+        getObject: vi.fn().mockResolvedValue({
+          objectId: '0x111',
+          operator: '0xaaa',
+          endpoint: 'wss://relay.mesh.example/ws',
+          stake_position_id: '0x123',
+          capabilities: ['routing'],
+          region: 'us-east',
+          status: 0,
+          registered_at: 1_000,
+          last_heartbeat: 1_500,
+          routing_fee_bps: 50,
+          total_routed: 7,
+          total_fees_earned: '999',
+        }),
+      } as unknown as MeshSuiClient,
+      contractConfig,
+    );
+
+    const unexpectedRelay = await unexpectedClient.getRelay('0x111');
+    expect(unexpectedRelay).toMatchObject({
+      id: '0x111',
+      heartbeatAgeMs: 500,
+      isHeartbeatFresh: true,
+    });
+    expect(unexpectedRelay?.stakeAmountMist).toBeUndefined();
+    expect(unexpectedLogger.debug).not.toHaveBeenCalled();
+    expect(unexpectedLogger.warn).toHaveBeenCalledWith(
+      { err: expect.any(Error), relayId: '0x111', stakePositionId: '0x123' },
+      'Unexpected error enriching relay with stake data.',
+    );
   });
 });
 

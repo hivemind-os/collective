@@ -27,7 +27,6 @@ import type {
   ZkLoginProof,
 } from './types.js';
 
-const encoder = new TextEncoder();
 const DEFAULT_SCOPES: Record<OAuthProvider, string[]> = {
   google: ['openid', 'email'],
   apple: ['name', 'email'],
@@ -322,12 +321,12 @@ export class ZkLoginProvider implements AuthProvider {
 
   async signTransaction(tx: Uint8Array): Promise<Uint8Array> {
     const { signature } = await this.signer.signTransaction(tx);
-    return encoder.encode(signature);
+    return Buffer.from(signature, 'base64');
   }
 
   async signPersonalMessage(message: Uint8Array): Promise<{ signature: Uint8Array }> {
     const { signature } = await this.signer.signPersonalMessage(message);
-    return { signature: encoder.encode(signature) };
+    return { signature: Buffer.from(signature, 'base64') };
   }
 
   isAuthenticated(): boolean {

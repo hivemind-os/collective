@@ -90,6 +90,7 @@ export class RelayRegistryService implements RelayRegistryRuntime {
       }, this.config.relayRegistry.heartbeatIntervalMs);
     } catch (error) {
       this.state.lastError = error instanceof Error ? error.message : String(error);
+      throw error;
     }
   }
 

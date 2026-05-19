@@ -8,8 +8,6 @@ import type { BlobStore } from '../blobstore/interface.js';
 import { serializeReputationEvent, serializeReputationEventPayload } from './serialization.js';
 import { assertValidReputationEvent } from './validation.js';
 
-const decoder = new TextDecoder();
-
 export class ReputationEventPublisher {
   constructor(
     private readonly blobStore: BlobStore,
@@ -44,7 +42,7 @@ export class ReputationEventPublisher {
     const signed = await this.identity.signPersonalMessage(serializeReputationEventPayload(unsignedEvent));
     return assertValidReputationEvent({
       ...unsignedEvent,
-      signature: decoder.decode(signed.signature),
+      signature: Buffer.from(signed.signature).toString('base64'),
     });
   }
 

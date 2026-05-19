@@ -19,7 +19,7 @@ export async function handleInit(args: string[]): Promise<number> {
   mkdirSync(defaultConfig.identity.dataDir, { recursive: true });
   success(`Created data directory: ${displayPath(dataDir)}`);
 
-  const identity = await loadOrCreateKeypair(defaultConfig.identity.dataDir);
+  const identity = await loadOrCreateKeypair(defaultConfig.identity.dataDir, { allowInsecureFileStorage: true });
   const did = createDID(identity.publicKey);
   const address = Ed25519Keypair.fromSecretKey(identity.secretKey).getPublicKey().toSuiAddress();
 

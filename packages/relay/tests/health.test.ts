@@ -132,6 +132,31 @@ describe('health monitoring', () => {
     await relay.app.close();
   });
 
+  it('closes the app when relay registry startup fails', async () => {
+    const dir = await createTestDir();
+    const config = getDefaultRelayConfig(dir);
+    config.host = '127.0.0.1';
+    config.port = 0;
+    config.identity.keyPath = resolve(dir, 'relay.key');
+    const startupError = new Error('registry startup failed');
+    const relayRegistry: RelayRegistryRuntime = {
+      start: vi.fn(async () => {
+        throw startupError;
+      }),
+      stop: vi.fn(async () => undefined),
+      recordRouting: vi.fn(async () => undefined),
+      getInfo: vi.fn(() => ({ enabled: true, registered: false })),
+    };
+
+    const relay = await createRelayServer(config, { relayRegistry });
+    const closeSpy = vi.spyOn(relay.app, 'close');
+
+    await expect(relay.start()).rejects.toThrow(startupError);
+
+    expect(closeSpy).toHaveBeenCalledTimes(1);
+    expect(relay.app.server.listening).toBe(false);
+  });
+
   it('tracks uptime over time', () => {
     let now = 10_000;
     const monitor = new HealthMonitor({ now: () => now, getConnectedProviders: () => 1 });
@@ -171,6 +196,26 @@ describe('health monitoring', () => {
     config.port = 0;
     config.identity.keyPath = resolve(dir, 'relay.key');
     config.cors = { allowedOrigins: ['https://console.example'] };
+
+    const relay = await createRelayServer(config);
+    const response = await relay.app.inject({
+      method: 'GET',
+      url: '/health',
+      headers: { origin: 'https://console.example' },
+    });
+
+    expect(response.headers['access-control-allow-origin']).toBe('https://console.example');
+
+    await relay.app.close();
+  });
+
+  it('normalizes CORS origins before comparing them', async () => {
+    const dir = await createTestDir();
+    const config = getDefaultRelayConfig(dir);
+    config.host = '127.0.0.1';
+    config.port = 0;
+    config.identity.keyPath = resolve(dir, 'relay.key');
+    config.cors = { allowedOrigins: ['HTTPS://Console.Example/'] };
 
     const relay = await createRelayServer(config);
     const response = await relay.app.inject({

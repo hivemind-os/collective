@@ -28,7 +28,7 @@ export async function startDeviceFlow(config: OAuthConfig): Promise<DeviceFlowSt
     }).toString(),
   });
 
-  const payload = (await response.json()) as Record<string, unknown>;
+  const payload = await readOAuthPayload(response);
   if (!response.ok) {
     throw new Error(readOAuthError(payload, response.status));
   }
@@ -70,7 +70,7 @@ export async function pollDeviceFlow(
     }).toString(),
   });
 
-  const payload = (await response.json()) as Record<string, unknown>;
+  const payload = await readOAuthPayload(response);
   if (!response.ok) {
     const code = readOptionalString(payload.error);
     if (code === 'authorization_pending' || code === 'slow_down') {
@@ -84,6 +84,18 @@ export async function pollDeviceFlow(
     jwt: readRequiredString(payload.id_token, 'id_token'),
     refreshToken: readOptionalString(payload.refresh_token),
   };
+}
+
+async function readOAuthPayload(response: Response): Promise<Record<string, unknown>> {
+  try {
+    return (await response.json()) as Record<string, unknown>;
+  } catch {
+    if (!response.ok) {
+      throw new Error(`OAuth request failed with status ${response.status} (non-JSON response)`);
+    }
+
+    throw new Error(`Failed to parse OAuth response as JSON (status ${response.status})`);
+  }
 }
 
 function readRequiredString(value: unknown, field: string): string {

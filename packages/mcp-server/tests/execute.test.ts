@@ -21,7 +21,7 @@ vi.mock('@hivemind-os/collective-core', async (importOriginal) => {
   };
 });
 
-import { runMeshExecute } from '../src/tools/execute.js';
+import { normalizeTimeoutMs, runMeshExecute, toOptionalBigInt } from '../src/tools/execute.js';
 
 function createAgent(): AgentCard {
   return {
@@ -88,6 +88,26 @@ function createContext(agent: AgentCard) {
     },
   };
 }
+
+describe('normalizeTimeoutMs', () => {
+  it('enforces default, minimum, and maximum bounds', () => {
+    expect(normalizeTimeoutMs(0)).toBe(5_000);
+    expect(normalizeTimeoutMs(-1)).toBe(5_000);
+    expect(normalizeTimeoutMs(Number.NaN)).toBe(120_000);
+    expect(normalizeTimeoutMs(Number.POSITIVE_INFINITY)).toBe(120_000);
+    expect(normalizeTimeoutMs(3)).toBe(5_000);
+    expect(normalizeTimeoutMs(1_000)).toBe(300_000);
+  });
+});
+
+describe('toOptionalBigInt', () => {
+  it('rejects invalid values and floors valid values', () => {
+    expect(toOptionalBigInt(Number.NaN)).toBeUndefined();
+    expect(toOptionalBigInt(Number.POSITIVE_INFINITY)).toBeUndefined();
+    expect(toOptionalBigInt(-1)).toBeUndefined();
+    expect(toOptionalBigInt(7.9)).toBe(7n);
+  });
+});
 
 describe('runMeshExecute', () => {
   it('returns relay sync results when relay execution succeeds', async () => {

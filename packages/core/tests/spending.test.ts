@@ -16,6 +16,9 @@ beforeEach(() => {
 
 afterEach(async () => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.doUnmock('better-sqlite3');
+  vi.resetModules();
   await Promise.all(
     createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
@@ -129,5 +132,28 @@ describe('SpendingPolicyEngine', () => {
     expect(engine.evaluate({ amountMist: 50n, rail: PaymentRail.SUI_ESCROW }).approved).toBe(true);
 
     engine.close();
+  });
+
+  it('wraps database initialization failures and closes the database', async () => {
+    const dbPath = await createDbPath();
+    const close = vi.fn();
+    const exec = vi.fn(() => {
+      throw new Error('schema failed');
+    });
+    const DatabaseMock = vi.fn(() => ({
+      defaultSafeIntegers: vi.fn(),
+      exec,
+      close,
+    }));
+
+    vi.resetModules();
+    vi.doMock('better-sqlite3', () => ({ default: DatabaseMock }));
+
+    const { SpendingPolicyEngine: MockedSpendingPolicyEngine } = await import('../src/spending/policy.js');
+
+    expect(() => new MockedSpendingPolicyEngine({ policy: basePolicy, dbPath })).toThrow(
+      `Failed to initialize spending policy database at ${dbPath}: schema failed`,
+    );
+    expect(close).toHaveBeenCalledTimes(1);
   });
 });

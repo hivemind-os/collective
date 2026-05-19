@@ -142,14 +142,33 @@ function writePrivateConfigFile(configPath: string, contents: string): void {
 
 async function writePrivateConfigFileAtomic(configPath: string, contents: string): Promise<void> {
   const tempPath = `${configPath}.${process.pid}.${randomUUID()}.tmp`;
-  await configIo.mkdir(dirname(configPath), { recursive: true, mode: 0o700 });
+  const configDir = dirname(configPath);
+
+  try {
+    await configIo.mkdir(configDir, { recursive: true, mode: 0o700 });
+  } catch (error) {
+    throw new Error(
+      `Failed to create config directory ${configDir}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 
   try {
     await configIo.writeFile(tempPath, contents, { encoding: 'utf8', mode: 0o600 });
+  } catch (error) {
+    await configIo.rm(tempPath, { force: true }).catch(() => undefined);
+    throw new Error(
+      `Failed to write config temp file ${tempPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  try {
     await configIo.rename(tempPath, configPath);
     enforcePrivateFilePermissions(configPath);
-  } finally {
+  } catch (error) {
     await configIo.rm(tempPath, { force: true }).catch(() => undefined);
+    throw new Error(
+      `Failed to save config to ${configPath}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 

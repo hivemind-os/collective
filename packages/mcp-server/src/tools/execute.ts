@@ -8,6 +8,8 @@ import { resolveProviderCapability } from './discover.js';
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const DEFAULT_TIMEOUT_SECONDS = 120;
+const MIN_TIMEOUT_SECONDS = 5;
+const MAX_TIMEOUT_SECONDS = 300;
 const DEFAULT_DISPUTE_WINDOW_MS = 5 * 60_000;
 const DEFAULT_EXPIRY_HOURS = 24;
 
@@ -334,20 +336,27 @@ function stringifyRelayResult(result: unknown): string {
   return typeof result === 'string' ? result : JSON.stringify(result);
 }
 
-function normalizeTimeoutMs(timeoutSeconds?: number): number {
-  if (typeof timeoutSeconds !== 'number' || Number.isNaN(timeoutSeconds)) {
+export function normalizeTimeoutMs(timeoutSeconds?: number): number {
+  if (typeof timeoutSeconds !== 'number' || !Number.isFinite(timeoutSeconds)) {
     return DEFAULT_TIMEOUT_SECONDS * 1_000;
   }
-
-  return Math.max(0, Math.floor(timeoutSeconds * 1_000));
+  if (timeoutSeconds < MIN_TIMEOUT_SECONDS) {
+    return MIN_TIMEOUT_SECONDS * 1_000;
+  }
+  if (timeoutSeconds > MAX_TIMEOUT_SECONDS) {
+    return MAX_TIMEOUT_SECONDS * 1_000;
+  }
+  return Math.floor(timeoutSeconds * 1_000);
 }
 
-function toOptionalBigInt(value?: number): bigint | undefined {
-  if (typeof value !== 'number' || Number.isNaN(value)) {
+export function toOptionalBigInt(value?: number): bigint | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
     return undefined;
   }
-
-  return BigInt(Math.max(0, Math.floor(value)));
+  if (value < 0) {
+    return undefined;
+  }
+  return BigInt(Math.floor(value));
 }
 
 async function storeTaskInput(

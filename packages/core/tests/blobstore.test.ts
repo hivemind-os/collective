@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BlobIntegrityError, FilesystemBlobStore } from '../src/index.js';
 
@@ -10,6 +10,9 @@ const createdPaths: string[] = [];
 const encoder = new TextEncoder();
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+  vi.doUnmock('node:fs/promises');
+  vi.resetModules();
   await Promise.all(
     createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
@@ -87,5 +90,23 @@ describe('FilesystemBlobStore', () => {
     await writeFile(join(baseDir, blobId), encoder.encode('tampered'));
 
     await expect(store.fetch(blobId)).rejects.toBeInstanceOf(BlobIntegrityError);
+  });
+
+  it('rethrows non-ENOENT errors from exists checks', async () => {
+    const accessError = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+
+    vi.resetModules();
+    vi.doMock('node:fs/promises', async () => {
+      const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      return {
+        ...actual,
+        access: vi.fn().mockRejectedValueOnce(accessError),
+      };
+    });
+
+    const { FilesystemBlobStore: MockedFilesystemBlobStore } = await import('../src/blobstore/fs-store.js');
+    const store = new MockedFilesystemBlobStore(await createBaseDir());
+
+    await expect(store.exists('forbidden')).rejects.toBe(accessError);
   });
 });

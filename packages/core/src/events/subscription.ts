@@ -71,8 +71,16 @@ export class EventSubscription {
 
       for (const event of page.events) {
         await this.params.onEvent(event);
-        this.cursor = event.id;
-        await this.params.cursorStore.setCursor(this.params.eventType, event.id);
+        try {
+          await this.params.cursorStore.setCursor(this.params.eventType, event.id);
+          this.cursor = event.id;
+        } catch (cursorError) {
+          logger.error(
+            { err: cursorError, eventType: this.params.eventType },
+            'Failed to persist cursor; will retry from last successful position.',
+          );
+          break;
+        }
       }
 
       if (page.hasMore) {
@@ -90,6 +98,15 @@ export class EventSubscription {
       }
     }
   }
+}
+
+function isValidEventId(value: unknown): value is EventID {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const obj = value as Record<string, unknown>;
+  return typeof obj.txDigest === 'string' && typeof obj.eventSeq === 'string';
 }
 
 export class SqliteCursorStore implements CursorStore {
@@ -111,18 +128,37 @@ export class SqliteCursorStore implements CursorStore {
       .prepare('SELECT cursor_json FROM event_cursors WHERE event_type = ?')
       .get(eventType) as { cursor_json: string } | undefined;
 
-    return row ? (JSON.parse(row.cursor_json) as EventID) : null;
+    if (!row) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(row.cursor_json) as unknown;
+      if (!isValidEventId(parsed)) {
+        logger.warn({ eventType, cursor: row.cursor_json }, 'Invalid cursor format in store, resetting.');
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      logger.error({ err: error, eventType }, 'Failed to parse cursor from store.');
+      return null;
+    }
   }
 
   async setCursor(eventType: string, cursor: EventID): Promise<void> {
-    this.db
-      .prepare(
-        `INSERT INTO event_cursors (event_type, cursor_json, updated_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(event_type)
-         DO UPDATE SET cursor_json = excluded.cursor_json, updated_at = excluded.updated_at`,
-      )
-      .run(eventType, JSON.stringify(cursor), Date.now());
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO event_cursors (event_type, cursor_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(event_type)
+           DO UPDATE SET cursor_json = excluded.cursor_json, updated_at = excluded.updated_at`,
+        )
+        .run(eventType, JSON.stringify(cursor), Date.now());
+    } catch (error) {
+      logger.error({ err: error, eventType }, 'Failed to persist event cursor.');
+      throw error;
+    }
   }
 
   close(): void {

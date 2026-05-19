@@ -49,6 +49,18 @@ function createSession(overrides: Partial<StoredZkLoginSession> = {}): StoredZkL
   };
 }
 
+function createLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+}
+
+function createErrnoException(code: string, message: string): NodeJS.ErrnoException {
+  return Object.assign(new Error(message), { code });
+}
+
 async function getOnlySessionFile(dir: string): Promise<string> {
   const entries = await readdir(dir);
   const sessionFile = entries.find((entry) => entry.endsWith('.json'));
@@ -128,6 +140,24 @@ describe('ZkLoginSessionStore', () => {
     });
   });
 
+  it('surfaces I/O errors while loading sessions', async () => {
+    const dir = await createTestDir();
+    const logger = createLogger();
+    const store = new ZkLoginSessionStore(dir, new Uint8Array([8, 8, 8, 8]), { logger });
+
+    await store.save(createSession());
+
+    const ioError = createErrnoException('EIO', 'disk-failure');
+    vi.spyOn(store as unknown as { readSessionFile: (path: string) => Promise<StoredZkLoginSession> }, 'readSessionFile')
+      .mockRejectedValueOnce(ioError);
+
+    await expect(store.loadAll()).rejects.toMatchObject({ code: 'EIO', message: 'disk-failure' });
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: ioError, path: expect.stringMatching(/\.json$/) }),
+      'Failed to read zkLogin session file.',
+    );
+  });
+
   it('filters expired sessions and refreshes near-expiry sessions', async () => {
     const dir = await createTestDir();
     const store = new ZkLoginSessionStore(dir, new Uint8Array([4, 3, 2, 1]));
@@ -195,6 +225,57 @@ describe('ZkLoginSessionStore', () => {
     expect(store.getRefreshFailureCount()).toBe(3);
     await expect(store.loadLatest()).resolves.toMatchObject({
       refreshFailureCount: 3,
+      sessionState: SessionState.NEEDS_REAUTH,
+    });
+  });
+
+  it('does not delete corrupted session files during expiration cleanup', async () => {
+    const dir = await createTestDir();
+    const logger = createLogger();
+    const store = new ZkLoginSessionStore(dir, new Uint8Array([6, 6, 6, 6]), { logger });
+    const corruptedPath = join(dir, 'corrupted.json');
+
+    await writeFile(corruptedPath, '{invalid-json', 'utf8');
+
+    await store.deleteExpired(99);
+
+    await expect(readFile(corruptedPath, 'utf8')).resolves.toBe('{invalid-json');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(SyntaxError), path: corruptedPath }),
+      'Skipping corrupted zkLogin session file during expiration cleanup.',
+    );
+  });
+
+  it('respects refresh policy overrides', async () => {
+    const dir = await createTestDir();
+    const sleep = vi.fn(async () => undefined);
+    const store = new ZkLoginSessionStore(dir, new Uint8Array([3, 3, 3, 3]), {
+      sleep,
+      refresh: {
+        maxAttempts: 2,
+        backoffMs: [25, 50],
+        maxConsecutiveFailures: 2,
+      },
+    });
+
+    await store.save(createSession({ maxEpoch: 11 }));
+
+    const error = await store.refreshIfNeeded(10, async () => {
+      throw new Error('refresh-down');
+    }).catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(SessionExpiredError);
+    expect(error).toMatchObject({
+      attempts: 2,
+      maxAttempts: 2,
+      retryDelaysMs: [25, 50],
+      consecutiveFailures: 2,
+      sessionState: SessionState.NEEDS_REAUTH,
+    });
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(25);
+    await expect(store.loadLatest()).resolves.toMatchObject({
+      refreshFailureCount: 2,
       sessionState: SessionState.NEEDS_REAUTH,
     });
   });

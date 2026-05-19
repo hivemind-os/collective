@@ -34,7 +34,7 @@ function getIdentityKeyPath(dataDir: string): string {
 
 function logKeychainFallback(error: unknown): void {
   if (!hasLoggedKeychainFallback) {
-    logger.warn({ err: error }, 'OS keychain unavailable; falling back to file-based identity storage.');
+    logger.warn({ err: error }, 'OS keychain unavailable; insecure file-based identity storage requires explicit opt-in.');
     hasLoggedKeychainFallback = true;
   }
 }
@@ -81,6 +81,10 @@ export interface KeyStore {
   load(): Promise<Uint8Array>;
   save(secretKey: Uint8Array): Promise<void>;
   exists(): Promise<boolean>;
+}
+
+export interface KeyStoreOptions {
+  allowInsecureFileStorage?: boolean;
 }
 
 export class FileKeyStore implements KeyStore {
@@ -149,9 +153,20 @@ export function keypairFromSecretKey(secretKey: Uint8Array): SimpleKeypair {
   };
 }
 
-export async function createKeyStore(dataDir: string): Promise<KeyStore> {
+export async function createKeyStore(dataDir: string, options: KeyStoreOptions = {}): Promise<KeyStore> {
   const keytar = await getKeytarModule();
-  return keytar ? new KeychainStore(keytar) : new FileKeyStore(getIdentityKeyPath(dataDir));
+  if (keytar) {
+    return new KeychainStore(keytar);
+  }
+  if (!options.allowInsecureFileStorage) {
+    throw new Error(
+      'OS keychain is unavailable and insecure file-based key storage is not permitted. ' +
+      'Set allowInsecureFileStorage: true to explicitly opt in to plaintext file storage.',
+    );
+  }
+
+  logger.warn('Using insecure file-based key storage. Keys are stored as plaintext on disk.');
+  return new FileKeyStore(getIdentityKeyPath(dataDir));
 }
 
 export async function identityKeyExists(dataDir: string): Promise<boolean> {
@@ -160,7 +175,7 @@ export async function identityKeyExists(dataDir: string): Promise<boolean> {
     return true;
   }
 
-  const keyStore = await createKeyStore(dataDir);
+  const keyStore = await createKeyStore(dataDir, { allowInsecureFileStorage: true });
   if (keyStore instanceof KeychainStore) {
     try {
       return await keyStore.exists();
@@ -173,12 +188,12 @@ export async function identityKeyExists(dataDir: string): Promise<boolean> {
   return await keyStore.exists();
 }
 
-export async function loadOrCreateKeypair(dataDir: string): Promise<SimpleKeypair> {
+export async function loadOrCreateKeypair(dataDir: string, options: KeyStoreOptions = {}): Promise<SimpleKeypair> {
   configureEd25519();
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 
   const fileStore = new FileKeyStore(getIdentityKeyPath(dataDir));
-  const keyStore = await createKeyStore(dataDir);
+  const keyStore = await createKeyStore(dataDir, options);
 
   if (keyStore instanceof KeychainStore) {
     try {
@@ -191,6 +206,11 @@ export async function loadOrCreateKeypair(dataDir: string): Promise<SimpleKeypai
 
       return await loadOrCreateStoredKeypair(keyStore);
     } catch (error) {
+      if (!options.allowInsecureFileStorage) {
+        throw new Error(
+          `OS keychain operation failed and insecure file storage is not permitted: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
       logKeychainFallback(error);
     }
   }

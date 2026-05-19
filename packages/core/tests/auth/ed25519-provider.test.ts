@@ -8,17 +8,27 @@ describe('Ed25519AuthProvider', () => {
   it('wraps an Ed25519 keypair as an auth provider', async () => {
     const keypair = Ed25519Keypair.generate();
     const provider = new Ed25519AuthProvider(keypair);
+    const transactionBytes = new Uint8Array([1, 2, 3]);
+    const messageBytes = new Uint8Array([4, 5, 6]);
 
     expect(await provider.getAddress()).toBe(keypair.toSuiAddress());
     expect(provider.getDID()).toBe(createDID(keypair.getPublicKey().toRawBytes()));
     expect(provider.isAuthenticated()).toBe(true);
     expect(provider.getPublicKey()).toEqual(keypair.getPublicKey().toRawBytes());
 
-    const signedTransaction = await provider.signTransaction(new Uint8Array([1, 2, 3]));
-    const signedMessage = await provider.signPersonalMessage(new Uint8Array([4, 5, 6]));
+    const [{ signature: transactionSignature }, { signature: messageSignature }] = await Promise.all([
+      keypair.signTransaction(transactionBytes),
+      keypair.signPersonalMessage(messageBytes),
+    ]);
+    const signedTransaction = await provider.signTransaction(transactionBytes);
+    const signedMessage = await provider.signPersonalMessage(messageBytes);
 
-    expect(signedTransaction.length).toBeGreaterThan(0);
-    expect(signedMessage.signature.length).toBeGreaterThan(0);
+    expect(signedTransaction).toEqual(Buffer.from(transactionSignature, 'base64'));
+    expect(signedTransaction).not.toEqual(Buffer.from(transactionSignature, 'utf8'));
+    expect(Buffer.from(signedTransaction).toString('base64')).toBe(transactionSignature);
+    expect(signedMessage.signature).toEqual(Buffer.from(messageSignature, 'base64'));
+    expect(signedMessage.signature).not.toEqual(Buffer.from(messageSignature, 'utf8'));
+    expect(Buffer.from(signedMessage.signature).toString('base64')).toBe(messageSignature);
     expect(provider.toSuiSigner().toSuiAddress()).toBe(await provider.getAddress());
   });
 });

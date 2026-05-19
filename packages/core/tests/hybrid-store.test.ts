@@ -118,4 +118,30 @@ describe('HybridBlobStore', () => {
     expect(walrus.fetch).toHaveBeenCalledTimes(1);
     expect(await local.exists(contentHash)).toBe(true);
   });
+
+  it('reports partial delete failures with store and blob ids', async () => {
+    const contentHash = 'b'.repeat(64);
+    const blobId = createWalrusBlobReference(Buffer.alloc(32, 0x55).toString('base64url'), contentHash);
+    const local = {
+      store: vi.fn(),
+      fetch: vi.fn(),
+      exists: vi.fn().mockResolvedValue(true),
+      delete: vi.fn().mockRejectedValue(new Error('local delete failed')),
+      getMetadata: vi.fn(),
+    } as unknown as FilesystemBlobStore;
+    const walrus = {
+      store: vi.fn(),
+      fetch: vi.fn(),
+      exists: vi.fn(),
+      delete: vi.fn().mockRejectedValue(new Error('walrus delete failed')),
+      getMetadata: vi.fn(),
+    } as unknown as WalrusBlobStore;
+    const store = new HybridBlobStore(walrus, local, { preferWalrus: true, cacheLocally: false });
+
+    await expect(store.delete(blobId)).rejects.toThrow(
+      `Partial delete failure for blob ${blobId}: 2 operation(s) failed (local:${contentHash}, walrus:${blobId})`,
+    );
+    expect(local.delete).toHaveBeenCalledWith(contentHash);
+    expect(walrus.delete).toHaveBeenCalledWith(blobId);
+  });
 });

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   BlobIntegrityError,
+  DEFAULT_WALRUS_AGGREGATOR_URL,
+  DEFAULT_WALRUS_PUBLISHER_URL,
   WalrusBlobStore,
   WalrusBlobTooLargeError,
   WalrusHttpError,
@@ -34,6 +36,35 @@ function createStore(fetchImpl: typeof fetch): WalrusBlobStore {
 }
 
 describe('WalrusBlobStore', () => {
+  it('rejects invalid Walrus URLs during startup', () => {
+    expect(
+      () => new WalrusBlobStore({ publisherUrl: 'not-a-url', aggregatorUrl: 'https://aggregator.example.com' }),
+    ).toThrow('Invalid Walrus URL configuration: publisherUrl=not-a-url, aggregatorUrl=https://aggregator.example.com');
+  });
+
+  it('warns when configured with testnet Walrus endpoints', () => {
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
+    new WalrusBlobStore({
+      publisherUrl: DEFAULT_WALRUS_PUBLISHER_URL,
+      aggregatorUrl: DEFAULT_WALRUS_AGGREGATOR_URL,
+      logger,
+    });
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      {
+        publisherUrl: DEFAULT_WALRUS_PUBLISHER_URL,
+        aggregatorUrl: DEFAULT_WALRUS_AGGREGATOR_URL,
+      },
+      'Walrus store is configured with testnet endpoints. Set publisherUrl/aggregatorUrl for production use.',
+    );
+  });
+
   it('stores blobs with the Walrus publisher API', async () => {
     const data = encoder.encode('store me');
     const fetchImpl = vi.fn<FetchImpl>().mockResolvedValue(

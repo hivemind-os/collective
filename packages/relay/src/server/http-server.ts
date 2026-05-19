@@ -66,7 +66,11 @@ export async function createRelayServer(config: RelayConfig, options: RelayServe
         return;
       }
 
-      callback(null, allowedOrigins.includes(origin));
+      const normalizedOrigin = normalizeOrigin(origin);
+      const allowed = allowedOrigins.some(
+        (allowedOrigin) => normalizeOrigin(allowedOrigin) === normalizedOrigin,
+      );
+      callback(null, allowed);
     },
   });
   app.register(rateLimit, {
@@ -121,10 +125,24 @@ export async function createRelayServer(config: RelayConfig, options: RelayServe
     start: async () => {
       const address = await app.listen({ host: config.host, port: config.port });
       const resolvedAddress = typeof address === 'string' ? address : `http://${config.host}:${config.port}`;
-      await relayRegistry.start(resolvedAddress);
+      try {
+        await relayRegistry.start(resolvedAddress);
+      } catch (error) {
+        await app.close();
+        throw error;
+      }
       return resolvedAddress;
     },
   };
+}
+
+function normalizeOrigin(origin: string): string {
+  try {
+    const url = new URL(origin);
+    return `${url.protocol}//${url.host}`.toLowerCase();
+  } catch {
+    return origin.toLowerCase().replace(/\/$/, '');
+  }
 }
 
 function attachProviderSocket(params: {

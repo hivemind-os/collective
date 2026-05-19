@@ -53,9 +53,8 @@ export async function runMeshPolicyUpdate(
   };
 }
 
-function readPolicySnapshot(context: MeshToolContext): SpendingPolicy {
-  const engineWithPolicy = context.spendingPolicy as unknown as { policy?: SpendingPolicy };
-  return engineWithPolicy.policy ?? { limits: [] };
+export function readPolicySnapshot(context: MeshToolContext): SpendingPolicy {
+  return context.spendingPolicy.getCurrentPolicy();
 }
 
 function clonePolicy(policy: SpendingPolicy): SpendingPolicy {
@@ -67,17 +66,23 @@ function clonePolicy(policy: SpendingPolicy): SpendingPolicy {
   };
 }
 
-function applyLimit(
+export function applyLimit(
   limits: SpendingPolicy['limits'],
   interval: 'transaction' | 'day' | 'month',
   amount?: number,
 ): void {
-  if (typeof amount !== 'number' || Number.isNaN(amount)) {
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) {
     return;
+  }
+  if (amount < 0) {
+    throw new Error(`Spending limit for '${interval}' must be non-negative. Got: ${amount}`);
+  }
+  if (amount > Number.MAX_SAFE_INTEGER) {
+    throw new Error(`Spending limit for '${interval}' exceeds maximum safe integer. Got: ${amount}`);
   }
 
   const nextLimit = {
-    amount: BigInt(Math.max(0, Math.floor(amount))),
+    amount: BigInt(Math.floor(amount)),
     interval,
     rail: PaymentRail.SUI_ESCROW,
   } as const;

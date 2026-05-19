@@ -93,16 +93,34 @@ export class HybridBlobStore implements BlobStore {
   }
 
   async delete(blobId: string): Promise<void> {
-    const localBlobIds = getLocalBlobCandidates(blobId);
-    await Promise.all(localBlobIds.map(async (localBlobId) => {
-      if (await this.local.exists(localBlobId)) {
-        await this.local.delete(localBlobId);
-      }
-    }));
+    const errors: Array<{ store: string; blobId: string; error: unknown }> = [];
 
-    const walrusLikeBlobId = isWalrusBlobId(blobId);
-    if (walrusLikeBlobId) {
-      await this.walrus.delete(blobId);
+    const localBlobIds = getLocalBlobCandidates(blobId);
+    for (const localBlobId of localBlobIds) {
+      try {
+        if (await this.local.exists(localBlobId)) {
+          await this.local.delete(localBlobId);
+        }
+      } catch (error) {
+        errors.push({ store: 'local', blobId: localBlobId, error });
+        logger.warn({ err: error, blobId: localBlobId }, 'Failed to delete local blob.');
+      }
+    }
+
+    if (isWalrusBlobId(blobId)) {
+      try {
+        await this.walrus.delete(blobId);
+      } catch (error) {
+        errors.push({ store: 'walrus', blobId, error });
+        logger.warn({ err: error, blobId }, 'Failed to delete walrus blob.');
+      }
+    }
+
+    if (errors.length > 0) {
+      throw new Error(
+        `Partial delete failure for blob ${blobId}: ${errors.length} operation(s) failed ` +
+        `(${errors.map((entry) => `${entry.store}:${entry.blobId}`).join(', ')})`,
+      );
     }
   }
 

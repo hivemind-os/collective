@@ -40,7 +40,7 @@ interface SessionEnvelopeV2 {
 
 type SessionEnvelope = SessionEnvelopeV1 | SessionEnvelopeV2;
 
-type SessionStoreLogger = Pick<ReturnType<typeof pino>, 'info' | 'warn' | 'error'>;
+type SessionStoreLogger = Pick<ReturnType<typeof pino>, 'info' | 'warn' | 'error' | 'debug'>;
 
 type SerializedSession = Omit<StoredZkLoginSession, 'ephemeralKeypair' | 'provider'> & {
   provider?: OAuthProvider;
@@ -56,6 +56,7 @@ export interface ZkLoginSessionStoreOptions {
 
 const SESSION_ENCRYPTION_INFO = Buffer.from('agentic-mesh:zklogin-session-store:v2', 'utf8');
 const SESSION_ENCRYPTION_SALT = Buffer.from('aes-256-gcm', 'utf8');
+// These defaults are intentionally overridable via ZkLoginSessionStoreOptions.refresh.
 const DEFAULT_REFRESH_POLICY: Required<SessionRefreshPolicy> = {
   maxAttempts: 3,
   backoffMs: [1_000, 2_000, 4_000],
@@ -135,10 +136,20 @@ export class ZkLoginSessionStore {
         entries
           .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
           .map(async (entry) => {
+            const path = join(this.baseDir, entry.name);
             try {
-              const contents = await readFile(join(this.baseDir, entry.name), 'utf8');
-              return this.decrypt(JSON.parse(contents) as SessionEnvelope);
-            } catch {
+              return await this.readSessionFile(path);
+            } catch (error) {
+              if (isErrnoException(error, 'ENOENT')) {
+                this.logger.debug({ path }, 'Session file removed before read, skipping.');
+                return null;
+              }
+              if (isErrnoException(error)) {
+                this.logger.error({ err: error, path }, 'Failed to read zkLogin session file.');
+                throw error;
+              }
+
+              this.logger.warn({ err: error, path }, 'Skipping corrupted zkLogin session file.');
               return null;
             }
           }),
@@ -342,13 +353,24 @@ export class ZkLoginSessionStore {
           .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
           .map(async (entry) => {
             const path = join(this.baseDir, entry.name);
+            let session: StoredZkLoginSession;
             try {
-              const contents = await readFile(path, 'utf8');
-              const session = this.decrypt(JSON.parse(contents) as SessionEnvelope);
-              if (this.isExpired(session, currentEpoch)) {
-                await rm(path, { force: true });
+              session = await this.readSessionFile(path);
+            } catch (error) {
+              if (isErrnoException(error, 'ENOENT')) {
+                this.logger.debug({ path }, 'Session file removed before expiration check, skipping.');
+                return;
               }
-            } catch {
+              if (isErrnoException(error)) {
+                this.logger.error({ err: error, path }, 'Failed to inspect zkLogin session file for expiration.');
+                throw error;
+              }
+
+              this.logger.warn({ err: error, path }, 'Skipping corrupted zkLogin session file during expiration cleanup.');
+              return;
+            }
+
+            if (this.isExpired(session, currentEpoch)) {
               await rm(path, { force: true });
             }
           }),
@@ -470,6 +492,11 @@ export class ZkLoginSessionStore {
     return this.deserializeSession(JSON.parse(plaintext) as SerializedSession);
   }
 
+  private async readSessionFile(path: string): Promise<StoredZkLoginSession> {
+    const contents = await readFile(path, 'utf8');
+    return this.decrypt(JSON.parse(contents) as SessionEnvelope);
+  }
+
   private async ensureBaseDir(): Promise<void> {
     await mkdir(this.baseDir, { recursive: true, mode: 0o700 });
     await chmod(this.baseDir, 0o700);
@@ -499,8 +526,8 @@ function normalizePersistedSessionState(sessionState?: SessionState): SessionSta
   return sessionState === SessionState.NEEDS_REAUTH ? SessionState.NEEDS_REAUTH : SessionState.VALID;
 }
 
-function isErrnoException(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error && error.code === code;
+function isErrnoException(error: unknown, code?: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && (code === undefined || error.code === code);
 }
 
 async function wait(ms: number): Promise<void> {

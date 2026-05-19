@@ -30,7 +30,7 @@ interface GraphQLAgentNode {
     description: string;
     version: string;
     executionMode?: 'sync' | 'async' | null;
-    paymentRails?: string[] | null;
+    paymentRails?: Capability['paymentRails'] | null;
     pricing: {
       rail: Capability['pricing']['rail'];
       amount: string;
@@ -125,7 +125,22 @@ export async function queryIndexerAgents(
 
 export function resolveIndexerUrl(context: Pick<MeshToolContext, 'indexer'>): string | null {
   const value = context.indexer?.graphqlUrl ?? process.env.COLLECTIVE_INDEXER_URL;
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  try {
+    const url = new URL(trimmed);
+    const isLocalDev = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+    if (url.protocol !== 'https:' && !(isLocalDev && url.protocol === 'http:')) {
+      return null;
+    }
+    return trimmed;
+  } catch {
+    return null;
+  }
 }
 
 function mapGraphqlAgent(agent: GraphQLAgentNode): AgentCard {

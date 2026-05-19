@@ -94,7 +94,7 @@ async function showAddress(): Promise<number> {
 
 async function loadWalletContext(): Promise<{ config: ReturnType<typeof loadMeshConfig>; did: string; address: string }> {
   const config = loadMeshConfig();
-  const identity = await loadOrCreateKeypair(config.identity.dataDir);
+  const identity = await loadOrCreateKeypair(config.identity.dataDir, { allowInsecureFileStorage: true });
   const did = createDID(identity.publicKey);
   const keypair = Ed25519Keypair.fromSecretKey(identity.secretKey);
   return {

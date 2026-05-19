@@ -171,7 +171,7 @@ export async function main(): Promise<void> {
       openUrl: (url: string) => openPortalUrl(url, logger, 'open settings'),
       config,
       configPath,
-      logger: { info: (p, m) => logger.info(p, m), warn: (p, m) => logger.warn(p, m) },
+      logger: { info: logger.info.bind(logger), warn: logger.warn.bind(logger) },
       getJobQueue: () => providerRuntime?.jobQueue,
       taskHistoryDbPath: join(config.daemon.dataDir, 'task-history.db'),
       usdcCoinType: config.network.usdcType,

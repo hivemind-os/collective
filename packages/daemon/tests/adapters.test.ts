@@ -112,9 +112,29 @@ describe('WebhookAdapter', () => {
 // ---------------------------------------------------------------------------
 
 describe('SubprocessAdapter', () => {
+  const envKeys = ['GITHUB_TOKEN', 'NODE_AUTH_TOKEN', 'COLLECTIVE_TEST_SAFE_ENV'] as const;
+  const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    for (const key of envKeys) {
+      const value = originalEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
+  });
+
   it('validates non-empty command at construction', () => {
     expect(() => new SubprocessAdapter({ command: '' })).toThrow('non-empty command');
     expect(() => new SubprocessAdapter({ command: '   ' })).toThrow('non-empty command');
+  });
+
+  it('rejects blocked commands at construction', () => {
+    expect(() => new SubprocessAdapter({ command: 'rm' })).toThrow('blocked command');
+    expect(() => new SubprocessAdapter({ command: 'shutdown.exe' })).toThrow('blocked command');
   });
 
   it('runs a process and returns stdout', async () => {
@@ -147,6 +167,34 @@ describe('SubprocessAdapter', () => {
     const parsed = JSON.parse(decoder.decode(result.resultData)) as { tid: string; cap: string };
     expect(parsed.tid).toBe('env-task');
     expect(parsed.cap).toBe('env-cap');
+  });
+
+  it('strips sensitive inherited env vars before spawning', async () => {
+    process.env.GITHUB_TOKEN = 'secret-gh';
+    process.env.NODE_AUTH_TOKEN = 'secret-node';
+    process.env.COLLECTIVE_TEST_SAFE_ENV = 'safe-value';
+
+    const adapter = new SubprocessAdapter({
+      command: 'node',
+      args: [
+        '-e',
+        'process.stdout.write(JSON.stringify({ github: process.env.GITHUB_TOKEN ?? null, nodeAuth: process.env.NODE_AUTH_TOKEN ?? null, safe: process.env.COLLECTIVE_TEST_SAFE_ENV ?? null, custom: process.env.MY_CUSTOM_VAR ?? null }))',
+      ],
+      env: { MY_CUSTOM_VAR: 'custom-value' },
+    });
+
+    const result = await adapter.execute({
+      taskId: 't',
+      capability: 'c',
+      inputData: new Uint8Array(0),
+    });
+
+    expect(JSON.parse(decoder.decode(result.resultData))).toEqual({
+      github: null,
+      nodeAuth: null,
+      safe: 'safe-value',
+      custom: 'custom-value',
+    });
   });
 
   it('passes extra env vars from config', async () => {

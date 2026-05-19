@@ -226,5 +226,22 @@ function extractObjectId(
 }
 
 function isObjectMissingError(error: unknown): boolean {
-  return error instanceof Error && /not found|does not contain move object data/i.test(error.message);
+  if (error && typeof error === 'object') {
+    const err = error as Record<string, unknown>;
+    if (err.code === 'objectNotFound' || err.code === 'notExists') {
+      return true;
+    }
+    if (typeof err.data === 'object' && err.data !== null) {
+      const data = err.data as Record<string, unknown>;
+      if (data.code === -32000 || data.code === 'objectNotFound') {
+        return true;
+      }
+    }
+  }
+
+  if (error instanceof Error) {
+    return /could not find.*object|object.*not found|does not exist|no data.*objectId|dynamicFieldNotFound|does not contain move object data/i.test(error.message);
+  }
+
+  return false;
 }

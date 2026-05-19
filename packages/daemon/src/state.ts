@@ -222,7 +222,7 @@ export async function createDaemonIdentityContext(config: DaemonFullConfig): Pro
   await mkdir(config.daemon.dataDir, { recursive: true });
   await mkdir(config.identity.dataDir, { recursive: true });
 
-  const identity = await loadOrCreateKeypair(config.identity.dataDir);
+  const identity = await loadOrCreateKeypair(config.identity.dataDir, { allowInsecureFileStorage: true });
   const identityKeypair = Ed25519Keypair.fromSecretKey(identity.secretKey);
   const did = createDID(identity.publicKey);
 

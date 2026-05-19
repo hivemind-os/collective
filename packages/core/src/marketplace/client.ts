@@ -177,31 +177,37 @@ export class MarketplaceClient {
 
     do {
       const page = await this.suiClient.queryEvents(eventType, cursor, Math.max(limit * 3, 20));
-      for (const event of page.events) {
-        const postedTask = parseTaskFields(normalizeEvent(event));
-        if (!postedTask.id || taskIds.has(postedTask.id)) {
-          continue;
+      const pageTaskIds = new Set<string>();
+      const postedTasks = page.events
+        .map((event) => parseTaskFields(normalizeEvent(event)))
+        .filter((task) => {
+          if (!task.id || taskIds.has(task.id) || pageTaskIds.has(task.id)) {
+            return false;
+          }
+          pageTaskIds.add(task.id);
+          return true;
+        })
+        .filter((task) => !category || task.category.toLowerCase() === category.toLowerCase());
+      const fetchedTasks = await Promise.all(postedTasks.map(async (task) => await this.taskClient.getTask(task.id)));
+      const validTasks = fetchedTasks.filter((task): task is Task => {
+        if (!task || !isTaskBrowseable(task) || Date.now() >= task.expiresAt) {
+          return false;
         }
-        if (category && postedTask.category.toLowerCase() !== category.toLowerCase()) {
-          continue;
+        if (category && task.category.toLowerCase() !== category.toLowerCase()) {
+          return false;
         }
+        if (filters.minPriceMist != null && task.price < filters.minPriceMist) {
+          return false;
+        }
+        if (filters.maxPriceMist != null && task.price > filters.maxPriceMist) {
+          return false;
+        }
+        return true;
+      });
 
-        const current = await this.taskClient.getTask(postedTask.id);
-        if (!current || current.status !== TaskStatus.OPEN || Date.now() >= current.expiresAt) {
-          continue;
-        }
-        if (category && current.category.toLowerCase() !== category.toLowerCase()) {
-          continue;
-        }
-        if (filters.minPriceMist != null && current.price < filters.minPriceMist) {
-          continue;
-        }
-        if (filters.maxPriceMist != null && current.price > filters.maxPriceMist) {
-          continue;
-        }
-
-        taskIds.add(current.id);
-        tasks.push(current);
+      for (const task of validTasks) {
+        taskIds.add(task.id);
+        tasks.push(task);
         if (tasks.length >= limit) {
           return tasks.sort((left, right) => right.createdAt - left.createdAt);
         }
@@ -342,6 +348,11 @@ function normalizeOptionalCategory(value: string | undefined): string | undefine
     throw new Error('filters.category must be a non-empty string when provided.');
   }
   return trimmed;
+}
+
+function isTaskBrowseable(task: Task): boolean {
+  const status = task.status as Task['status'] | 'open' | 'posted';
+  return status === TaskStatus.OPEN || status === 'open' || status === 'posted';
 }
 
 function isObjectMissingError(error: unknown): boolean {

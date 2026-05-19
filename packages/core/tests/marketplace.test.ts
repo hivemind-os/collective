@@ -305,4 +305,51 @@ describe('MarketplaceClient', () => {
     expect(tasks[0]?.id).toBe('0xaa1');
     expect(tasks[0]?.category).toBe('analysis');
   });
+
+  it('filters out tasks whose on-chain status changed after the posted event snapshot', async () => {
+    const queryEvents = vi.fn().mockResolvedValue({
+      events: [
+        createTaskPostedEvent({
+          task_id: '0xaa3',
+          requester: '0xrequester',
+          provider: '0x0',
+          capability: 'summarize',
+          category: 'analysis',
+          input_blob_id: 'blob-3',
+          agreement_hash: 'hash-3',
+          price: '400',
+          status: TaskStatus.OPEN,
+          dispute_window_ms: 60_000,
+          expires_at: Date.now() + 10_000,
+          created_at: 3_000,
+        }),
+      ],
+      nextCursor: null,
+      hasMore: false,
+    });
+    const client = new MarketplaceClient(
+      {
+        executeTransaction: vi.fn(),
+        getObject: vi.fn().mockResolvedValue({
+          id: '0xaa3',
+          requester: '0xrequester',
+          provider: '0xprovider',
+          capability: 'summarize',
+          category: 'analysis',
+          input_blob_id: 'blob-3',
+          agreement_hash: 'hash-3',
+          price: '400',
+          status: TaskStatus.CANCELLED,
+          dispute_window_ms: 60_000,
+          created_at: 3_000,
+          expires_at: Date.now() + 10_000,
+        }),
+        queryEvents,
+        client: { getOwnedObjects: vi.fn() },
+      } as unknown as MeshSuiClient,
+      networkConfig,
+    );
+
+    await expect(client.browseOpenTasks()).resolves.toEqual([]);
+  });
 });

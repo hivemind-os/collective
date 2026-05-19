@@ -2,14 +2,16 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { PaymentScheme, SqliteCursorStore, TaskStatus, parseRawEvent } from '../src/index.js';
+import { EventSubscription, PaymentScheme, SqliteCursorStore, TaskStatus, parseRawEvent } from '../src/index.js';
 
 const createdPaths: string[] = [];
 const packageId = '0xpackage';
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     createdPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
@@ -198,5 +200,74 @@ describe('SqliteCursorStore', () => {
     const store = new SqliteCursorStore(await createDbPath());
     await expect(store.getCursor('missing')).resolves.toBeNull();
     store.close();
+  });
+
+  it('returns null for malformed or invalid stored cursors', async () => {
+    const store = new SqliteCursorStore(await createDbPath());
+    const db = (store as unknown as { db: Database.Database }).db;
+
+    db.prepare('INSERT INTO event_cursors (event_type, cursor_json, updated_at) VALUES (?, ?, ?)')
+      .run('malformed-json', '{', Date.now());
+    db.prepare('INSERT INTO event_cursors (event_type, cursor_json, updated_at) VALUES (?, ?, ?)')
+      .run('invalid-shape', JSON.stringify({ txDigest: '0xtx' }), Date.now());
+
+    await expect(store.getCursor('malformed-json')).resolves.toBeNull();
+    await expect(store.getCursor('invalid-shape')).resolves.toBeNull();
+    store.close();
+  });
+
+  it('rethrows cursor persistence errors', async () => {
+    const store = new SqliteCursorStore(await createDbPath());
+    store.close();
+
+    await expect(store.setCursor('event-type', { txDigest: '0xtx', eventSeq: '7' })).rejects.toThrow();
+  });
+});
+
+describe('EventSubscription', () => {
+  it('stops processing the current batch when cursor persistence fails', async () => {
+    const events = [
+      { id: { txDigest: '0xtx-1', eventSeq: '1' } },
+      { id: { txDigest: '0xtx-2', eventSeq: '2' } },
+      { id: { txDigest: '0xtx-3', eventSeq: '3' } },
+    ] as const;
+    const processed: string[] = [];
+    const onEvent = vi.fn(async (event: (typeof events)[number]) => {
+      processed.push(event.id.eventSeq);
+    });
+    const queryEvents = vi
+      .fn()
+      .mockResolvedValueOnce({ events, hasMore: false })
+      .mockResolvedValueOnce({ events: [], hasMore: false });
+    const setCursor = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('disk full'));
+
+    const subscription = new EventSubscription({
+      suiClient: { queryEvents } as never,
+      eventType: 'test-event',
+      onEvent: onEvent as never,
+      cursorStore: {
+        getCursor: vi.fn().mockResolvedValue(null),
+        setCursor,
+      },
+      pollIntervalMs: 60_000,
+    });
+
+    (subscription as unknown as { running: boolean }).running = true;
+    await (subscription as unknown as { poll: () => Promise<void> }).poll();
+    subscription.stop();
+
+    expect(processed).toEqual(['1', '2']);
+    expect(setCursor).toHaveBeenCalledTimes(2);
+    expect((subscription as unknown as { cursor: { txDigest: string; eventSeq: string } | null }).cursor).toEqual(events[0].id);
+
+    (subscription as unknown as { running: boolean }).running = true;
+    await (subscription as unknown as { poll: () => Promise<void> }).poll();
+    subscription.stop();
+
+    expect(queryEvents).toHaveBeenNthCalledWith(2, 'test-event', events[0].id, 100);
+    expect(onEvent).not.toHaveBeenCalledWith(events[2]);
   });
 });

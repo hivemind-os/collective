@@ -129,9 +129,21 @@ export class WalrusBlobStore implements BlobStore {
   private readonly metadata = new Map<string, WalrusBlobMetadata>();
 
   constructor(config: WalrusBlobStoreConfig) {
+    const publisherUrl = normalizeWalrusUrl(config.publisherUrl || DEFAULT_WALRUS_PUBLISHER_URL);
+    const aggregatorUrl = normalizeWalrusUrl(config.aggregatorUrl || DEFAULT_WALRUS_AGGREGATOR_URL);
+
+    try {
+      new URL(publisherUrl);
+      new URL(aggregatorUrl);
+    } catch {
+      throw new Error(
+        `Invalid Walrus URL configuration: publisherUrl=${publisherUrl}, aggregatorUrl=${aggregatorUrl}`,
+      );
+    }
+
     this.config = {
-      publisherUrl: normalizeWalrusUrl(config.publisherUrl || DEFAULT_WALRUS_PUBLISHER_URL),
-      aggregatorUrl: normalizeWalrusUrl(config.aggregatorUrl || DEFAULT_WALRUS_AGGREGATOR_URL),
+      publisherUrl,
+      aggregatorUrl,
       epochs: config.epochs ?? DEFAULT_WALRUS_EPOCHS,
       maxBlobSize: config.maxBlobSize ?? DEFAULT_WALRUS_MAX_BLOB_SIZE,
       retryAttempts: Math.max(1, config.retryAttempts ?? DEFAULT_WALRUS_RETRY_ATTEMPTS),
@@ -144,6 +156,14 @@ export class WalrusBlobStore implements BlobStore {
     validatePositiveInteger(this.config.epochs, 'epochs');
     validatePositiveInteger(this.config.maxBlobSize, 'maxBlobSize');
     validatePositiveInteger(this.config.timeoutMs, 'timeoutMs');
+
+    if (publisherUrl.includes('testnet') || aggregatorUrl.includes('testnet')) {
+      const targetLogger = config.logger ?? logger;
+      targetLogger.warn(
+        { publisherUrl, aggregatorUrl },
+        'Walrus store is configured with testnet endpoints. Set publisherUrl/aggregatorUrl for production use.',
+      );
+    }
   }
 
   async store(data: Uint8Array): Promise<StoredBlob> {

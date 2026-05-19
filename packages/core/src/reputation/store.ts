@@ -46,11 +46,27 @@ export class ReputationStore {
     const validated = assertValidReputationEvent(event);
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO reputation_events (
+        `INSERT INTO reputation_events (
           event_id, type, subject, author, task_id, outcome, rating, capability,
           payment_amount, payment_currency, latency_ms, timestamp, timestamp_ms,
           nonce, signature, payload_json, anchor_id, anchored_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE((SELECT anchor_id FROM reputation_events WHERE event_id = ?), NULL), COALESCE((SELECT anchored_at FROM reputation_events WHERE event_id = ?), NULL), ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+        ON CONFLICT(event_id) DO UPDATE SET
+          type = excluded.type,
+          subject = excluded.subject,
+          author = excluded.author,
+          task_id = excluded.task_id,
+          outcome = excluded.outcome,
+          rating = excluded.rating,
+          capability = excluded.capability,
+          payment_amount = excluded.payment_amount,
+          payment_currency = excluded.payment_currency,
+          latency_ms = excluded.latency_ms,
+          timestamp = excluded.timestamp,
+          timestamp_ms = excluded.timestamp_ms,
+          nonce = excluded.nonce,
+          signature = excluded.signature,
+          payload_json = excluded.payload_json`
       )
       .run(
         validated.eventId,
@@ -69,8 +85,6 @@ export class ReputationStore {
         validated.nonce,
         validated.signature,
         JSON.stringify(validated),
-        validated.eventId,
-        validated.eventId,
         Date.now(),
       );
   }

@@ -104,7 +104,7 @@ function loadRelayContext(deps: RelayRegistryCommandDeps): {
     throw new Error('network.packageId must be configured before using relay registry commands.');
   }
 
-  const identity = (deps.loadKeypair ?? loadOrCreateKeypair)(config.identity.dataDir);
+  const identity = (deps.loadKeypair ?? ((dir: string) => loadOrCreateKeypair(dir, { allowInsecureFileStorage: true })))(config.identity.dataDir);
   const keypair = Ed25519Keypair.fromSecretKey(identity.secretKey);
   const client = deps.createClient?.(config) ?? new RelayRegistryClient(new MeshSuiClient(config.network), config.network);
   return { config, keypair, client };

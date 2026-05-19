@@ -4,8 +4,6 @@ import { createDID } from '../identity/did.js';
 
 import type { AuthProvider } from './types.js';
 
-const encoder = new TextEncoder();
-
 export class Ed25519AuthProvider implements AuthProvider {
   readonly mode = 'ed25519' as const;
 
@@ -21,12 +19,12 @@ export class Ed25519AuthProvider implements AuthProvider {
 
   async signTransaction(tx: Uint8Array): Promise<Uint8Array> {
     const { signature } = await this.keypair.signTransaction(tx);
-    return encoder.encode(signature);
+    return Buffer.from(signature, 'base64');
   }
 
   async signPersonalMessage(message: Uint8Array): Promise<{ signature: Uint8Array }> {
     const { signature } = await this.keypair.signPersonalMessage(message);
-    return { signature: encoder.encode(signature) };
+    return { signature: Buffer.from(signature, 'base64') };
   }
 
   isAuthenticated(): boolean {

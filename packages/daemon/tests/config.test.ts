@@ -11,6 +11,8 @@ const envKeys = ['COLLECTIVE_RPC_URL', 'COLLECTIVE_PACKAGE_ID', 'COLLECTIVE_REGI
 const originalEnv = new Map(envKeys.map((key) => [key, process.env[key]]));
 
 afterEach(async () => {
+  vi.restoreAllMocks();
+
   for (const key of envKeys) {
     const value = originalEnv.get(key);
     if (value === undefined) {
@@ -297,12 +299,39 @@ describe('config', () => {
     const config = loadConfig(configPath);
     config.spending.limits = [{ amount: 99n, interval: 'day', currency: 'MIST' }];
 
-    const renameSpy = vi.spyOn(configIo, 'rename').mockRejectedValueOnce(new Error('rename failed'));
-    await expect(saveConfig(config, configPath)).rejects.toThrow('rename failed');
-    renameSpy.mockRestore();
+    vi.spyOn(configIo, 'rename').mockRejectedValueOnce(new Error('rename failed'));
+    await expect(saveConfig(config, configPath)).rejects.toThrow(`Failed to save config to ${configPath}: rename failed`);
 
     expect(await readFile(configPath, 'utf8')).toBe(before);
     expect(loadConfig(configPath).spending.limits[0]?.amount).toBe(42n);
+    expect((await readdir(dir)).some((entry) => entry.includes('.tmp'))).toBe(false);
+  });
+
+  it('reports clear temp-file write errors when config saves fail', async () => {
+    const dir = await createTestDir();
+    const configPath = resolve(dir, 'config.yaml');
+
+    await writeFile(
+      configPath,
+      [
+        'auth:',
+        '  mode: zklogin',
+        '  google:',
+        '    clientId: test-google-client',
+        'spending:',
+        '  limits:',
+        '    - amount: "42"',
+        '      interval: day',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = loadConfig(configPath);
+    config.spending.limits = [{ amount: 99n, interval: 'day', currency: 'MIST' }];
+
+    vi.spyOn(configIo, 'writeFile').mockRejectedValueOnce(new Error('EACCES: permission denied'));
+
+    await expect(saveConfig(config, configPath)).rejects.toThrow(/Failed to write config temp file .*permission denied/);
     expect((await readdir(dir)).some((entry) => entry.includes('.tmp'))).toBe(false);
   });
 

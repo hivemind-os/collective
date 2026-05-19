@@ -21,7 +21,6 @@ import { MockOidcProvider, PortAllocator } from '../harness/index.js';
 import { createArtifactDir, createArtifactRoot, removeDirectoryWithRetries } from './test-helpers.js';
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 const secp256k1Order = BigInt('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141');
 
 let artifactRoot: string;
@@ -42,7 +41,7 @@ describe('Phase 1 Beta E2E: Auth and identity', () => {
     const signed = await provider.signPersonalMessage(message);
     const did = provider.getDID();
     const parsedDid = parseDID(did);
-    const verified = await keypair.getPublicKey().verifyPersonalMessage(message, decoder.decode(signed.signature));
+    const verified = await keypair.getPublicKey().verifyPersonalMessage(message, Buffer.from(signed.signature).toString('base64'));
 
     expect(did).toMatch(/^did:mesh:/);
     expect(Buffer.from(parsedDid.publicKey)).toEqual(Buffer.from(keypair.getPublicKey().toRawBytes()));
@@ -62,7 +61,7 @@ describe('Phase 1 Beta E2E: Auth and identity', () => {
     const transactionBytes = randomBytes(64);
 
     const signature = await provider.signTransaction(transactionBytes);
-    const verified = await keypair.getPublicKey().verifyTransaction(transactionBytes, decoder.decode(signature));
+    const verified = await keypair.getPublicKey().verifyTransaction(transactionBytes, Buffer.from(signature).toString('base64'));
 
     expect(verified).toBe(true);
   });

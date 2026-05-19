@@ -1,14 +1,20 @@
 import { randomUUID } from 'node:crypto';
 
+import pino from 'pino';
+
 import { PaymentRail, type DID } from '@hivemind-os/collective-types';
 
 import type { AuthProvider } from '../auth/types.js';
 import { parseDID, verify } from '../identity/index.js';
 import type { X402Client } from '../x402/client.js';
 
+const logger = pino({ name: '@hivemind-os/collective-core:relay:consumer' });
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+const strictUtf8Decoder = new TextDecoder('utf-8', { fatal: true });
 const DEFAULT_TIMEOUT_MS = 30_000;
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const HEX_PATTERN = /^[0-9a-fA-F]+$/;
 
 interface RelayChallenge {
   rail?: PaymentRail;
@@ -230,8 +236,20 @@ export class RelayConsumerClient {
     stream?: boolean;
     timeoutMs: number;
   }): Promise<{ response: Response; body: unknown }> {
+    const timeoutMs = params.timeoutMs;
+    if (!Number.isFinite(timeoutMs) || timeoutMs < 1000) {
+      const message = `Invalid timeoutMs: ${timeoutMs}. Must be a finite number >= 1000.`;
+      logger.warn({ timeoutMs }, message);
+      throw new Error(message);
+    }
+    if (timeoutMs > 300_000) {
+      const message = `timeoutMs ${timeoutMs} exceeds maximum allowed (300000ms).`;
+      logger.warn({ timeoutMs }, message);
+      throw new Error(message);
+    }
+
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), params.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(buildExecuteUrl(this.config.relayUrl, params.providerDid, params.capability, params.stream), {
@@ -258,7 +276,10 @@ export class RelayConsumerClient {
       return { response, body };
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new Error('Relay request timed out.');
+        const timeoutError = new Error(`Relay request timed out after ${timeoutMs}ms.`);
+        timeoutError.name = 'RelayTimeoutError';
+        logger.warn({ timeoutMs }, timeoutError.message);
+        throw timeoutError;
       }
 
       throw error;
@@ -388,24 +409,56 @@ export function encodeRelaySuiPaymentProof(proof: RelaySuiPaymentProof): string 
 }
 
 export function decodeRelaySuiPaymentProof(header: string): RelaySuiPaymentProof {
-  return JSON.parse(Buffer.from(header, 'base64').toString('utf8')) as RelaySuiPaymentProof;
+  if (header.length === 0 || !BASE64_PATTERN.test(header)) {
+    throwLoggedRelayError('Relay SUI payment proof header is not valid base64.', { headerLength: header.length });
+  }
+
+  let decoded: string;
+  try {
+    decoded = strictUtf8Decoder.decode(Buffer.from(header, 'base64'));
+  } catch (error) {
+    throwLoggedRelayError('Relay SUI payment proof header did not decode to valid UTF-8.', { headerLength: header.length }, error);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(decoded);
+  } catch (error) {
+    throwLoggedRelayError('Relay SUI payment proof header does not contain valid JSON.', undefined, error);
+  }
+
+  return validateRelaySuiPaymentProof(parsed);
 }
 
 export function verifyRelaySuiPaymentProof(proof: RelaySuiPaymentProof): boolean {
-  const signature = Buffer.from(proof.signature, 'hex');
-  const publicKey = parseDID(proof.payerDid).publicKey;
+  const validatedProof = validateRelaySuiPaymentProof(proof);
+  if (validatedProof.signature.length % 2 !== 0 || !HEX_PATTERN.test(validatedProof.signature)) {
+    throwLoggedRelayError('Relay SUI payment proof signature must be a valid hex string.', {
+      signatureLength: validatedProof.signature.length,
+    });
+  }
+
+  const signature = Buffer.from(validatedProof.signature, 'hex');
+
+  let publicKey: Uint8Array;
+  try {
+    publicKey = parseDID(validatedProof.payerDid).publicKey;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'Unknown error.';
+    throwLoggedRelayError(`Invalid relay SUI payment proof payerDid: ${reason}`, undefined, error);
+  }
 
   return verify(
     encoder.encode(
       createRelaySuiPayload({
-        payerDid: proof.payerDid,
-        payerAddress: proof.payerAddress,
-        paymentAddress: proof.paymentAddress,
-        amount: proof.amount,
-        currency: proof.currency,
-        network: proof.network,
-        nonce: proof.nonce,
-        expiresAt: proof.expiresAt,
+        payerDid: validatedProof.payerDid,
+        payerAddress: validatedProof.payerAddress,
+        paymentAddress: validatedProof.paymentAddress,
+        amount: validatedProof.amount,
+        currency: validatedProof.currency,
+        network: validatedProof.network,
+        nonce: validatedProof.nonce,
+        expiresAt: validatedProof.expiresAt,
       }),
     ),
     signature,
@@ -434,6 +487,64 @@ function createRelaySuiPayload(params: {
     params.nonce,
     String(params.expiresAt),
   ].join('|');
+}
+
+function validateRelaySuiPaymentProof(value: unknown): RelaySuiPaymentProof {
+  if (!isRecord(value)) {
+    throwLoggedRelayError('Relay SUI payment proof must be a JSON object.');
+  }
+
+  if (value.rail !== PaymentRail.SUI_TRANSFER) {
+    throwLoggedRelayError(`Relay SUI payment proof field "rail" must equal ${PaymentRail.SUI_TRANSFER}.`, {
+      rail: value.rail,
+    });
+  }
+
+  return {
+    rail: PaymentRail.SUI_TRANSFER,
+    payerDid: requireNonEmptyString(value.payerDid, 'payerDid') as DID,
+    payerAddress: requireNonEmptyString(value.payerAddress, 'payerAddress'),
+    paymentAddress: requireNonEmptyString(value.paymentAddress, 'paymentAddress'),
+    amount: requireNonEmptyString(value.amount, 'amount'),
+    currency: requireNonEmptyString(value.currency, 'currency'),
+    network: requireNonEmptyString(value.network, 'network'),
+    nonce: requireNonEmptyString(value.nonce, 'nonce'),
+    expiresAt: requirePositiveFiniteNumber(value.expiresAt, 'expiresAt'),
+    signature: requireNonEmptyString(value.signature, 'signature'),
+  };
+}
+
+function requireNonEmptyString(value: unknown, fieldName: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throwLoggedRelayError(`Relay SUI payment proof field "${fieldName}" must be a non-empty string.`, {
+      fieldName,
+      receivedType: typeof value,
+    });
+  }
+
+  return value;
+}
+
+function requirePositiveFiniteNumber(value: unknown, fieldName: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throwLoggedRelayError(`Relay SUI payment proof field "${fieldName}" must be a finite positive number.`, {
+      fieldName,
+      receivedValue: value,
+      receivedType: typeof value,
+    });
+  }
+
+  return value;
+}
+
+function throwLoggedRelayError(message: string, context?: Record<string, unknown>, error?: unknown): never {
+  if (context || error) {
+    logger.warn({ ...(context ?? {}), ...(error ? { err: error } : {}) }, message);
+  } else {
+    logger.warn(message);
+  }
+
+  throw new Error(message);
 }
 
 function buildExecuteUrl(relayUrl: string, providerDid: string, capability: string, stream?: boolean): string {

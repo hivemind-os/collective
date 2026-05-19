@@ -41,20 +41,30 @@ export class SpendingPolicyEngine {
 
   constructor(params: { policy: SpendingPolicyConfig; dbPath: string }) {
     this.policy = params.policy;
-    this.db = new Database(params.dbPath);
-    this.db.defaultSafeIntegers(true);
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS spending_log (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        amount_base_units INTEGER NOT NULL,
-        rail TEXT NOT NULL,
-        currency TEXT,
-        task_id TEXT,
-        app_id TEXT,
-        timestamp INTEGER NOT NULL
+
+    let db: Database.Database | undefined;
+    try {
+      db = new Database(params.dbPath);
+      db.defaultSafeIntegers(true);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS spending_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          amount_base_units INTEGER NOT NULL,
+          rail TEXT NOT NULL,
+          currency TEXT,
+          task_id TEXT,
+          app_id TEXT,
+          timestamp INTEGER NOT NULL
+        );
+      `);
+      this.db = db;
+      this.migrateSpendingLogSchema();
+    } catch (error) {
+      db?.close();
+      throw new Error(
+        `Failed to initialize spending policy database at ${params.dbPath}: ${error instanceof Error ? error.message : String(error)}`,
       );
-    `);
-    this.migrateSpendingLogSchema();
+    }
   }
 
   evaluate(request: SpendingAmount & { rail: PaymentRail; appId?: string; originAppName?: string }): SpendingPolicyDecision {
@@ -136,6 +146,10 @@ export class SpendingPolicyEngine {
       appId: row.app_id ?? undefined,
       timestamp: Number(row.timestamp),
     }));
+  }
+
+  getCurrentPolicy(): SpendingPolicyConfig {
+    return clonePolicyConfig(this.policy);
   }
 
   updatePolicy(policy: SpendingPolicyConfig): void {
@@ -230,6 +244,25 @@ export class SpendingPolicyEngine {
       this.db.exec('ALTER TABLE spending_log ADD COLUMN currency TEXT');
     }
   }
+}
+
+function clonePolicyConfig(policy: SpendingPolicyConfig): SpendingPolicyConfig {
+  return {
+    ...policy,
+    limits: policy.limits.map((limit) => ({ ...limit })),
+    allowlist: policy.allowlist ? [...policy.allowlist] : undefined,
+    denylist: policy.denylist ? [...policy.denylist] : undefined,
+    perApp: policy.perApp
+      ? Object.fromEntries(
+          Object.entries(policy.perApp).map(([appId, config]) => [
+            appId,
+            {
+              limits: config.limits.map((limit) => ({ ...limit })),
+            },
+          ]),
+        )
+      : undefined,
+  };
 }
 
 function getIntervalStart(interval: 'hour' | 'day' | 'month'): number {

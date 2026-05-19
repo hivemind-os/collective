@@ -17,6 +17,7 @@ import type {
 } from '@hivemind-os/collective-core';
 import type { DID, NetworkConfig } from '@hivemind-os/collective-types';
 import type { Signer } from '@mysten/sui/cryptography';
+import type { Logger } from 'pino';
 
 export interface MeshToolContext {
   did: DID;
@@ -43,10 +44,7 @@ export interface MeshToolContext {
   authProvider?: AuthProvider;
   x402Client?: X402Client;
   paymentRailSelector?: PaymentRailSelector;
-  logger?: {
-    info?: (payload: unknown, message?: string) => void;
-    warn?: (payload: unknown, message?: string) => void;
-  };
+  logger?: Pick<Logger, 'info' | 'warn'>;
   indexer?: {
     enabled?: boolean;
     graphqlUrl?: string;
